@@ -116,7 +116,9 @@ $ cpa claude --profile deepseek
 模型。每个选项都来自网关真实返回的模型列表，因此不可能因为手误填进一个不存在的
 模型；每行的初始答案就是网关同槽位的那个模型，所以「全部原样映射」就是连按四次
 回车。网关会归到别的槽位的候选会标出来（`→ haiku`），一张二十多个模型的表因此
-仍然读得下去。给别的 agent 建的 profile 只问一个模型：槽位是 Claude Code 独有的。
+仍然读得下去。每一行还会带上网关给该模型标注的提供方（`[commandcode]`）：一个
+被转售、名字里看不出上游的 id，靠自己是说不清由谁服务的。
+给别的 agent 建的 profile 只问一个模型：槽位是 Claude Code 独有的。
 
 ```console
 $ cpa profile create
@@ -127,14 +129,14 @@ $ cpa profile create
 ? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
 ? opus (Claude Code default: claude-opus-5-5)
   (leave unset — resolve automatically)
-  claude-haiku-4-5 (Haiku 4.5) → haiku
-❯ claude-opus-5 (Opus 5)
-  claude-sonnet-5 (Sonnet 5) → sonnet
-  deepseek-v4-flash → haiku
-  deepseek-v4-pro
-  gpt-6-sol
-? sonnet (Claude Code default: claude-sonnet-5) gpt-6-sol
-? haiku (Claude Code default: claude-haiku-4-5) claude-haiku-4-5 (Haiku 4.5)
+  claude-haiku-4-5 (Haiku 4.5)  [anthropic] → haiku
+❯ claude-opus-5 (Opus 5)  [anthropic]
+  claude-sonnet-5 (Sonnet 5)  [anthropic] → sonnet
+  deepseek-v4-flash  [commandcode] → haiku
+  deepseek-v4-pro  [commandcode]
+  gpt-6-sol  [openai]
+? sonnet (Claude Code default: claude-sonnet-5) gpt-6-sol  [openai]
+? haiku (Claude Code default: claude-haiku-4-5) claude-haiku-4-5 (Haiku 4.5)  [anthropic]
 ? fable (Claude Code default: claude-fable-5-1) (leave unset — resolve automatically)
 
 wrote profile "devbox" to ~/.config/cpa/settings.json
@@ -311,6 +313,9 @@ profile deepseek -> http://127.0.0.1:8317  (4 models)
 
 mapping source: claude aliases
 ```
+
+每一行的写法与选择器一致：id、网关另给显示名时带上它、以及提供方，
+后面跟着这个模型服务哪些槽位。
 
 ## 命令
 

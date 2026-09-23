@@ -278,10 +278,9 @@ func cmdModels(ctx context.Context, args []string) error {
 		slotOf[model] = append(slotOf[model], slot)
 	}
 	for _, m := range models {
-		label := m.ID
-		if m.OwnedBy != "" {
-			label += fmt.Sprintf("  [%s]", m.OwnedBy)
-		}
+		// The same label the picker uses: the listing and the prompt should
+		// not disagree about what a model is called.
+		label := m.Label()
 		if slots := slotOf[m.ID]; len(slots) > 0 {
 			sort.Strings(slots)
 			label += "  -> " + strings.Join(slots, ",")

@@ -21,13 +21,19 @@ type Model struct {
 	Created     int64  `json:"created,omitempty"`
 }
 
-// Label is what to show a human: the display name when the gateway provides
-// one, otherwise the raw id.
+// Label is what to show a human: the id, the display name when the gateway
+// provides one, and the provider it files the model under. The id alone does
+// not say who serves it — a gateway may resell an upstream under a name of its
+// own — and that is what someone picking one id out of two dozen needs to see.
 func (m Model) Label() string {
+	label := m.ID
 	if m.DisplayName != "" && m.DisplayName != m.ID {
-		return fmt.Sprintf("%s (%s)", m.ID, m.DisplayName)
+		label = fmt.Sprintf("%s (%s)", m.ID, m.DisplayName)
 	}
-	return m.ID
+	if m.OwnedBy != "" {
+		label += fmt.Sprintf("  [%s]", m.OwnedBy)
+	}
+	return label
 }
 
 // Client is a minimal gateway client.
