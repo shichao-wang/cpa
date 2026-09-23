@@ -44,9 +44,10 @@ is asked one row per slot, named by the model Claude Code itself resolves for
 it and answered from the models the gateway actually advertises. A profile for
 another agent is asked for a single model instead, since only Claude Code has
 slots. The mapping is then written into the profile as claudeSettings
-modelPicker rows, which is how Claude Code is told what those ids stand in
-for; without them it calls every id it does not know unknown, and assumes a
-200k window for it. Without a terminal (a pipe, a script, CI) there are no
+modelPicker rows — one per model, with replaceBuiltInOptions, so the /model
+picker lists those and nothing else. A row also carries behavesAs when the id
+is one Claude Code does not know: without it, Claude Code calls the id unknown
+and assumes a 200k window for it. Without a terminal (a pipe, a script, CI) there are no
 prompts at all: every field comes from the flags above, and a missing required
 one is an error.
 
@@ -423,26 +424,34 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 		pr.Close()
 	}
 
-	// A model id that only the gateway serves is one Claude Code does not
-	// know: it assumes a 200k window and warns at every launch that the id is
-	// not in its catalogue. A modelPicker row carrying behavesAs tells it
-	// which of its own models this one stands in for, and the slot mapping
-	// just collected says exactly that — so the rows are derived rather than
-	// asked for, and a profile that pinned nothing stays untouched.
+	// What Claude Code's picker should offer is decided here, and the two
+	// halves of it are one decision. The rows say which models this profile
+	// can route to — Claude Code's own lineup is not among them, because the
+	// upstream is the gateway. replaceBuiltInOptions says the picker is
+	// exactly that list: without it the rows are appended to a lineup that
+	// does not apply, beside whatever the gateway advertises through
+	// /v1/models, which is the noise the profile exists to remove.
+	//
+	// A row may also carry behavesAs. A model id only the gateway serves is
+	// one Claude Code does not know: it assumes a 200k window for it and
+	// warns at every launch that the id is not in its catalogue. behavesAs
+	// names the model this one stands in for, which the slot mapping just
+	// collected already says — so the rows are derived rather than asked for.
 	//
 	// But not when the profile carries a contextWindow. behavesAs makes
 	// Claude Code read the window off the model it names, and that reading
 	// wins over CLAUDE_CODE_MAX_CONTEXT_TOKENS: measured, a profile asking
 	// for 1M through contextWindow showed 200k once behavesAs rows were
 	// added. Each knob silences the notice on its own, so the one that also
-	// widens the window is the one that gets to stay.
+	// widens the window is the one that gets to stay. The row is still
+	// written; only the claim about what it behaves as is dropped.
 	//
-	// And only for a Claude Code profile: behavesAs is a settings key that
+	// And only for a Claude Code profile: modelPicker is a settings key that
 	// agent alone reads, so writing it onto a profile for another one would
 	// change which agent the profile is even for.
-	rows := []behavesAsRow(nil)
-	if p.ContextWindow == 0 && resolveKind(p.Agent) == config.KindClaude {
-		rows = behavesAsRows(p.Models)
+	rows := []pickerRow(nil)
+	if resolveKind(p.Agent) == config.KindClaude {
+		rows = pickerRows(p)
 	}
 	if len(rows) > 0 {
 		p.ClaudeSettings = withModelPicker(p.ClaudeSettings, rows)
@@ -456,79 +465,55 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 		return err
 	}
 	fmt.Printf("\nwrote profile %q to %s%s\n", name, path, replacing)
-	for _, line := range behavesAsReport(rows) {
+	for _, line := range pickerReport(rows) {
 		fmt.Printf("  %s\n", line)
 	}
 	fmt.Printf("  cpa profile list\n  cpa %s --profile %s\n", p.Agent, name)
 	return nil
 }
 
-// behavesAsRow is one entry of Claude Code's settings `modelPicker.options`:
-// the id the profile sends, and the Claude model it stands in for. No label
-// or description is written — cpa already names these models through
-// ANTHROPIC_DEFAULT_<SLOT>_MODEL_NAME, and a label here would win over it.
-type behavesAsRow struct {
-	Model     string `json:"model"`
-	BehavesAs string `json:"behavesAs"`
+// The launch package also uses these rows for existing profiles that did not
+// write a modelPicker at creation time.
+type pickerRow = launch.PickerRow
+
+func pickerRows(p *config.Profile) []pickerRow {
+	return launch.PickerRows(p, p.Models)
 }
 
-// behavesAsRows turns a slot mapping into the rows that stop Claude Code
-// treating the mapped ids as unknown. Slots are walked in their own order —
-// strongest first — so a gateway model serving both opus and sonnet is
-// declared as the opus one: an id carries one behavesAs, and opus is the
-// larger claim. A slot whose meaning cpa has no id for is left alone.
-func behavesAsRows(models map[string]string) []behavesAsRow {
-	if len(models) == 0 {
-		return nil
-	}
-	claimed := map[string]bool{}
-	var rows []behavesAsRow
-	for _, slot := range config.Slots {
-		id, target := models[slot], config.ClaudeCodeDefaults[slot]
-		if id == "" || target == "" || claimed[id] || isAgentsOwnID(id) {
-			continue
-		}
-		claimed[id] = true
-		rows = append(rows, behavesAsRow{Model: id, BehavesAs: target})
-	}
-	return rows
-}
-
-// isAgentsOwnID reports whether an id is one of the agent's own. Claude Code
-// is the authority on the ids named claude-*: it either knows one or has a
-// reason not to, and a behavesAs row would only talk over that — claude-opus-5
-// is not claude-opus-5-5, however the slot it fills is labelled. An id from
-// anyone else's namespace is the case the row exists for, and pointing a slot
-// at a gateway is what produces those.
-func isAgentsOwnID(id string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(id)), "claude-")
-}
-
-// withModelPicker returns settings carrying the behavesAs rows, leaving any
-// other Claude Code settings in place.
-func withModelPicker(settings map[string]interface{}, rows []behavesAsRow) map[string]interface{} {
+func withModelPicker(settings map[string]interface{}, rows []pickerRow) map[string]interface{} {
 	if settings == nil {
 		settings = map[string]interface{}{}
 	}
-	settings["modelPicker"] = map[string]interface{}{"options": rows}
+	settings["modelPicker"] = launch.PickerSettings(rows)
 	return settings
 }
 
-// behavesAsReport describes what was written, so the mapping Claude Code will
-// apply is visible at the prompt rather than buried in the settings file.
-func behavesAsReport(rows []behavesAsRow) []string {
+// pickerReport describes what was written, so the list Claude Code's picker
+// will offer is visible at the prompt rather than buried in the settings file.
+func pickerReport(rows []pickerRow) []string {
 	if len(rows) == 0 {
 		return nil
 	}
-	parts := make([]string, len(rows))
+	names := make([]string, len(rows))
+	var behaving []string
 	for i, r := range rows {
-		parts[i] = fmt.Sprintf("%s behaves as %s", r.Model, r.BehavesAs)
+		names[i] = r.Model
+		if r.BehavesAs != "" {
+			behaving = append(behaving, fmt.Sprintf("%s behaves as %s", r.Model, r.BehavesAs))
+		}
 	}
-	return []string{
-		"behavesAs: " + strings.Join(parts, ", "),
-		"(Claude Code will no longer call those ids unknown; the 200k window it assumes",
-		" is unchanged — set the profile's contextWindow if the upstream offers more)",
+	out := []string{
+		"model picker: " + strings.Join(names, ", "),
+		"(Claude Code's /model will list Default and these rows; its own lineup",
+		" and unrelated gateway models are left out)",
 	}
+	if len(behaving) > 0 {
+		out = append(out,
+			"behavesAs: "+strings.Join(behaving, ", "),
+			"(Claude Code will no longer call those ids unknown; the 200k window it assumes",
+			" is unchanged — set the profile's contextWindow if the upstream offers more)")
+	}
+	return out
 }
 
 // previewMapping asks the gateway what it advertises and prints the slot

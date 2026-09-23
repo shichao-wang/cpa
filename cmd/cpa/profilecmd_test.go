@@ -391,65 +391,83 @@ func TestUpsertProfileAtSurvivesANullDocument(t *testing.T) {
 	}
 }
 
-func TestBehavesAsRows(t *testing.T) {
+func TestPickerRows(t *testing.T) {
 	cases := []struct {
-		name   string
-		models map[string]string
-		want   []behavesAsRow
+		name string
+		p    *config.Profile
+		want []pickerRow
 	}{
 		{
-			"nothing pinned means nothing to declare",
-			nil,
+			"nothing pinned means nothing to list",
+			&config.Profile{},
 			nil,
 		},
 		{
-			"each slot gets the agent's own model for it, in slot order",
-			map[string]string{"haiku": "gpt-6-luna", "opus": "gpt-6-sol"},
-			[]behavesAsRow{
+			"each slot gets a row naming the agent's own model for it, in slot order",
+			&config.Profile{Models: map[string]string{"haiku": "gpt-6-luna", "opus": "gpt-6-sol"}},
+			[]pickerRow{
 				{Model: "gpt-6-sol", BehavesAs: "claude-opus-5-5"},
 				{Model: "gpt-6-luna", BehavesAs: "claude-haiku-4-5"},
 			},
 		},
 		{
-			// One id carries one behavesAs, and opus is the larger claim:
-			// a model serving both slots is declared as the opus one.
-			"a model serving two slots is declared once, as the stronger one",
-			map[string]string{"opus": "gpt-6-sol", "sonnet": "gpt-6-sol"},
-			[]behavesAsRow{{Model: "gpt-6-sol", BehavesAs: "claude-opus-5-5"}},
+			// One id gets one row, and the row is the larger claim: it is
+			// the only way the picker can reach the model.
+			"a model serving two slots is listed once, as the stronger one",
+			&config.Profile{Models: map[string]string{"opus": "gpt-6-sol", "sonnet": "gpt-6-sol"}},
+			[]pickerRow{{Model: "gpt-6-sol", BehavesAs: "claude-opus-5-5"}},
 		},
 		{
-			// The row would say the model behaves as itself.
-			"a slot already pinned to the agent's own id needs no row",
-			map[string]string{"haiku": "claude-haiku-4-5"},
-			nil,
+			// The row still has to be written — it is how the picker offers
+			// the model — but it makes no claim about what it behaves as.
+			"a slot pinned to the agent's own id is listed without behavesAs",
+			&config.Profile{Models: map[string]string{"haiku": "claude-haiku-4-5"}},
+			[]pickerRow{{Model: "claude-haiku-4-5"}},
 		},
 		{
 			// Claude Code is the authority on its own ids: claude-opus-5 is
 			// not claude-opus-5-5, and a row saying so would be cpa talking
 			// over the agent about the agent's own namespace.
-			"an id in the agent's own namespace is left alone",
-			map[string]string{"opus": "claude-opus-5"},
-			nil,
+			"an id in the agent's own namespace makes no behavesAs claim",
+			&config.Profile{Models: map[string]string{"opus": "claude-opus-5"}},
+			[]pickerRow{{Model: "claude-opus-5"}},
 		},
 		{
-			"a whole mapping onto the agent's own ids needs no rows",
-			map[string]string{
-				"opus":   "claude-opus-5-5",
-				"sonnet": "claude-sonnet-5",
-				"haiku":  "claude-haiku-4-5",
-				"fable":  "claude-fable-5-1",
+			// The catch-all is what every unpinned slot resolves to, so it is
+			// the one model this profile routes to and the picker has to
+			// reach it.
+			"a catch-all with no slot beside it is still listed",
+			&config.Profile{Model: "deepseek-flash"},
+			[]pickerRow{{Model: "deepseek-flash"}},
+		},
+		{
+			"a name the profile asked for becomes the row's label",
+			&config.Profile{
+				Models:     map[string]string{"opus": "gpt-6-sol"},
+				ModelNames: map[string]string{"opus": "Sol"},
 			},
-			nil,
+			[]pickerRow{{Model: "gpt-6-sol", BehavesAs: "claude-opus-5-5", Label: "Sol"}},
+		},
+		{
+			// behavesAs hands the window back to the model it names, which
+			// outranks CLAUDE_CODE_MAX_CONTEXT_TOKENS. The rows stay; the
+			// claim is what goes.
+			"a contextWindow profile lists its models without behavesAs",
+			&config.Profile{
+				Models:        map[string]string{"opus": "gpt-6-sol"},
+				ContextWindow: 1000000,
+			},
+			[]pickerRow{{Model: "gpt-6-sol"}},
 		},
 	}
 	for _, tc := range cases {
-		if got := behavesAsRows(tc.models); !reflect.DeepEqual(got, tc.want) {
-			t.Errorf("%s: behavesAsRows(%v) = %v, want %v", tc.name, tc.models, got, tc.want)
+		if got := pickerRows(tc.p); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: pickerRows = %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }
 
-func TestProfileCreateWritesBehavesAsRows(t *testing.T) {
+func TestProfileCreateWritesPickerRows(t *testing.T) {
 	// The interactive path is what fills Models, so the write is driven
 	// through commitProfile — the one path a terminal-driven run also uses.
 	path := filepath.Join(t.TempDir(), "cpa", "settings.json")
@@ -478,12 +496,16 @@ func TestProfileCreateWritesBehavesAsRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	var decoded struct {
-		Options []behavesAsRow `json:"options"`
+		ReplaceBuiltInOptions bool        `json:"replaceBuiltInOptions"`
+		Options               []pickerRow `json:"options"`
 	}
 	if err := json.Unmarshal(blob, &decoded); err != nil {
 		t.Fatalf("modelPicker = %s: %v", blob, err)
 	}
-	want := []behavesAsRow{
+	if !decoded.ReplaceBuiltInOptions {
+		t.Errorf("modelPicker = %s; the rows must replace the built-in lineup, not join it", blob)
+	}
+	want := []pickerRow{
 		{Model: "gpt-6-sol", BehavesAs: "claude-opus-5-5"},
 		{Model: "gpt-6-luna", BehavesAs: "claude-haiku-4-5"},
 	}
@@ -492,9 +514,12 @@ func TestProfileCreateWritesBehavesAsRows(t *testing.T) {
 	}
 }
 
-func TestProfileCreateWritesNoBehavesAsWithoutSlots(t *testing.T) {
+func TestProfileCreateListsTheCatchAllWithoutSlots(t *testing.T) {
 	// A catch-all model serves every slot, so there is no one model it
-	// behaves as; and the flag-driven flow never pins slots at all.
+	// behaves as; and the flag-driven flow never pins slots at all. It is
+	// still the model this profile sends, so it is the one its picker has to
+	// be able to offer — carried verbatim, "[1m]" and all, exactly as the
+	// profile hands it to Claude Code.
 	path := filepath.Join(t.TempDir(), "cpa", "settings.json")
 	if err := cmdProfileCreate(context.Background(), []string{
 		"--file", path, "--name", "devbox",
@@ -504,15 +529,32 @@ func TestProfileCreateWritesNoBehavesAsWithoutSlots(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("cmdProfileCreate: %v", err)
 	}
-	if got := readProfiles(t, path)["devbox"]; len(got.ClaudeSettings) != 0 {
-		t.Errorf("claudeSettings = %v; a profile with no slot pins needs none", got.ClaudeSettings)
+	got := readProfiles(t, path)["devbox"]
+	picker, ok := got.ClaudeSettings["modelPicker"]
+	if !ok {
+		t.Fatalf("claudeSettings has no modelPicker: %v", got.ClaudeSettings)
+	}
+	blob, err := json.Marshal(picker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Options []pickerRow `json:"options"`
+	}
+	if err := json.Unmarshal(blob, &decoded); err != nil {
+		t.Fatalf("modelPicker = %s: %v", blob, err)
+	}
+	want := []pickerRow{{Model: "deepseek-flash[1m]"}}
+	if !reflect.DeepEqual(decoded.Options, want) {
+		t.Errorf("modelPicker options = %v, want %v", decoded.Options, want)
 	}
 }
 
-func TestProfileCreateWritesNoBehavesAsWithAContextWindow(t *testing.T) {
+func TestProfileCreateKeepsRowsButDropsBehavesAsWithAContextWindow(t *testing.T) {
 	// behavesAs makes Claude Code read the window off the model a row names,
 	// which outranks CLAUDE_CODE_MAX_CONTEXT_TOKENS: writing both would throw
-	// the window away. The notice is silenced either way, so the rows go.
+	// the window away. The row itself still has to be there — it is how the
+	// picker offers this profile's model at all.
 	path := filepath.Join(t.TempDir(), "cpa", "settings.json")
 	p := &config.Profile{
 		Agent:         "claude",
@@ -524,9 +566,19 @@ func TestProfileCreateWritesNoBehavesAsWithAContextWindow(t *testing.T) {
 		t.Fatalf("commitProfile: %v", err)
 	}
 	got := readProfiles(t, path)["openai"]
-	if len(got.ClaudeSettings) != 0 {
-		t.Errorf("claudeSettings = %v; a contextWindow profile must not also declare behavesAs",
-			got.ClaudeSettings)
+	picker, ok := got.ClaudeSettings["modelPicker"]
+	if !ok {
+		t.Fatalf("claudeSettings has no modelPicker: %v", got.ClaudeSettings)
+	}
+	blob, err := json.Marshal(picker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(blob), "behavesAs") {
+		t.Errorf("modelPicker = %s; a contextWindow profile must not also declare behavesAs", blob)
+	}
+	if !strings.Contains(string(blob), "gpt-6-sol") {
+		t.Errorf("modelPicker = %s; the row is how the picker reaches gpt-6-sol", blob)
 	}
 	if got.ContextWindow != 1000000 {
 		t.Errorf("contextWindow = %d, want 1000000", got.ContextWindow)

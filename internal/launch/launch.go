@@ -134,7 +134,7 @@ func Build(cfg *config.Config, agentName, profileName string, userArgs []string,
 	plan.Args = append(plan.Args, profile.Args...)
 
 	if agent.Kind == config.KindClaude {
-		blob, err := buildSettings(cfg, profile, plan.Env)
+		blob, err := buildSettings(cfg, profile, plan.Env, plan.Models)
 		if err != nil {
 			return nil, err
 		}
@@ -216,13 +216,21 @@ func declaresBehavesAs(cfg *config.Config, p *config.Profile) bool {
 // buildSettings assembles the --settings document: the profile's own Claude
 // Code settings, plus the launch environment. An env block written by hand
 // in claudeSettings wins over the generated one.
-func buildSettings(cfg *config.Config, p *config.Profile, env map[string]string) ([]byte, error) {
+func buildSettings(cfg *config.Config, p *config.Profile, env map[string]string, models map[string]string) ([]byte, error) {
 	settings := map[string]interface{}{}
 	for k, v := range cfg.Defaults.ClaudeSettings {
 		settings[k] = v
 	}
 	for k, v := range p.ClaudeSettings {
 		settings[k] = v
+	}
+	// An explicit picker in either settings layer wins. For older profiles
+	// without one, use the models this launch actually resolved, including
+	// family matches and gateway aliases that were unknown at create time.
+	if _, set := settings["modelPicker"]; !set {
+		if rows := PickerRows(p, models); len(rows) > 0 {
+			settings["modelPicker"] = PickerSettings(rows)
+		}
 	}
 
 	merged := map[string]interface{}{}
