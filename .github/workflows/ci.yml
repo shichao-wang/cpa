@@ -5,19 +5,14 @@ name: ci
 # run, so a tag only ever comes from a green tree. Nothing gates a PR before
 # it is merged: the merge is what starts this.
 #
-# Pushing a tag by hand (`git push origin v1.2.3`) takes the same path with the
-# version you chose instead of inventing one.
+# Pushing a tag by hand (`git push origin v2026.09.23-a1b2c3`) takes the same
+# path with the version you chose instead of inventing one.
 #
-# A manual run (`gh workflow run ci.yml -f tag=v1.2.3`) republishes one tag
-# without bumping anything: the lever for repairing a release that came out
-# wrong, since such a tag would otherwise never be picked again.
+# A merge is tagged v<UTC date>-<commit>, the date plus the first six
+# characters of the merge commit (v2026.09.23-a1b2c3): the tag names exactly
+# the tree it was built from, and two merges in one day still get distinct
+# tags. One label still applies:
 #
-# A merge with no label gets a patch bump; the merged PR's labels decide
-# otherwise:
-#
-#   release:major   v1.2.3 -> v2.0.0
-#   release:minor   v1.2.3 -> v1.3.0
-#   release:patch   v1.2.3 -> v1.2.4   (also the default)
 #   skip-release    publish nothing for this merge
 #
 # The tag is pushed with the workflow's own token, which by design does not
@@ -28,11 +23,6 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to (re)publish, e.g. v0.2.1. Empty derives the next version."
-        required: false
 
 permissions:
   contents: write
@@ -77,8 +67,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Tags: the version bump reads them, and --generate-notes needs the
-          # previous one to write its range.
+          # Tags: the already-released check reads them, and --generate-notes
+          # needs the previous one to write its range.
           fetch-depth: 0
 
       - uses: actions/setup-go@v5
@@ -92,17 +82,12 @@ jobs:
           REF: ${{ github.ref }}
           SHA: ${{ github.sha }}
           REPO: ${{ github.repository }}
-          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
 
-          # A manual run names the tag to republish, so repairing a release
-          # does not cost a version number.
-          if [ -n "$INPUT_TAG" ]; then
-            echo "tag=${INPUT_TAG}" >>"$GITHUB_OUTPUT"
-            echo "manual run for ${INPUT_TAG}"
-            exit 0
-          fi
+          # Read once, so a job that straddles midnight UTC does not write a
+          # date into the tag that its own log line disagrees with.
+          stamp="$(date -u +%Y.%m.%d)"
 
           # A tag pushed by hand names the version itself.
           if [[ "$REF" == refs/tags/v* ]]; then
@@ -133,21 +118,8 @@ jobs:
             exit 0
           fi
 
-          bump=patch
-          if grep -qx 'release:minor' <<<"$labels"; then bump=minor; fi
-          if grep -qx 'release:major' <<<"$labels"; then bump=major; fi
-
-          latest="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n1)"
-          latest="${latest:-v0.0.0}"
-          IFS=. read -r major minor patch <<<"${latest#v}"
-          case "$bump" in
-            major) major=$((major + 1)); minor=0; patch=0 ;;
-            minor) minor=$((minor + 1)); patch=0 ;;
-            patch) patch=$((patch + 1)) ;;
-          esac
-
-          echo "tag=v${major}.${minor}.${patch}" >>"$GITHUB_OUTPUT"
-          echo "${latest} + ${bump} -> v${major}.${minor}.${patch}"
+          echo "tag=v${stamp}-${SHA:0:6}" >>"$GITHUB_OUTPUT"
+          echo "v${stamp}-${SHA:0:6} for ${SHA:0:7}"
 
       - name: Build archives
         if: steps.version.outputs.skip != '1'
@@ -181,59 +153,49 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
-          assets=(dist/*.tar.gz dist/checksums.txt install.sh)
-          expected=()
-          for f in "${assets[@]}"; do
-            if [ ! -f "$f" ]; then
-              echo "no ${f} to publish"
-              exit 1
-            fi
-            expected+=("$(basename "$f")")
-          done
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release ${TAG} already exists; nothing to do"
+            exit 0
+          fi
 
-          if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "tag ${TAG} already exists; publishing it"
+          else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag -a "${TAG}" -m "${TAG}" "$SHA"
             git push origin "${TAG}"
           fi
 
-          # The release and its assets are two calls on purpose. `gh release
-          # create <tag> <assets>` uploads the files in its own requests and can
-          # report success having attached none of them - that is how v0.2.1 was
-          # published empty - so the upload is its own call here, and the assets
-          # are counted before this step is allowed to pass.
-          draft=false
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --draft --title "$TAG" --generate-notes
-            draft=true
-          elif [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
-            draft=true
-            echo "release ${TAG} is still a draft from an earlier run; finishing it"
-          else
-            echo "release ${TAG} is already published; checking its assets"
-          fi
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --generate-notes \
+            dist/*.tar.gz dist/checksums.txt install.sh
 
-          gh release upload "$TAG" --clobber "${assets[@]}"
-
-          have="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
-          missing=()
-          for name in "${expected[@]}"; do
-            grep -qxF "$name" <<<"$have" || missing+=("$name")
+          # The releases list/tags API answers with an empty asset list for a
+          # while after a release is published - v0.2.1 read as empty for an
+          # hour while all six assets were attached and downloadable the whole
+          # time - so the check below asks the URL cpa upgrade itself fetches
+          # rather than that API. It is a belt-and-braces check: no asset has
+          # ever gone missing here, but a release without them breaks cpa
+          # upgrade silently.
+          got=false
+          for _ in 1 2 3; do
+            if curl -fsS -o "${RUNNER_TEMP}/checksums.txt" \
+              "https://github.com/${REPO}/releases/download/${TAG}/checksums.txt"; then
+              got=true
+              break
+            fi
+            echo "checksums.txt not downloadable yet"
+            sleep 5
           done
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "these assets did not attach to ${TAG}:"
-            printf '  %s\n' "${missing[@]}"
+          if [ "$got" != true ]; then
+            echo "release ${TAG} has nothing downloadable behind it; cpa upgrade would fail"
+            echo "repair it with: gh release upload ${TAG} --clobber dist/*.tar.gz dist/checksums.txt install.sh"
             exit 1
           fi
-
-          # A draft is invisible to /releases/latest, the endpoint cpa upgrade
-          # reads, so anything that goes wrong before this line leaves the
-          # previous release as the one people get.
-          if [ "$draft" = true ]; then
-            gh release edit "$TAG" --draft=false
-          fi
-          echo "published ${TAG} with ${#expected[@]} assets"
+          diff -u dist/checksums.txt "${RUNNER_TEMP}/checksums.txt"

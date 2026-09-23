@@ -89,7 +89,7 @@ read or written. It can be steered with environment variables:
 
 | Variable | Effect |
 |---|---|
-| `CPA_VERSION` | install a specific tag instead of the latest release, e.g. `CPA_VERSION=v0.1.0` |
+| `CPA_VERSION` | install a specific tag instead of the latest release, e.g. `CPA_VERSION=v2026.09.23-a1b2c3` |
 | `CPA_INSTALL_DIR` | install somewhere other than `~/.local/bin` |
 | `CPA_SKIP_VERIFY=1` | skip checksum verification (not advised) |
 
@@ -118,12 +118,12 @@ $ make install
 
 ```console
 $ cpa upgrade
-downloading cpa_0.2.1_darwin_arm64.tar.gz
+downloading cpa_2026.09.23-a1b2c3_darwin_arm64.tar.gz
 checksum ok
-installed /Users/you/.local/bin/cpa (v0.2.0 -> v0.2.1)
+installed /Users/you/.local/bin/cpa (v2026.09.22-ff00aa -> v2026.09.23-a1b2c3)
 
 $ cpa upgrade --check        # report only; exits 1 when an update is waiting
-$ cpa upgrade --tag v0.2.0   # a specific release, like CPA_VERSION in install.sh
+$ cpa upgrade --tag v2026.09.22-ff00aa   # a specific release, like CPA_VERSION in install.sh
 ```
 
 The newest tag comes from `/releases/latest` (a redirect, not an API call, so no
@@ -132,7 +132,7 @@ the new binary is run once before it is renamed over the file `cpa` is running
 from — so a download that does not work never replaces one that does. The file
 replaced is whatever path this `cpa` was installed at.
 
-A build from source reports a `git describe` version (`v0.2.0-11-gb7fc3aa`),
+A build from source reports a `git describe` version (`v2026.09.23-a1b2c3-11-gb7fc3aa`),
 which says nothing about whether a release is newer, so `cpa upgrade` refuses to
 guess; `--force` installs the release anyway. Only the first upgrade needs it —
 after that the binary is a release build and compares properly.
@@ -149,9 +149,11 @@ $ git pull --ff-only && make install
 
 Every merge to `main` runs the tests in
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and, when they pass,
-tags a release — so `cpa upgrade` gets you the newest code. The version for a
-merge comes from the merged PR's labels (`release:major`, `release:minor`,
-`release:patch`, or `skip-release`), defaulting to a patch bump.
+tags a release — so `cpa upgrade` gets you the newest code. A merge is tagged
+`v<date>-<commit>`, the UTC date plus the first six characters of the merge
+commit (`v2026.09.23-a1b2c3`), so a tag names exactly the tree it was built
+from, and two merges in one day still get distinct tags. Label a PR
+`skip-release` to publish nothing for it.
 
 Both routes write the same file, `~/.local/bin/cpa`: `make install` defaults
 to `PREFIX=$(HOME)/.local`, which is the path `install.sh` calls

@@ -108,8 +108,13 @@ func existingFile(t *testing.T, dir string) string {
 // published builds a complete, valid release of v9.9.9 for darwin/arm64.
 func published(t *testing.T) (release, string, []byte) {
 	t.Helper()
-	const tag = "v9.9.9"
-	dir := "cpa_9.9.9_darwin_arm64"
+	return publishedTag(t, "v9.9.9")
+}
+
+// publishedTag builds a complete, valid release of tag for darwin/arm64.
+func publishedTag(t *testing.T, tag string) (release, string, []byte) {
+	t.Helper()
+	dir := "cpa_" + strings.TrimPrefix(tag, "v") + "_darwin_arm64"
 	archive := dir + ".tar.gz"
 	blob := tarball(t, dir, map[string]string{
 		"cpa":       fakeBinary(tag),
@@ -246,6 +251,35 @@ func TestRunStopsWhenAlreadyLatest(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "latest release") {
 		t.Errorf("output does not say it is up to date: %s", out.String())
+	}
+}
+
+// Releases are tagged v<date>-<commit> now, and that tag travels into the
+// archive name as written: code that only understood vX.Y.Z would refuse to
+// touch any of them.
+func TestRunInstallsADateCommitRelease(t *testing.T) {
+	const tag = "v2026.09.23-a1b2c3"
+	rel, _, _ := publishedTag(t, tag)
+	srv := rel.server(t)
+	dest := existingFile(t, t.TempDir())
+
+	var out bytes.Buffer
+	res, err := Run(context.Background(), Options{
+		Current: "v2026.09.22-ff00aa",
+		Dest:    dest,
+		Base:    srv.URL,
+		Out:     &out,
+		GOOS:    "darwin",
+		GOARCH:  "arm64",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v\n%s", err, out.String())
+	}
+	if res.Latest != tag || !res.Updated {
+		t.Errorf("Latest = %q, Updated = %v; want %q and true", res.Latest, res.Updated, tag)
+	}
+	if got, _ := os.ReadFile(dest); string(got) != fakeBinary(tag) {
+		t.Errorf("dest holds %q, want the downloaded binary", got)
 	}
 }
 
@@ -403,14 +437,22 @@ func TestArchiveName(t *testing.T) {
 
 func TestIsRelease(t *testing.T) {
 	cases := map[string]bool{
-		"v0.2.0":             true,
-		"0.2.0":              true,
-		"v0.2.0-11-gb7fc3aa": false, // git describe: a source build
-		"v0.2.0-dirty":       false,
-		"v0.2":               false,
-		"nightly":            false,
-		"":                   false,
-		"v0.2.0.1":           false,
+		"v0.2.0":                         true,
+		"0.2.0":                          true,
+		"v2026.09.23-a1b2c3":             true, // what releases are tagged with now
+		"2026.09.23-a1b2c3":              true,
+		"v2026.09.23-a1b2c3f0":           true,  // a longer commit prefix is fine
+		"v0.2.0-11-gb7fc3aa":             false, // git describe: a source build
+		"v0.2.0-dirty":                   false,
+		"v2026.09.23-a1b2c3-11-gdeadbee": false,
+		"v2026.09.23-a1b2c3-dirty":       false,
+		"v2026.09.23-a1b2c":              false, // five characters is not a commit
+		"v2026.9.23-a1b2c3":              false,
+		"v2026.09.23":                    true, // bare date, and the old X.Y.Z shape
+		"v0.2":                           false,
+		"nightly":                        false,
+		"":                               false,
+		"v0.2.0.1":                       false,
 	}
 	for in, want := range cases {
 		if got := isRelease(in); got != want {

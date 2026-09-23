@@ -45,9 +45,14 @@ const (
 )
 
 // releaseRe matches a plain release tag. Source builds report something git
-// describe produced (v0.2.0-11-gb7fc3aa, and -dirty on top), which says
-// nothing about how it compares to a release.
-var releaseRe = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
+// describe produced (v2026.09.23-a1b2c3-11-gb7fc3aa, and -dirty on top),
+// which says nothing about how it compares to a release.
+//
+// Two shapes count: the v<date>-<commit> tags releases are cut with now, and
+// the vX.Y.Z tags published before that, which installed binaries still
+// report as their own version.
+var releaseRe = regexp.MustCompile(
+	`^v?(?:[0-9]+\.[0-9]+\.[0-9]+|[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9a-f]{6,})$`)
 
 // Options configures a run.
 type Options struct {
