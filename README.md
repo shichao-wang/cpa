@@ -131,8 +131,10 @@ arrow-key list of the models the gateway actually advertises, so it cannot be
 typo'd into a model that does not exist, and each row starts on the gateway's
 model for that same slot — mapping everything onto itself is four enters. A
 candidate the gateway would file under another slot says so (`→ haiku`), which
-is what keeps a two-dozen-model catalogue readable. A profile for another agent
-is asked for a single model instead: only Claude Code has slots.
+is what keeps a two-dozen-model catalogue readable. Each row also names the
+provider the gateway files the model under (`[commandcode]`), which is what a
+model resold under a name of its own cannot say for itself. A profile for
+another agent is asked for a single model instead: only Claude Code has slots.
 
 ```console
 $ cpa profile create
@@ -143,14 +145,14 @@ $ cpa profile create
 ? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
 ? opus (Claude Code default: claude-opus-5-5)
   (leave unset — resolve automatically)
-  claude-haiku-4-5 (Haiku 4.5) → haiku
-❯ claude-opus-5 (Opus 5)
-  claude-sonnet-5 (Sonnet 5) → sonnet
-  deepseek-v4-flash → haiku
-  deepseek-v4-pro
-  gpt-6-sol
-? sonnet (Claude Code default: claude-sonnet-5) gpt-6-sol
-? haiku (Claude Code default: claude-haiku-4-5) claude-haiku-4-5 (Haiku 4.5)
+  claude-haiku-4-5 (Haiku 4.5)  [anthropic] → haiku
+❯ claude-opus-5 (Opus 5)  [anthropic]
+  claude-sonnet-5 (Sonnet 5)  [anthropic] → sonnet
+  deepseek-v4-flash  [commandcode] → haiku
+  deepseek-v4-pro  [commandcode]
+  gpt-6-sol  [openai]
+? sonnet (Claude Code default: claude-sonnet-5) gpt-6-sol  [openai]
+? haiku (Claude Code default: claude-haiku-4-5) claude-haiku-4-5 (Haiku 4.5)  [anthropic]
 ? fable (Claude Code default: claude-fable-5-1) (leave unset — resolve automatically)
 
 wrote profile "devbox" to ~/.config/cpa/settings.json
@@ -346,6 +348,10 @@ profile deepseek -> http://127.0.0.1:8317  (4 models)
 
 mapping source: claude aliases
 ```
+
+A row is named the way the picker names it — the id, the display name when the
+gateway provides one, and the provider it files the model under — followed by
+the slots that model serves.
 
 ## Commands
 

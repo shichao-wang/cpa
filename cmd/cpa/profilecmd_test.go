@@ -254,6 +254,18 @@ func TestCandidateLabelHintsAtAnotherSlot(t *testing.T) {
 	}
 }
 
+// The provider rides on the row ahead of the slot hint, so a long row clipped
+// on a narrow terminal loses the hint rather than who serves the model.
+func TestCandidateLabelCarriesTheProvider(t *testing.T) {
+	served := proxy.Model{ID: "deepseek-v4-flash", OwnedBy: "commandcode"}
+	if got := candidateLabel(served, "opus"); got != "deepseek-v4-flash  [commandcode] → haiku" {
+		t.Errorf("candidateLabel = %q, want the provider before the hint", got)
+	}
+	if got := candidateLabel(served, "haiku"); got != "deepseek-v4-flash  [commandcode]" {
+		t.Errorf("candidateLabel = %q, want the provider on its own row too", got)
+	}
+}
+
 // The options offered at the prompt have to be the models the launcher will
 // actually pick, or the preview would lie.
 func TestMatchingAgreesWithTheLauncher(t *testing.T) {
