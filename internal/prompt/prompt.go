@@ -161,6 +161,16 @@ func (p *Prompter) Choose(label string, options []string) (int, error) {
 // ChooseDefault is Choose with the highlight starting somewhere other than the
 // first option, which is how an already-configured value stays selected.
 func (p *Prompter) ChooseDefault(label string, options []string, def int) (int, error) {
+	return p.choose(label, options, def, false)
+}
+
+// ChooseSearchDefault filters options as characters are typed, but returns
+// their original index so callers can still map the answer to its value.
+func (p *Prompter) ChooseSearchDefault(label string, options []string, def int) (int, error) {
+	return p.choose(label, options, def, true)
+}
+
+func (p *Prompter) choose(label string, options []string, def int, searchable bool) (int, error) {
 	defer func() { p.drawn = 0 }()
 
 	if len(options) == 0 {
@@ -168,26 +178,75 @@ func (p *Prompter) ChooseDefault(label string, options []string, def int) (int, 
 	}
 	l := NewList(options, p.listHeight())
 	l.SetIndex(def)
+	selected := l.Index()
+	indices := make([]int, len(options))
+	for i := range indices {
+		indices[i] = i
+	}
+	var query []rune
 	for {
-		p.drawList(label, l)
-		k, _, err := p.dec.Next()
+		if searchable {
+			p.drawSearchList(label, l, string(query))
+		} else {
+			p.drawList(label, l)
+		}
+		k, r, err := p.dec.Next()
 		if err != nil {
 			p.abort()
 			return -1, ErrEOF
 		}
 		switch k {
 		case KeyEnter:
-			p.endChoose(label, l.Selected())
-			return l.Index(), nil
+			if l.Len() == 0 {
+				continue
+			}
+			picked := indices[l.Index()]
+			p.endChoose(label, options[picked])
+			return picked, nil
 		case KeyInterrupt:
 			p.abort()
 			return -1, ErrInterrupted
 		case KeyBack:
 			p.eraseActive()
 			return -1, ErrBack
+		case KeyRune, KeyBackspace:
+			if searchable {
+				if l.Len() > 0 {
+					selected = indices[l.Index()]
+				}
+				if k == KeyRune {
+					query = append(query, r)
+				} else if len(query) > 0 {
+					query = query[:len(query)-1]
+				} else {
+					continue
+				}
+				l, indices = searchOptions(options, string(query), selected, p.listHeight())
+				continue
+			}
 		}
 		l.Apply(k)
 	}
+}
+
+func searchOptions(options []string, query string, selected, height int) (*List, []int) {
+	var labels []string
+	var indices []int
+	selectedIndex := 0
+	query = strings.ToLower(query)
+	for i, option := range options {
+		if !strings.Contains(strings.ToLower(option), query) {
+			continue
+		}
+		if i == selected {
+			selectedIndex = len(labels)
+		}
+		labels = append(labels, option)
+		indices = append(indices, i)
+	}
+	l := NewList(labels, height)
+	l.SetIndex(selectedIndex)
+	return l, indices
 }
 
 // Confirm asks a yes/no question. The affirmative option is first, so it is
@@ -251,10 +310,50 @@ func (p *Prompter) endInput(label, value string) {
 }
 
 func (p *Prompter) drawList(label string, l *List) {
+	p.drawListWithSearch(label, l, "", false)
+}
+
+func (p *Prompter) drawSearchList(label string, l *List, query string) {
+	p.drawListWithSearch(label, l, query, true)
+}
+
+func (p *Prompter) drawListWithSearch(label string, l *List, query string, searchable bool) {
 	p.rewind()
 	width := p.width()
-	fmt.Fprintf(p.out, "\r\x1b[K%s\x1b[1m?\x1b[0m %s", p.indent, clip(label, width-len(p.indent)-2))
+	if searchable {
+		search := " [type to search]"
+		if query != "" {
+			search = " [search: " + query + "]"
+		}
+		avail := max(width-len(p.indent)-2, 1)
+		// Conservatively count non-ASCII runes as two columns so a wide
+		// search term cannot wrap the heading and break row-based redraws.
+		if searchColumns(search) > avail {
+			prefix := "…"
+			if avail == 1 {
+				prefix = "."
+			}
+			r := []rune(search)
+			for len(r) > 0 && searchColumns(prefix+string(r)) > avail {
+				r = r[1:]
+			}
+			search = prefix + string(r)
+		}
+		if remaining := avail - searchColumns(search); remaining > 1 {
+			// clip uses a wide ellipsis, so leave it one extra column.
+			label = clip(label, remaining-1) + search
+		} else {
+			label = search
+		}
+	} else {
+		label = clip(label, max(width-len(p.indent)-2, 1))
+	}
+	fmt.Fprintf(p.out, "\r\x1b[K%s\x1b[1m?\x1b[0m %s", p.indent, label)
 	n := 0
+	if searchable && l.Len() == 0 {
+		fmt.Fprintf(p.out, "\n\r\x1b[K%s  %s", p.indent, clip("No matching models", max(width-len(p.indent)-2, 1)))
+		n++
+	}
 	// A window shorter than the list says so on its own first and last rows,
 	// dimmed; otherwise the list looks complete at the bottom edge.
 	if above, _ := l.Hidden(); above > 0 {
@@ -316,6 +415,17 @@ func clip(s string, n int) string {
 		return s
 	}
 	return string(r[:n-1]) + "…"
+}
+
+func searchColumns(s string) int {
+	columns := 0
+	for _, r := range s {
+		columns++
+		if r > 127 {
+			columns++
+		}
+	}
+	return columns
 }
 
 func (p *Prompter) endChoose(label, value string) {
