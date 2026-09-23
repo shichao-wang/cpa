@@ -100,6 +100,38 @@ $ git clone https://github.com/shichao-wang/cpa && cd cpa
 $ make install
 ```
 
+### 更新
+
+`cpa` 没有自更新命令，按当初的装法更新。
+
+```console
+# release 安装：重跑安装脚本——它解析最新 tag、校验和，然后替换二进制
+$ curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpa/main/install.sh | bash
+
+# 源码安装，在自己的 clone 里
+$ make upgrade
+```
+
+`make upgrade` 遇到未提交的改动会直接拒绝；随后快进 clone、用一贯的
+`-ldflags` 重新构建，再把新二进制改名到位——正在运行的 `cpa` 不会被写了一半的
+文件替换掉。它会打印更新前后的版本：
+
+```console
+$ make upgrade
+cpa v0.2.0-7-gfbcd563 -> cpa v0.2.0-11-gabc1234
+```
+
+两条路写的是同一个文件 `~/.local/bin/cpa`：`make install`（`make upgrade`
+内部调用的就是它）默认 `PREFIX=$(HOME)/.local`，所以源码安装会落在
+`install.sh` 本来会写的位置。`PREFIX` 相当于 Makefile 版的 `CPA_INSTALL_DIR`：
+
+```console
+$ make upgrade PREFIX=/usr/local
+```
+
+clone 跟的是 `main`，而 `install.sh` 只会给你最新的 **tag**，所以两次发版之间
+clone 反而是更新的那个。
+
 ## 快速开始
 
 ```console

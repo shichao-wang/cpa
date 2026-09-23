@@ -2,14 +2,40 @@ BIN     := cpa
 PKG     := github.com/shichao-wang/cpa
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
+PREFIX  ?= $(HOME)/.local
+BINDIR  := $(PREFIX)/bin
 
-.PHONY: build install test fmt vet check dist clean
+.PHONY: build install upgrade test fmt vet check dist clean
 
 build:
 	go build -ldflags '$(LDFLAGS)' -o bin/$(BIN) ./cmd/$(BIN)
 
-install:
-	go install -ldflags '$(LDFLAGS)' ./cmd/$(BIN)
+# Build this checkout and put it at $(BINDIR)/$(BIN) — the same path
+# install.sh installs to, so both routes update one binary. The copy is
+# staged beside the target and renamed into place, so a running cpa is
+# never replaced by a half-written file.
+install: build
+	@mkdir -p '$(BINDIR)'
+	@stage='$(BINDIR)/.$(BIN).tmp.$$$$'; \
+		cp bin/$(BIN) "$$stage" && chmod 0755 "$$stage" && mv -f "$$stage" '$(BINDIR)/$(BIN)'
+	@echo "installed $(BINDIR)/$(BIN) ($(VERSION))"
+	@case ":$$PATH:" in *":$(BINDIR):"*) ;; *) \
+		echo "note: $(BINDIR) is not on your PATH; add it to run $(BIN)";; esac
+
+# Update a source install in place: fast-forward this checkout, then rebuild
+# and reinstall. Refuses to run over uncommitted changes, so local edits never
+# end up half-built into the binary you install.
+upgrade:
+	@git rev-parse --git-dir >/dev/null 2>&1 || { \
+		echo "upgrade: not a git checkout — clone the repo, or re-run install.sh" >&2; exit 1; }
+	@git diff --quiet && git diff --cached --quiet || { \
+		echo "upgrade: uncommitted changes; commit or stash them first" >&2; exit 1; }
+	@before='not installed'; \
+		[ -x '$(BINDIR)/$(BIN)' ] && before="$$('$(BINDIR)/$(BIN)' version)"; \
+		git pull --ff-only || exit 1; \
+		$(MAKE) --no-print-directory install || exit 1; \
+		after="$$('$(BINDIR)/$(BIN)' version)"; \
+		printf '%s -> %s\n' "$$before" "$$after"
 
 test:
 	go test ./...

@@ -112,6 +112,41 @@ $ git clone https://github.com/shichao-wang/cpa && cd cpa
 $ make install
 ```
 
+### Updating
+
+There is no self-update command; you update the way you installed.
+
+```console
+# release install: re-run the installer — it resolves the newest tag,
+# verifies its checksum, and replaces the binary
+$ curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpa/main/install.sh | bash
+
+# source install, from your clone
+$ make upgrade
+```
+
+`make upgrade` refuses to run over uncommitted changes, fast-forwards the
+checkout, rebuilds with the usual `-ldflags`, and renames the new binary into
+place — so a `cpa` that is running right now is never replaced by a
+half-written file. It prints the version it moved from and to:
+
+```console
+$ make upgrade
+cpa v0.2.0-7-gfbcd563 -> cpa v0.2.0-11-gabc1234
+```
+
+Both routes write the same file, `~/.local/bin/cpa`: `make install` (which
+`make upgrade` calls for you) defaults to `PREFIX=$(HOME)/.local`, so a source
+install lands where `install.sh` would have put it. `PREFIX` is the Makefile's
+counterpart to `CPA_INSTALL_DIR`:
+
+```console
+$ make upgrade PREFIX=/usr/local
+```
+
+A clone tracks `main`, while `install.sh` only ever gets you the newest
+**tag** — so between releases the clone is the newer of the two.
+
 ## Quick start
 
 ```console
