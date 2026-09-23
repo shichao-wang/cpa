@@ -3,6 +3,7 @@ package launch
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -415,5 +416,100 @@ func TestPlanNeverWritesClaudeConfig(t *testing.T) {
 	}
 	if string(after) != string(original) {
 		t.Fatalf("claude settings.json was modified:\n%s", after)
+	}
+}
+
+func TestBuildDerivesPickerForExistingProfiles(t *testing.T) {
+	cases := []struct {
+		name      string
+		profile   *config.Profile
+		available []proxy.Model
+		want      []PickerRow
+	}{
+		{
+			name: "old pinned profile",
+			profile: &config.Profile{
+				Models: map[string]string{"opus": "claude-opus-5", "haiku": "claude-haiku-4-5"},
+			},
+			want: []PickerRow{{Model: "claude-opus-5"}, {Model: "claude-haiku-4-5"}},
+		},
+		{
+			name:      "family discovered at launch",
+			profile:   &config.Profile{Family: "deepseek"},
+			available: models("deepseek-flash", "gpt-6-sol", "claude-opus-5"),
+			want:      []PickerRow{{Model: "deepseek-flash", BehavesAs: "claude-opus-5-5"}},
+		},
+		{
+			name: "catch-all and custom option remain reachable",
+			profile: &config.Profile{
+				Model:             "deepseek-flash",
+				CustomModelOption: "gpt-6-luna",
+			},
+			want: []PickerRow{{Model: "deepseek-flash"}, {Model: "gpt-6-luna"}},
+		},
+		{
+			name: "context window does not get overridden",
+			profile: &config.Profile{
+				Models:        map[string]string{"opus": "gpt-6-sol"},
+				ContextWindow: 1000000,
+			},
+			want: []PickerRow{{Model: "gpt-6-sol"}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := testConfig()
+			p := cfg.Profiles["deepseek"]
+			p.Models, p.Family, p.Model = tc.profile.Models, tc.profile.Family, tc.profile.Model
+			p.CustomModelOption, p.ContextWindow = tc.profile.CustomModelOption, tc.profile.ContextWindow
+			plan, err := Build(cfg, "claude", "", nil, Options{Available: tc.available})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var doc struct {
+				ModelPicker struct {
+					ReplaceBuiltInOptions bool        `json:"replaceBuiltInOptions"`
+					Options               []PickerRow `json:"options"`
+				} `json:"modelPicker"`
+			}
+			if err := json.Unmarshal(plan.SettingsBlob, &doc); err != nil {
+				t.Fatal(err)
+			}
+			if !doc.ModelPicker.ReplaceBuiltInOptions {
+				t.Errorf("modelPicker does not replace built-ins: %s", plan.SettingsBlob)
+			}
+			if !reflect.DeepEqual(doc.ModelPicker.Options, tc.want) {
+				t.Errorf("picker rows = %v, want %v", doc.ModelPicker.Options, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildRespectsExplicitModelPicker(t *testing.T) {
+	for _, source := range []string{"defaults", "profile"} {
+		t.Run(source, func(t *testing.T) {
+			cfg := testConfig()
+			manual := map[string]interface{}{
+				"modelPicker": map[string]interface{}{
+					"options": []interface{}{map[string]interface{}{"model": "manual-model"}},
+				},
+			}
+			if source == "defaults" {
+				cfg.Defaults.ClaudeSettings = manual
+			} else {
+				cfg.Profiles["deepseek"].ClaudeSettings = manual
+			}
+			plan, err := Build(cfg, "claude", "", nil, Options{Available: models("deepseek-flash")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var doc map[string]interface{}
+			if err := json.Unmarshal(plan.SettingsBlob, &doc); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(doc["modelPicker"], manual["modelPicker"]) {
+				t.Errorf("explicit picker overwritten: %s", plan.SettingsBlob)
+			}
+		})
 	}
 }

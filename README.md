@@ -221,26 +221,38 @@ them: the row is labelled by what Claude Code *means*, so the choice reads as
 "Claude Code's opus becomes this". A row left unset pins nothing and lets the
 launcher resolve that slot on its own.
 
-Those answers also decide what Claude Code is told about the gateway's ids. One
-only your gateway serves is one Claude Code has never heard of: at each launch
-it warns that the id is not described by the model catalogue it ships with, and
-assumes 200k tokens for it. The slot mapping already says what each such id
-stands in for, so `create` writes that down — a `claudeSettings.modelPicker`
-row per mapped slot, naming the gateway id and the Claude model it fills in for
-— and prints what it wrote. Slots pinned to Claude Code's own ids are left out:
-that namespace belongs to the agent, and a row claiming `claude-opus-5` behaves
-as `claude-opus-5-5` would be cpa talking over it. A model serving two slots is
-declared once, as the stronger one, because an id carries one `behavesAs` and
-opus is the larger claim.
+Those answers also decide what Claude Code's model picker offers, and that is
+one decision rather than two. `create` writes a `claudeSettings.modelPicker`
+carrying `replaceBuiltInOptions` and one row per model the profile can route
+to, so `/model` lists Default and those rows instead of the built-in lineup
+and every model advertised by the gateway through `/v1/models`. The picker
+only offers the models mapped by this profile. A row also carries `behavesAs` for an id Claude Code
+has never heard of: without it, Claude Code calls the id unknown at every
+launch and assumes 200k tokens for it, while a row names the Claude model the
+id fills in for, which the slot mapping already said. A slot pinned to Claude
+Code's own id gets its row but no claim — that namespace belongs to the agent,
+and a row saying `claude-opus-5` behaves as `claude-opus-5-5` would be cpa
+talking over it. A model serving two slots is listed once, as the stronger
+one, because an id carries one `behavesAs` and opus is the larger claim. Since
+the rows are the whole list, a `label` is written only where `modelNames`
+asked for one: the picker otherwise names each row from Claude Code's own
+catalogue, which is the better name when there is one.
 
 One trade-off comes with it. `behavesAs` makes Claude Code read the window off
 the model a row names, and that reading outranks
 `CLAUDE_CODE_MAX_CONTEXT_TOKENS`: measured, a profile asking for 1M through
-`contextWindow` believes 200k once rows are added. Each knob silences the
+`contextWindow` believes 200k once the claim is added. Each knob silences the
 warning on its own, so the one that also widens the window is the one that gets
-to stay — a profile with a `contextWindow` gets no rows, and one carrying rows
-by hand next to a `contextWindow` is told at launch which of the two it will
-get. A `[1m]` suffix sidesteps the choice: Claude Code reads it off the id.
+to stay — a profile with a `contextWindow` gets its rows without any
+`behavesAs`, and one carrying `behavesAs` rows by hand next to a
+`contextWindow` is told at launch which of the two it will get. A `[1m]`
+suffix sidesteps the choice: Claude Code reads it off the id.
+
+Existing profiles without a `modelPicker` are covered too: at launch, cpa
+builds the same shortlist from the resolved slot mapping (including `family`
+matches), a catch-all `model`, and `customModelOption`. A manually configured
+`modelPicker` in either default or profile `claudeSettings` is left untouched;
+cpa does not overwrite the user's choice.
 
 The prompts are line edited: left/right move the cursor, home/end and
 ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase, ctrl-c abandons the
@@ -319,12 +331,12 @@ your editor reads.
 | `family` | Substring match against the gateway's `/v1/models` listing. It fills Claude Code's slots, so it also makes the profile a Claude Code one. |
 | `model` | Catch-all model for every slot not otherwise set. |
 | `models` | Pin slots by hand: `{"opus": …, "sonnet": …, "haiku": …, "fable": …}`. Pinning skips discovery entirely. |
-| `modelNames` | Override the label shown in Claude Code's model picker, per slot. |
+| `modelNames` | Override the label shown in Claude Code's model picker, per slot; `create` writes it into the row's `label`. |
 | `subagentModel` | Model for subagents (`CLAUDE_CODE_SUBAGENT_MODEL`). |
-| `contextWindow` | `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. A `[1m]` model suffix implies `1000000`. `behavesAs` rows outrank it — see above. |
+| `contextWindow` | `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. A `[1m]` model suffix implies `1000000`. `behavesAs` outranks it — see above. |
 | `customModelOption` | Surface one model as a hand-picked entry in the picker. |
 | `env` | Extra environment variables; these win over generated ones. |
-| `claudeSettings` | Extra Claude Code settings, merged into the `--settings` document. `cpa profile create` writes the derived `modelPicker` behavesAs rows here. |
+| `claudeSettings` | Extra Claude Code settings, merged into the `--settings` document. `cpa profile create` writes the derived `modelPicker` here: one row per mapped model, with `replaceBuiltInOptions`. |
 | `args` | Extra arguments for the agent. |
 
 Keep keys out of the file where you can — `apiKeyEnv` and `apiKeyCmd` exist so
