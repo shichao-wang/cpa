@@ -73,7 +73,7 @@ func cmdInit(args []string) error {
 	fmt.Println("  1. point baseUrl at your CPA instance and set the key, e.g.")
 	fmt.Println("       export CPA_API_KEY=sk-...            # for apiKeyEnv")
 	fmt.Println("  2. cpa doctor                            # check the endpoint")
-	fmt.Println("  3. cpa claude --profile deepseek --dry-run")
+	fmt.Println("  3. cpa --profile deepseek --dry-run claude")
 	return nil
 }
 

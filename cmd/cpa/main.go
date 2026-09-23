@@ -1,8 +1,8 @@
 // Command cpa launches coding agents against a CLIProxyAPI (CPA) gateway,
 // selected by named profiles.
 //
-//	cpa claude --profile deepseek      # Claude Code, upstream all-DeepSeek
-//	cpa claude --profile gpt           # Claude Code, upstream all-GPT
+//	cpa --profile deepseek claude      # Claude Code, upstream all-DeepSeek
+//	cpa -p gpt claude                  # Claude Code, upstream all-GPT
 //
 // Profiles live in cpa's own settings file, $XDG_CONFIG_HOME/cpa/settings.json
 // (~/.config/cpa/settings.json by default). Launching hands the profile to the
@@ -25,7 +25,7 @@ var version = "0.1.0"
 const usage = `cpa - launch coding agents against a CLIProxyAPI (CPA) gateway
 
 USAGE
-  cpa <agent> [flags] [-- <agent args>]    launch an agent with a profile
+  cpa [flags] <agent> [agent args]         launch an agent with a profile
   cpa models  [--profile <name>]           list models the gateway advertises
   cpa profile list                         list configured profiles
   cpa profile create                       create one interactively
@@ -36,14 +36,14 @@ USAGE
   cpa version                              print the version
 
 EXAMPLES
-  cpa claude --profile deepseek
-  cpa claude --profile gpt -p "explain this repo"
-  cpa claude --profile deepseek --dry-run
+  cpa --profile deepseek claude
+  cpa -p gpt claude -p "explain this repo"
+  cpa --profile deepseek --dry-run claude
   cpa models --profile deepseek
   cpa profile create
 
 FLAGS
-  --profile <name>   profile to launch (default: "defaultProfile")
+  --profile <name>, -p <name>  profile to launch (default: "defaultProfile")
   --dry-run          print the command and environment changes, launch nothing
   --no-discover      skip querying the gateway for its model catalogue
   --json             machine-readable output for "models" and "profile list"
@@ -56,8 +56,9 @@ FLAGS
   --check, --tag, --force
                      "cpa upgrade" only; see "cpa upgrade --help"
 
-Unrecognized arguments are passed straight through to the agent, so
-` + "`cpa claude --profile deepseek --resume`" + ` works as you would expect.
+Launch flags belong before the agent name. Everything after it is passed to
+that agent unchanged, including -p and --profile. For example:
+  cpa -p deepseek claude -p "explain this repo"
 
 CONFIGURATION
   Settings are read from $XDG_CONFIG_HOME/cpa/settings.json
@@ -102,16 +103,21 @@ func main() {
 	case "upgrade":
 		err = cmdUpgrade(ctx, args[1:])
 	case "run":
-		if len(args) < 2 {
-			fatal("run needs an agent name, e.g. `cpa run claude --profile deepseek`")
-		}
-		err = cmdLaunch(ctx, args[1], args[2:])
+		err = launchFromArgs(ctx, args[1:])
 	default:
-		err = cmdLaunch(ctx, args[0], args[1:])
+		err = launchFromArgs(ctx, args)
 	}
 	if err != nil {
 		fatal(err.Error())
 	}
+}
+
+func launchFromArgs(ctx context.Context, args []string) error {
+	agent, f, err := parseLaunchArgs(args)
+	if err != nil {
+		return err
+	}
+	return cmdLaunch(ctx, agent, f)
 }
 
 func fatal(msg string) {

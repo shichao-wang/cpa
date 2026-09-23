@@ -3,9 +3,9 @@
 **基于 Profile 的 Agent 启动器，面向 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)（CPA）网关。**
 
 ```console
-$ cpa claude --profile deepseek     # 上游全 DeepSeek 的 Claude Code
-$ cpa claude --profile gpt          # 上游全 GPT 的 Claude Code
-$ cpa claude --profile deepseek -p "解释一下这个仓库"
+$ cpa --profile deepseek claude     # 上游全 DeepSeek 的 Claude Code
+$ cpa --profile gpt claude          # 上游全 GPT 的 Claude Code
+$ cpa -p deepseek claude -p "解释一下这个仓库"
 ```
 
 一个网关，多个上游。`cpa` 按命名 profile 逐次选择上游，并且**绝不改写你的
@@ -153,7 +153,7 @@ $ make install PREFIX=/usr/local
 $ cpa init                     # 写入 ~/.config/cpa/settings.json
 $ export CPA_API_KEY=sk-...    # 你的网关要求的 key
 $ cpa doctor                   # 确认每个 profile 的端点可达
-$ cpa claude --profile deepseek
+$ cpa --profile deepseek claude
 ```
 
 `cpa profile create` 会逐项问你：名字、描述、这个 profile 服务哪个 agent、网关
@@ -191,7 +191,7 @@ wrote profile "devbox" to ~/.config/cpa/settings.json
   (Claude Code will no longer call those ids unknown; the 200k window it assumes
    is unchanged — set the profile's contextWindow if the upstream offers more)
   cpa profile list
-  cpa claude --profile devbox
+  cpa --profile devbox claude
 ```
 
 行名用的 id 来自 Claude Code 自己的别名表，内置在 cpa 里（2.1.280：`opus` →
@@ -324,7 +324,7 @@ $ cpa import-claude --name mygateway
 agent 去启动它是报错，而不是把 Claude Code 的设置悄悄喂给读不懂它的程序：
 
 ```console
-$ cpa codex --profile deepseek
+$ cpa --profile deepseek codex
 cpa: profile "deepseek" is for agent "claude" (kind "claude"); "codex" is kind "openai"
 a profile is written for one downstream application — its model slots and its settings mean nothing to another — so cpa will not apply it here.
 launch it with an agent of kind "claude", or move the profile over with "agent": "codex"
@@ -376,7 +376,7 @@ mapping source: claude aliases
 
 | 命令 | 用途 |
 |---|---|
-| `cpa <agent> [flags] [-- args]` | 用某个 profile 启动 agent。 |
+| `cpa [flags] <agent> [agent args]` | 用某个 profile 启动 agent。 |
 | `cpa models --profile X` | 列出网关模型与槽位映射。 |
 | `cpa profile list [--json]` | 列出已配置的 profile。 |
 | `cpa profile create` | 新增一个：有终端时交互，否则走参数。 |
@@ -386,10 +386,11 @@ mapping source: claude aliases
 | `cpa upgrade [--check]` | 从 GitHub release 更新 cpa。 |
 | `cpa version` | 打印版本。 |
 
-参数：`--profile`、`--dry-run`、`--no-discover`、`--json`、`--name`、
-`--agent`、`--file`、`--allow-settings-conflict`。未识别的参数一律透传给
-agent，所以 `cpa claude --profile deepseek --resume` 就是你想的那样。`cpa
-profile create` 另有 `--description`、`--base-url`、`--api-key`、`--family`、
+启动参数（`--profile` / `-p`、`--dry-run`、`--no-discover`、
+`--allow-settings-conflict`）放在 agent 名称前；其后参数原样透传。
+例如 `cpa -p deepseek claude -p "解释一下这个仓库"` 中第一个 `-p` 属于 cpa，
+第二个属于 Claude Code。其他子命令还支持 `--json`、`--name`、`--agent`、
+`--file` 等参数。`cpa profile create` 另有 `--description`、`--base-url`、`--api-key`、`--family`、
 `--model`、`--force`，用来在没有终端时回答它的提问。`--family` 会把交互列表收窄到
 id 含该子串的模型，并记录进 profile，供启动器给未 pin 的槽位兜底。
 

@@ -3,9 +3,9 @@
 **Profile-based launcher for coding agents behind a [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) gateway.**
 
 ```console
-$ cpa claude --profile deepseek     # Claude Code, upstream all-DeepSeek
-$ cpa claude --profile gpt          # Claude Code, upstream all-GPT
-$ cpa claude --profile deepseek -p "explain this repo"
+$ cpa --profile deepseek claude     # Claude Code, upstream all-DeepSeek
+$ cpa --profile gpt claude          # Claude Code, upstream all-GPT
+$ cpa -p deepseek claude -p "explain this repo"
 ```
 
 One gateway, many upstreams. `cpa` picks the upstream per invocation from
@@ -169,7 +169,7 @@ $ make install PREFIX=/usr/local
 $ cpa init                     # writes ~/.config/cpa/settings.json
 $ export CPA_API_KEY=sk-...    # whatever your gateway expects
 $ cpa doctor                   # confirm each profile's endpoint answers
-$ cpa claude --profile deepseek
+$ cpa --profile deepseek claude
 ```
 
 `cpa profile create` walks you through a new profile: name, description, the
@@ -211,7 +211,7 @@ wrote profile "devbox" to ~/.config/cpa/settings.json
   (Claude Code will no longer call those ids unknown; the 200k window it assumes
    is unchanged — set the profile's contextWindow if the upstream offers more)
   cpa profile list
-  cpa claude --profile devbox
+  cpa --profile devbox claude
 ```
 
 The ids the rows are named by are Claude Code's own alias table, built into cpa
@@ -364,7 +364,7 @@ another, so a profile fits a single agent — and launching it with an agent of 
 different kind is an error rather than a silent misapplication:
 
 ```console
-$ cpa codex --profile deepseek
+$ cpa --profile deepseek codex
 cpa: profile "deepseek" is for agent "claude" (kind "claude"); "codex" is kind "openai"
 a profile is written for one downstream application — its model slots and its settings mean nothing to another — so cpa will not apply it here.
 launch it with an agent of kind "claude", or move the profile over with "agent": "codex"
@@ -420,7 +420,7 @@ the slots that model serves.
 
 | Command | Purpose |
 |---|---|
-| `cpa <agent> [flags] [-- args]` | Launch an agent with a profile. |
+| `cpa [flags] <agent> [agent args]` | Launch an agent with a profile. |
 | `cpa models --profile X` | List the gateway's models and the slot mapping. |
 | `cpa profile list [--json]` | List configured profiles. |
 | `cpa profile create` | Add one: prompts on a terminal, flags otherwise. |
@@ -430,11 +430,12 @@ the slots that model serves.
 | `cpa upgrade [--check]` | Update cpa from its GitHub releases. |
 | `cpa version` | Print the version. |
 
-Flags: `--profile`, `--dry-run`, `--no-discover`, `--json`, `--name`,
-`--agent`, `--file`, `--allow-settings-conflict`. Anything unrecognized is
-forwarded to the agent, so `cpa claude --profile deepseek --resume` does what
-you expect. `cpa profile create` additionally takes `--description`,
-`--base-url`, `--api-key`, `--family`, `--model` and `--force`, which answer
+Launch flags (`--profile` / `-p`, `--dry-run`, `--no-discover`,
+`--allow-settings-conflict`) go before the agent name. Everything after it is
+forwarded unchanged: `cpa -p deepseek claude -p "explain this repo"` uses the
+first `-p` for cpa and the second for Claude Code. Other commands also accept
+`--json`, `--name`, `--agent`, and `--file` as documented. `cpa profile create`
+additionally takes `--description`, `--base-url`, `--api-key`, `--family`, `--model` and `--force`, which answer
 its prompts without a terminal. `--family` narrows the interactive list to the
 models whose id contains that substring and records it on the profile, where
 the launcher falls back to it for any slot left unpinned.
