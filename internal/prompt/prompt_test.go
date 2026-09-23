@@ -2,8 +2,11 @@ package prompt
 
 import (
 	"bytes"
+	"errors"
+	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // keys decodes a byte stream into the sequence of keys it carries.
@@ -69,6 +72,8 @@ func keyName(k Key) string {
 		return "<kill-word>"
 	case KeyInterrupt:
 		return "<interrupt>"
+	case KeyBack:
+		return "<back>"
 	case KeyUnknown:
 		return "<unknown>"
 	}
@@ -111,11 +116,11 @@ func TestEnterVariantsDecode(t *testing.T) {
 	}
 }
 
-// A bare escape must not swallow the keypress that follows it.
-func TestLoneEscapeIsDropped(t *testing.T) {
+// A bare escape means back, without swallowing the keypress that follows it.
+func TestLoneEscapeReturnsBackAndPreservesFollowingKey(t *testing.T) {
 	got := strings.Join(typed(t, "\x1ba"), " ")
-	if got != "<unknown> a" {
-		t.Errorf("decoded as %q, want the escape ignored and the letter kept", got)
+	if got != "<back> a" {
+		t.Errorf("decoded as %q, want back followed by the letter", got)
 	}
 }
 
@@ -339,6 +344,114 @@ func TestLineWindowClampsAtTheEnds(t *testing.T) {
 	// empty line, and no room at all
 	if start, end := lineWindow(nil, 0, 0); start != 0 || end != 0 {
 		t.Errorf("empty: window = [%d,%d), want [0,0)", start, end)
+	}
+}
+
+func TestStandaloneEscapeUsesTerminalFDTimeout(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	if _, err := w.Write([]byte("\x1b")); err != nil {
+		t.Fatal(err)
+	}
+
+	d := newTerminalDecoder(r, int(r.Fd()))
+	start := time.Now()
+	k, _, err := d.Next()
+	if err != nil {
+		t.Fatalf("Next() error = %v", err)
+	}
+	if k != KeyBack {
+		t.Fatalf("Next() key = %v, want KeyBack", k)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("standalone ESC took %v to decode; want a brief poll timeout", elapsed)
+	}
+}
+
+func TestInputAndChooseReturnErrBackOnEscape(t *testing.T) {
+	var out bytes.Buffer
+	p := &Prompter{dec: newDecoder(strings.NewReader("\x1b")), out: &out}
+	if _, err := p.Input("Name", "", nil); !errors.Is(err, ErrBack) {
+		t.Errorf("Input error = %v, want ErrBack", err)
+	}
+	if strings.Contains(out.String(), "^C") {
+		t.Error("escape was rendered as an interrupt")
+	}
+
+	out.Reset()
+	p = &Prompter{dec: newDecoder(strings.NewReader("\x1b")), out: &out}
+	if _, err := p.Choose("Model", []string{"a", "b"}); !errors.Is(err, ErrBack) {
+		t.Errorf("Choose error = %v, want ErrBack", err)
+	}
+	if strings.Contains(out.String(), "^C") {
+		t.Error("escape was rendered as an interrupt")
+	}
+}
+
+func TestPromptMarkersIndentAndSection(t *testing.T) {
+	var out bytes.Buffer
+	p := &Prompter{out: &out}
+	p.SetIndent(2)
+	p.endInput("Name", "sample")
+	p.Section("Model settings")
+	p.drawInput("Model", NewEditor(""), "")
+
+	got := out.String()
+	for _, want := range []string{
+		"  \x1b[1m✓\x1b[0m Name sample",
+		"  \x1b[1mModel settings\x1b[0m",
+		"  \x1b[1m?\x1b[0m Model",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("rendered output does not contain %q: %q", want, got)
+		}
+	}
+}
+
+func TestBackErasesPriorAnswerAndInterveningSections(t *testing.T) {
+	var out bytes.Buffer
+	p := &Prompter{out: &out}
+	p.endInput("Name", "sample")
+	p.Section("Model settings")
+	p.drawInput("Model", NewEditor(""), "")
+	p.eraseActive()
+	p.Back()
+
+	if !strings.Contains(out.String(), "\x1b[2A\r\x1b[K\x1b[J") {
+		t.Errorf("Back did not erase through the intervening section: %q", out.String())
+	}
+}
+
+func TestConfirmedAnswersStayOnOneRow(t *testing.T) {
+	var out bytes.Buffer
+	p := &Prompter{out: &out}
+	long := strings.Repeat("x", 200)
+	p.endInput("Gateway base URL", long)
+	p.endChoose("opus", long)
+	p.Back()
+	for _, row := range strings.Split(out.String(), "\r\n")[:2] {
+		if strings.Contains(row, long) || !strings.Contains(row, "…") {
+			t.Errorf("long answer was not clipped to one row: %q", row)
+		}
+	}
+	if !strings.HasSuffix(out.String(), "\x1b[1A\r\x1b[K\x1b[J") {
+		t.Errorf("Back should rewind exactly one confirmed row: %q", out.String())
+	}
+}
+
+func TestEscapeAfterValidationErrorRewindsOneMessageRow(t *testing.T) {
+	var out bytes.Buffer
+	p := &Prompter{out: &out, dec: newDecoder(strings.NewReader("bad\r\x1b"))}
+	_, err := p.Input("Gateway base URL", "", func(string) error { return errors.New("invalid address") })
+	if !errors.Is(err, ErrBack) {
+		t.Fatalf("Input error = %v, want ErrBack", err)
+	}
+	if strings.Contains(out.String(), "\x1b8") || !strings.HasSuffix(out.String(), "\x1b[1A\r\x1b[K\x1b[J") {
+		t.Errorf("validation message left the cursor on the wrong row: %q", out.String())
 	}
 }
 

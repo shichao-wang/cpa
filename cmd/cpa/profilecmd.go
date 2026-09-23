@@ -43,8 +43,8 @@ terminal (a pipe, a script, CI) there are no prompts at all: every field
 comes from the flags above, and a missing required one is an error.
 
 The prompts are line edited: left/right move the cursor, home/end and
-ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase, and ctrl-c abandons
-the profile without writing anything.
+ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase. Esc goes back to
+the previous question; ctrl-c abandons the profile without writing anything.
 `
 
 // cmdProfile dispatches the `cpa profile` subcommands.
@@ -153,132 +153,10 @@ func cmdProfileCreate(ctx context.Context, args []string) error {
 	}
 	defer pr.Close()
 
-	if err := promptBasics(pr, &name, p); err != nil {
+	if err := interactiveProfile(ctx, pr, &name, p, f.noDiscover); err != nil {
 		return err
 	}
-	if !f.noDiscover {
-		if err := promptModels(ctx, pr, p); err != nil {
-			return err
-		}
-	}
 	return commitProfile(ctx, path, name, p, f, pr)
-}
-
-// promptBasics collects the fields that do not depend on the gateway. The base
-// URL arrives prefilled with the usual local gateway, so pressing enter
-// through the form still produces a working profile.
-func promptBasics(pr *prompt.Prompter, name *string, p *config.Profile) error {
-	if p.BaseURL == "" {
-		p.BaseURL = "http://127.0.0.1:8317"
-	}
-
-	picked, err := pr.Input("Profile name", *name, notBlank("a profile needs a name"))
-	if err != nil {
-		return aborted(err)
-	}
-	*name = picked
-
-	// The key need not be typed: the env: and cmd: shorthands are resolved at
-	// launch, which keeps the secret out of a file you might commit.
-	if p.Description, err = pr.Input("Description (optional)", p.Description, nil); err != nil {
-		return aborted(err)
-	}
-	if p.BaseURL, err = pr.Input("Gateway base URL", p.BaseURL, validBaseURL); err != nil {
-		return aborted(err)
-	}
-	if p.APIKey, err = pr.Input("API key (optional; env:NAME and cmd:... also work)", p.APIKey, nil); err != nil {
-		return aborted(err)
-	}
-	return nil
-}
-
-// promptModels asks which upstream the profile talks to, then which of the
-// gateway's advertised models fills each Claude Code slot. Everything offered
-// is something the server actually serves, so a slot cannot be typo'd into a
-// model that does not exist.
-func promptModels(ctx context.Context, pr *prompt.Prompter, p *config.Profile) error {
-	available, note := discover(ctx, p)
-	if note != "" {
-		fmt.Fprintf(os.Stderr, "note: %s\n", note)
-	}
-	if len(available) == 0 {
-		// No catalogue to choose from. A profile pinned to explicit models,
-		// or one pointing at a gateway that is currently down, still has to
-		// be creatable, so fall back to typing the values.
-		var err error
-		if p.Family, err = pr.Input("Upstream family (optional)", p.Family, nil); err != nil {
-			return aborted(err)
-		}
-		if p.Model, err = pr.Input("Model for every slot (optional)", p.Model, nil); err != nil {
-			return aborted(err)
-		}
-		return nil
-	}
-
-	labels, values := familyChoices(available, p.Family)
-	picked, err := pr.Choose("Upstream family", labels)
-	if err != nil {
-		return aborted(err)
-	}
-	switch family := values[picked]; family {
-	case familyAll:
-		p.Family = ""
-	case familyCustom:
-		custom, err := pr.Input("Family (matched against model ids)", "", nil)
-		if err != nil {
-			return aborted(err)
-		}
-		p.Family = custom
-	default:
-		p.Family = family
-	}
-
-	candidates := matching(available, p.Family)
-	if len(candidates) == 0 {
-		fmt.Fprintf(os.Stderr, "note: no advertised model matches family %q; leaving the slots unset\n", p.Family)
-		return nil
-	}
-	return promptSlots(pr, p, candidates)
-}
-
-// promptSlots fills the four Claude Code slots from the models the chosen
-// family matched. Following the family is the default for every slot: the
-// gateway classifies the matched models onto the slots itself, and pinning is
-// only worth doing when that guess is wrong.
-func promptSlots(pr *prompt.Prompter, p *config.Profile, candidates []proxy.Model) error {
-	pinned := map[string]string{}
-	for _, slot := range config.Slots {
-		labels := []string{followFamily}
-		values := []string{""}
-		for _, m := range candidates {
-			labels = append(labels, m.Label())
-			values = append(values, m.ID)
-		}
-		// An existing pin stays selected, so re-running create on a profile
-		// does not silently reset choices that were made deliberately.
-		def := 0
-		for i, v := range values {
-			if v != "" && v == p.Models[slot] {
-				def = i
-				break
-			}
-		}
-
-		picked, err := pr.ChooseDefault(slot, labels, def)
-		if err != nil {
-			return aborted(err)
-		}
-		if values[picked] != "" {
-			pinned[slot] = values[picked]
-		}
-	}
-
-	// A profile that pins nothing is the normal case; leaving the map empty
-	// keeps it out of the written JSON.
-	if len(pinned) > 0 {
-		p.Models = pinned
-	}
-	return nil
 }
 
 // commitProfile validates the collected profile, optionally confirms that an
@@ -391,7 +269,7 @@ func familyChoices(available []proxy.Model, current string) (labels, values []st
 // aborted turns the prompter's cancel key into the message the CLI reports.
 // Nothing has been written when it fires.
 func aborted(err error) error {
-	if errors.Is(err, prompt.ErrInterrupted) || errors.Is(err, prompt.ErrEOF) {
+	if errors.Is(err, prompt.ErrInterrupted) || errors.Is(err, prompt.ErrEOF) || errors.Is(err, prompt.ErrBack) {
 		return fmt.Errorf("aborted at the prompt; nothing written")
 	}
 	return err

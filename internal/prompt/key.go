@@ -17,9 +17,11 @@
 package prompt
 
 import (
-	"bufio"
 	"io"
+	"time"
 	"unicode/utf8"
+
+	"golang.org/x/sys/unix"
 )
 
 // Key is one decoded keypress.
@@ -43,18 +45,45 @@ const (
 	KeyKillLine // ctrl-u / ctrl-k: erase back to the start of the line
 	KeyKillWord // ctrl-w: erase the word behind the cursor
 	KeyInterrupt
+	KeyBack
 	KeyEOF
 )
 
-// decoder turns a byte stream into keys. A terminal in raw mode delivers an
-// escape sequence as separate bytes, so the decoder needs a buffered reader
-// rather than a byte-at-a-time one.
+// decoder turns a byte stream into keys. It reads one byte at a time so the
+// terminal's fd readiness check can distinguish a bare ESC from an arrow
+// sequence without a buffered read consuming the next key.
 type decoder struct {
-	in *bufio.Reader
+	in      io.Reader
+	pending []byte
+	pollFD  int
 }
 
 func newDecoder(r io.Reader) *decoder {
-	return &decoder{in: bufio.NewReader(r)}
+	return &decoder{in: r, pollFD: -1}
+}
+
+func newTerminalDecoder(r io.Reader, fd int) *decoder {
+	return &decoder{in: r, pollFD: fd}
+}
+
+func (d *decoder) readByte() (byte, error) {
+	if len(d.pending) > 0 {
+		b := d.pending[0]
+		d.pending = d.pending[1:]
+		return b, nil
+	}
+	var buf [1]byte
+	n, err := io.ReadFull(d.in, buf[:])
+	if n > 0 {
+		return buf[0], nil
+	}
+	return 0, err
+}
+
+func (d *decoder) unreadByte(b byte) {
+	d.pending = append(d.pending, 0)
+	copy(d.pending[1:], d.pending[:len(d.pending)-1])
+	d.pending[0] = b
 }
 
 // Next returns the next key. The second result carries the character for
@@ -62,7 +91,7 @@ func newDecoder(r io.Reader) *decoder {
 // than as an error, so an unrecognised key is ignored instead of aborting
 // the prompt.
 func (d *decoder) Next() (Key, rune, error) {
-	b, err := d.in.ReadByte()
+	b, err := d.readByte()
 	if err != nil {
 		return KeyEOF, 0, err
 	}
@@ -103,37 +132,56 @@ func (d *decoder) Next() (Key, rune, error) {
 	if b < utf8.RuneSelf {
 		return KeyRune, rune(b), nil
 	}
-	// A multi-byte character: put the lead byte back and let the reader
-	// assemble the whole rune.
-	if err := d.in.UnreadByte(); err != nil {
-		return KeyUnknown, 0, nil
+	// A multi-byte character: collect enough bytes to decode one rune. If a
+	// malformed sequence includes bytes after its replacement rune, put those
+	// bytes back so they are not lost as unrelated keypresses.
+	seq := []byte{b}
+	for !utf8.FullRune(seq) {
+		next, err := d.readByte()
+		if err != nil {
+			break
+		}
+		seq = append(seq, next)
 	}
-	r, _, err := d.in.ReadRune()
-	if err != nil {
-		return KeyUnknown, 0, nil
+	r, size := utf8.DecodeRune(seq)
+	if size < len(seq) {
+		d.pending = append(seq[size:], d.pending...)
 	}
 	return KeyRune, r, nil
 }
 
-// escape decodes what follows an ESC. A bare ESC is not a key here: it is
-// dropped and the byte after it is left for the next call, so pressing escape
-// does nothing rather than swallowing the next keystroke. That costs nothing
-// in practice — the decoder is waiting for a keypress either way — and it
-// avoids the read timeout that telling a lone ESC from a sequence would
-// otherwise need.
+const escapePollTimeout = 40 * time.Millisecond
+
+// escape distinguishes a standalone ESC from a terminal escape sequence. The
+// terminal path polls briefly before reading another byte; stream-based tests
+// use the immediate reader and preserve any ordinary key following ESC.
 func (d *decoder) escape() (Key, rune, error) {
-	b, err := d.in.ReadByte()
-	if err != nil {
-		return KeyUnknown, 0, nil
-	}
-	// SS3 ('O') sequences share the final-byte letters below, so both
-	// introducers lead into the same switch. Anything else was a lone ESC.
-	if b != '[' && b != 'O' {
-		_ = d.in.UnreadByte()
-		return KeyUnknown, 0, nil
+	if d.pollFD >= 0 {
+		ready, err := pollReadable(d.pollFD, escapePollTimeout)
+		if err != nil {
+			return KeyUnknown, 0, err
+		}
+		if !ready {
+			return KeyBack, 0, nil
+		}
 	}
 
-	n, err := d.in.ReadByte()
+	b, err := d.readByte()
+	if err != nil {
+		if err == io.EOF {
+			return KeyBack, 0, nil
+		}
+		return KeyUnknown, 0, err
+	}
+	// SS3 ('O') sequences share the final-byte letters below, so both
+	// introducers lead into the same switch. Anything else follows a standalone
+	// ESC and remains available as the next key.
+	if b != '[' && b != 'O' {
+		d.unreadByte(b)
+		return KeyBack, 0, nil
+	}
+
+	n, err := d.readByte()
 	if err != nil {
 		return KeyUnknown, 0, nil
 	}
@@ -159,7 +207,7 @@ func (d *decoder) escape() (Key, rune, error) {
 	// ctrl-arrow as ESC [ 1;5 C and Delete as ESC [ 3 ~.
 	params := []byte{n}
 	for {
-		c, err := d.in.ReadByte()
+		c, err := d.readByte()
 		if err != nil {
 			return KeyUnknown, 0, nil
 		}
@@ -183,5 +231,20 @@ func (d *decoder) escape() (Key, rune, error) {
 			return KeyWordLeft, 0, nil
 		}
 		return KeyUnknown, 0, nil
+	}
+}
+
+func pollReadable(fd int, timeout time.Duration) (bool, error) {
+	millis := int(timeout / time.Millisecond)
+	for {
+		fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+		n, err := unix.Poll(fds, millis)
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		return n > 0, nil
 	}
 }

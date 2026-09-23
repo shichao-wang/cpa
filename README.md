@@ -5,7 +5,8 @@
 ```console
 $ cpa claude --profile deepseek     # Claude Code, upstream all-DeepSeek
 $ cpa claude --profile gpt          # Claude Code, upstream all-GPT
-$ cpa claude --profile deepseek -p "explain this repo"
+$ cpa claude -p deepseek            # -p is an alias for --profile
+$ cpa claude --profile deepseek -- -p "explain this repo"
 ```
 
 One gateway, many upstreams. `cpa` picks the upstream per invocation from
@@ -129,30 +130,35 @@ slot cannot be typo'd into a model that does not exist.
 
 ```console
 $ cpa profile create
-? Profile name devbox
-? Description (optional) devbox gateway
-? Gateway base URL http://127.0.0.1:18317
-? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
-? Upstream family
-❯ (every advertised model — 4)
-  deepseek — deepseek-chat, deepseek-flash[1m] +1 more
-  (type a family…)
-# choosing one collapses the list onto the answer, and the four slots follow:
-? opus
-❯ (follow the family — choose automatically)
-? sonnet (follow the family — choose automatically)
-? haiku (follow the family — choose automatically)
-? fable (follow the family — choose automatically)
+✓ Profile name devbox
+✓ Description (optional) devbox gateway
+✓ Gateway base URL http://127.0.0.1:18317
+✓ API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
+Model configuration
+  ? Upstream family
+    ❯ (every advertised model — 4)
+      deepseek — deepseek-chat, deepseek-flash[1m] +1 more
+      (type a family…)
+# after selection, ✓ replaces ? and the model slots are nested beneath it:
+  ✓ Upstream family deepseek — deepseek-chat, deepseek-flash[1m] +1 more
+    ? opus
+      ❯ (follow the family — choose automatically)
+# after accepting each slot:
+    ✓ opus (follow the family — choose automatically)
+    ✓ sonnet (follow the family — choose automatically)
+    ✓ haiku (follow the family — choose automatically)
+    ✓ fable (follow the family — choose automatically)
 
 wrote profile "devbox" to ~/.config/cpa/settings.json
 ```
 
 The prompts are line edited: left/right move the cursor, home/end and
-ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase, ctrl-c abandons the
-profile without writing anything. A value too long for one line scrolls
-sideways rather than wrapping. A list with more options than fit scrolls too,
-and says how many are off screen (`↑ 8 more`, `↓ 3 more`), so a long
-catalogue never looks like a short one. The key prompt accepts `env:NAME` and
+ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase, Esc returns to the
+previous question, and Ctrl-C cancels without writing anything. A value too
+long for one line scrolls sideways rather than wrapping. A list with more
+options than fit scrolls too, and says how many are off screen
+(`↑ 8 more`, `↓ 3 more`), so a long catalogue never looks like a short one.
+The key prompt accepts `env:NAME` and
 `cmd:...`, which resolve at launch and keep the secret out of the file.
 
 Without a terminal — a pipe, a script, CI — there are no prompts at all:
@@ -292,9 +298,12 @@ mapping source: claude aliases
 | `cpa import-claude` | Turn `~/.claude/settings.json`'s env into a profile. |
 | `cpa version` | Print the version. |
 
-Flags: `--profile`, `--dry-run`, `--no-discover`, `--json`, `--name`,
+Flags: `--profile` (or `-p`), `--dry-run`, `--no-discover`, `--json`, `--name`,
 `--file`, `--allow-settings-conflict`. Anything unrecognized is forwarded to
 the agent, so `cpa claude --profile deepseek --resume` does what you expect.
+Use `--` before agent arguments when needed; Claude Code's own `-p` prompt flag
+must follow it. For example:
+`cpa claude --profile deepseek -- -p "explain this repo"`.
 `cpa profile create` additionally takes `--description`, `--base-url`,
 `--api-key`, `--family`, `--model` and `--force`, which answer its prompts
 without a terminal.

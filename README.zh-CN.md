@@ -5,7 +5,8 @@
 ```console
 $ cpa claude --profile deepseek     # 上游全 DeepSeek 的 Claude Code
 $ cpa claude --profile gpt          # 上游全 GPT 的 Claude Code
-$ cpa claude --profile deepseek -p "解释一下这个仓库"
+$ cpa claude -p deepseek            # -p 是 --profile 的简写
+$ cpa claude --profile deepseek -- -p "解释一下这个仓库"
 ```
 
 一个网关，多个上游。`cpa` 按命名 profile 逐次选择上游，并且**绝不改写你的
@@ -116,27 +117,31 @@ $ cpa claude --profile deepseek
 
 ```console
 $ cpa profile create
-? Profile name devbox
-? Description (optional) devbox gateway
-? Gateway base URL http://127.0.0.1:18317
-? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
-? Upstream family
-❯ (every advertised model — 4)
-  deepseek — deepseek-chat, deepseek-flash[1m] +1 more
-  (type a family…)
-# 选定后列表收成一行答案，随后依次问四个槽位：
-? opus
-❯ (follow the family — choose automatically)
-? sonnet (follow the family — choose automatically)
-? haiku (follow the family — choose automatically)
-? fable (follow the family — choose automatically)
+✓ Profile name devbox
+✓ Description (optional) devbox gateway
+✓ Gateway base URL http://127.0.0.1:18317
+✓ API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
+Model configuration
+  ? Upstream family
+    ❯ (every advertised model — 4)
+      deepseek — deepseek-chat, deepseek-flash[1m] +1 more
+      (type a family…)
+# 确定后显示 ✓，然后进入缩进更深的模型槽位：
+  ✓ Upstream family deepseek — deepseek-chat, deepseek-flash[1m] +1 more
+    ? opus
+      ❯ (follow the family — choose automatically)
+# 依次确认后：
+    ✓ opus (follow the family — choose automatically)
+    ✓ sonnet (follow the family — choose automatically)
+    ✓ haiku (follow the family — choose automatically)
+    ✓ fable (follow the family — choose automatically)
 
 wrote profile "devbox" to ~/.config/cpa/settings.json
 ```
 
 输入行支持编辑：左右方向键移动光标，home/end 与 ctrl-a/ctrl-e 跳到行首行尾，
-ctrl-w 与 ctrl-u 删除，ctrl-c 放弃且不写任何文件。一行放不下的输入会横向滚动
-而不换行。选项多到一屏放不下时列表同样会滚动，并标出屏外还有多少项
+ctrl-w 与 ctrl-u 删除，Esc 返回上一个问题，Ctrl-C 取消且不写任何文件。
+一行放不下的输入会横向滚动而不换行。选项多到一屏放不下时列表同样会滚动，并标出屏外还有多少项
 （`↑ 8 more`、`↓ 3 more`），因此再长的模型表也不会看起来像是只有这么多。key 那一项接受 `env:NAME`
 与 `cmd:...` 简写，它们在启动时才解析，密钥因此不必落进文件。
 
@@ -268,10 +273,12 @@ mapping source: claude aliases
 | `cpa import-claude` | 把 `~/.claude/settings.json` 的环境变量转成 profile。 |
 | `cpa version` | 打印版本。 |
 
-参数：`--profile`、`--dry-run`、`--no-discover`、`--json`、`--name`、
+参数：`--profile`（也可写成 `-p`）、`--dry-run`、`--no-discover`、`--json`、`--name`、
 `--file`、`--allow-settings-conflict`。未识别的参数一律透传给 agent，所以
-`cpa claude --profile deepseek --resume` 就是你想的那样。`cpa profile
-create` 另有 `--description`、`--base-url`、`--api-key`、`--family`、
+`cpa claude --profile deepseek --resume` 就是你想的那样。需要传 Claude Code 自己的
+`-p` prompt 参数时，前面要加 `--`，例如：
+`cpa claude --profile deepseek -- -p "解释一下这个仓库"`。`cpa profile create`
+另有 `--description`、`--base-url`、`--api-key`、`--family`、
 `--model`、`--force`，用来在没有终端时回答它的提问。
 
 ## 排错
