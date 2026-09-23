@@ -32,6 +32,7 @@ USAGE
   cpa doctor                               check every profile's endpoint
   cpa init [--force]                       write a starter settings file
   cpa import-claude [--name <name>]        turn ~/.claude/settings.json into a profile
+  cpa upgrade [--check]                    update cpa from its GitHub releases
   cpa version                              print the version
 
 EXAMPLES
@@ -52,6 +53,8 @@ FLAGS
   --name <name>      profile name to create ("import-claude", "profile create")
   --agent <name>     agent the profile is for ("profile create", default: claude)
   --file <path>      settings file to write ("profile create")
+  --check, --tag, --force
+                     "cpa upgrade" only; see "cpa upgrade --help"
 
 Unrecognized arguments are passed straight through to the agent, so
 ` + "`cpa claude --profile deepseek --resume`" + ` works as you would expect.
@@ -96,6 +99,8 @@ func main() {
 		err = cmdInit(args[1:])
 	case "import-claude":
 		err = cmdImportClaude(args[1:])
+	case "upgrade":
+		err = cmdUpgrade(ctx, args[1:])
 	case "run":
 		if len(args) < 2 {
 			fatal("run needs an agent name, e.g. `cpa run claude --profile deepseek`")
