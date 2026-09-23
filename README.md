@@ -114,11 +114,33 @@ $ make install
 
 ### Updating
 
-There is no self-update command; you update the way you installed.
+`cpa upgrade` replaces the running binary with the newest release:
 
 ```console
-# release install: re-run the installer — it resolves the newest release,
-# verifies its checksum, and replaces the binary
+$ cpa upgrade
+downloading cpa_0.2.1_darwin_arm64.tar.gz
+checksum ok
+installed /Users/you/.local/bin/cpa (v0.2.0 -> v0.2.1)
+
+$ cpa upgrade --check        # report only; exits 1 when an update is waiting
+$ cpa upgrade --tag v0.2.0   # a specific release, like CPA_VERSION in install.sh
+```
+
+The newest tag comes from `/releases/latest` (a redirect, not an API call, so no
+rate limit), the archive is checked against that release's `checksums.txt`, and
+the new binary is run once before it is renamed over the file `cpa` is running
+from — so a download that does not work never replaces one that does. The file
+replaced is whatever path this `cpa` was installed at.
+
+A build from source reports a `git describe` version (`v0.2.0-11-gb7fc3aa`),
+which says nothing about whether a release is newer, so `cpa upgrade` refuses to
+guess; `--force` installs the release anyway. Only the first upgrade needs it —
+after that the binary is a release build and compares properly.
+
+Installing for the first time is still the installer's job:
+
+```console
+# release install
 $ curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpa/main/install.sh | bash
 
 # source install: fast-forward your clone, then rebuild and reinstall
@@ -127,10 +149,9 @@ $ git pull --ff-only && make install
 
 Every merge to `main` runs the tests in
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and, when they pass,
-tags a release — so re-running the installer always gets you the newest code.
-The version for a merge comes from the merged PR's labels (`release:major`,
-`release:minor`, `release:patch`, or `skip-release`), defaulting to a patch
-bump.
+tags a release — so `cpa upgrade` gets you the newest code. The version for a
+merge comes from the merged PR's labels (`release:major`, `release:minor`,
+`release:patch`, or `skip-release`), defaulting to a patch bump.
 
 Both routes write the same file, `~/.local/bin/cpa`: `make install` defaults
 to `PREFIX=$(HOME)/.local`, which is the path `install.sh` calls
@@ -392,6 +413,7 @@ the slots that model serves.
 | `cpa doctor` | Check every profile's endpoint and key. |
 | `cpa init [--force]` | Write a starter settings file. |
 | `cpa import-claude` | Turn `~/.claude/settings.json`'s env into a profile. |
+| `cpa upgrade [--check]` | Update cpa from its GitHub releases. |
 | `cpa version` | Print the version. |
 
 Flags: `--profile`, `--dry-run`, `--no-discover`, `--json`, `--name`,

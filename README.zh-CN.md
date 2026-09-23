@@ -102,10 +102,31 @@ $ make install
 
 ### 更新
 
-`cpa` 没有自更新命令，按当初的装法更新。
+`cpa upgrade` 用最新 release 替换正在运行的二进制：
 
 ```console
-# release 安装：重跑安装脚本——它解析最新 release、校验和，然后替换二进制
+$ cpa upgrade
+downloading cpa_0.2.1_darwin_arm64.tar.gz
+checksum ok
+installed /Users/you/.local/bin/cpa (v0.2.0 -> v0.2.1)
+
+$ cpa upgrade --check        # 只报告；有更新可用时退出码为 1
+$ cpa upgrade --tag v0.2.0   # 指定 release，相当于 install.sh 的 CPA_VERSION
+```
+
+最新 tag 取自 `/releases/latest` 的重定向（不走 API，因此不受限流影响），压缩包
+按该 release 的 `checksums.txt` 校验，新二进制会先试跑一次，再改名覆盖 `cpa`
+自己正在运行的那个文件——跑不起来的下载永远不会顶掉能跑的。被替换的就是这个
+`cpa` 当初被装到的路径。
+
+源码构建报的是 `git describe` 版本（`v0.2.0-11-gb7fc3aa`），它说明不了和 release
+谁新谁旧，所以 `cpa upgrade` 不猜：加 `--force` 才装。只有第一次升级需要它，之后
+二进制就是 release 构建，能正常比较了。
+
+首次安装仍然交给安装脚本：
+
+```console
+# release 安装
 $ curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpa/main/install.sh | bash
 
 # 源码安装：快进 clone，再重建、重装
@@ -114,8 +135,8 @@ $ git pull --ff-only && make install
 
 每次合并到 `main` 都会由
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 跑测试，通过后自动打
-tag 发 release——所以重跑安装脚本总能拿到最新的代码。版本号由被合并 PR 的标签
-决定（`release:major`、`release:minor`、`release:patch`、`skip-release`），
+tag 发 release——所以 `cpa upgrade` 总能拿到最新的代码。版本号由被合并 PR 的
+标签决定（`release:major`、`release:minor`、`release:patch`、`skip-release`），
 默认是 patch。
 
 两条路写的是同一个文件 `~/.local/bin/cpa`：`make install` 默认
@@ -353,6 +374,7 @@ mapping source: claude aliases
 | `cpa doctor` | 检查每个 profile 的端点与 key。 |
 | `cpa init [--force]` | 写入起始配置文件。 |
 | `cpa import-claude` | 把 `~/.claude/settings.json` 的环境变量转成 profile。 |
+| `cpa upgrade [--check]` | 从 GitHub release 更新 cpa。 |
 | `cpa version` | 打印版本。 |
 
 参数：`--profile`、`--dry-run`、`--no-discover`、`--json`、`--name`、
