@@ -24,6 +24,7 @@ USAGE
 CREATE FLAGS
   --name <name>          answer the name prompt up front
   --description <text>   ditto for the description
+  --agent <name>         ditto for the agent the profile is for (default: claude)
   --base-url <url>       ditto for the gateway address
   --api-key <key>        ditto for the key ("env:NAME" / "cmd:..." also work)
   --family <family>      ditto for the upstream family
@@ -33,14 +34,18 @@ CREATE FLAGS
   --no-discover          do not query the gateway
 
 A created profile lands in $XDG_CONFIG_HOME/cpa/settings.json
-(~/.config/cpa/settings.json); --file writes somewhere else instead.
+(~/.config/cpa/settings.json); --file writes somewhere else instead. It
+records the one agent it is for; launching it with an agent of another kind is
+an error, since a profile's model slots and settings mean nothing to another.
 
 With a terminal attached the fields are asked for interactively: first the
-name, description, gateway address and key, then — once the gateway has been
-queried — the upstream family and the model behind each Claude Code slot,
-both chosen from the models the gateway actually advertises. Without a
-terminal (a pipe, a script, CI) there are no prompts at all: every field
-comes from the flags above, and a missing required one is an error.
+name, description, agent, gateway address and key, then — once the gateway has
+been queried — the upstream family and the model behind each Claude Code slot,
+both chosen from the models the gateway actually advertises. A profile for
+another agent is asked for a single model instead, since only Claude Code has
+slots. Without a terminal (a pipe, a script, CI) there are no prompts at all:
+every field comes from the flags above, and a missing required one is an
+error.
 
 The prompts are line edited: left/right move the cursor, home/end and
 ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase, and ctrl-c abandons
@@ -102,7 +107,13 @@ func cmdProfileList(args []string) error {
 		if desc == "" {
 			desc = p.Family
 		}
-		fmt.Printf("%s%-14s %-34s %s\n", marker, n, p.BaseURL, desc)
+		// The agent column shows what the profile is bound to, and "-" for a
+		// profile that says nothing about its downstream and so fits any.
+		agent := p.EffectiveAgent()
+		if agent == "" {
+			agent = "-"
+		}
+		fmt.Printf("%s%-14s %-9s %-32s %s\n", marker, n, agent, p.BaseURL, desc)
 	}
 	return nil
 }
@@ -134,16 +145,23 @@ func cmdProfileCreate(ctx context.Context, args []string) error {
 
 	name := f.name
 	p := &config.Profile{
+		Agent:       f.agent,
 		Description: f.description,
 		BaseURL:     f.baseURL,
 		APIKey:      f.apiKey,
 		Family:      f.family,
 		Model:       f.model,
 	}
+	// A profile belongs to one agent, so this is never left open. Claude Code
+	// is the agent cpa is exercised against, which makes it the default rather
+	// than a question with no answer.
+	if p.Agent == "" {
+		p.Agent = "claude"
+	}
 
 	pr, err := prompt.New(os.Stdin, os.Stdout)
 	if errors.Is(err, prompt.ErrNotATerminal) {
-		if !f.noDiscover {
+		if !f.noDiscover && resolveKind(p.Agent) == config.KindClaude {
 			previewMapping(ctx, p)
 		}
 		return commitProfile(ctx, path, name, p, f, nil)
@@ -156,12 +174,49 @@ func cmdProfileCreate(ctx context.Context, args []string) error {
 	if err := promptBasics(pr, &name, p); err != nil {
 		return err
 	}
-	if !f.noDiscover {
-		if err := promptModels(ctx, pr, p); err != nil {
-			return err
-		}
+	if err := promptDownstream(ctx, pr, p, f.noDiscover); err != nil {
+		return err
 	}
 	return commitProfile(ctx, path, name, p, f, pr)
+}
+
+// promptDownstream asks the questions that fit the agent. Only Claude Code has
+// the four model slots, so a profile for another agent is asked for one
+// catch-all model instead: opus/sonnet/haiku/fable would be asking for
+// something that agent cannot read.
+func promptDownstream(ctx context.Context, pr *prompt.Prompter, p *config.Profile, noDiscover bool) error {
+	switch resolveKind(p.Agent) {
+	case config.KindClaude:
+		if noDiscover {
+			return nil
+		}
+		return promptModels(ctx, pr, p)
+	case config.KindOpenAI:
+		model, err := pr.Input("Model (optional)", p.Model, nil)
+		if err != nil {
+			return aborted(err)
+		}
+		p.Model = model
+	}
+	return nil
+}
+
+// resolveKind answers what kind of agent a name is, which is what decides the
+// questions `profile create` asks. The settings files come first, since that is
+// what a launch resolves against; the two names cpa knows without any
+// configuration come next. Anything else is generic, and gets asked nothing
+// agent-specific.
+func resolveKind(name string) config.Kind {
+	if cfg, err := config.Load(); err == nil {
+		if a, err := cfg.AgentFor(name); err == nil {
+			return a.Kind
+		}
+	}
+	a, err := (&config.Config{}).AgentFor(name)
+	if err != nil {
+		return config.KindGeneric
+	}
+	return a.Kind
 }
 
 // promptBasics collects the fields that do not depend on the gateway. The base
@@ -181,6 +236,12 @@ func promptBasics(pr *prompt.Prompter, name *string, p *config.Profile) error {
 	// The key need not be typed: the env: and cmd: shorthands are resolved at
 	// launch, which keeps the secret out of a file you might commit.
 	if p.Description, err = pr.Input("Description (optional)", p.Description, nil); err != nil {
+		return aborted(err)
+	}
+	// Asked before the gateway is queried, because it decides which of the
+	// later questions apply at all.
+	if p.Agent, err = pr.Input("Agent this profile is for (claude, codex, or a name from \"agents\")",
+		p.Agent, notBlank("a profile needs an agent")); err != nil {
 		return aborted(err)
 	}
 	if p.BaseURL, err = pr.Input("Gateway base URL", p.BaseURL, validBaseURL); err != nil {
@@ -295,6 +356,10 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 	if p.BaseURL == "" {
 		return fmt.Errorf("a profile needs a base URL; pass --base-url <url>")
 	}
+	p.Agent = strings.TrimSpace(p.Agent)
+	if p.Agent == "" {
+		return fmt.Errorf("a profile needs the agent it is for; pass --agent <name>")
+	}
 	// The result of the write is only visible afterwards, so a typo would
 	// otherwise land in the file as a "baseUrl" that is not a URL and only
 	// surface later as a confusing launch failure.
@@ -334,7 +399,7 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 		return err
 	}
 	fmt.Printf("\nwrote profile %q to %s%s\n", name, path, replacing)
-	fmt.Printf("  cpa profile list\n  cpa claude --profile %s\n", name)
+	fmt.Printf("  cpa profile list\n  cpa %s --profile %s\n", p.Agent, name)
 	return nil
 }
 

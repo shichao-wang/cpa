@@ -121,16 +121,19 @@ $ cpa doctor                   # confirm each profile's endpoint answers
 $ cpa claude --profile deepseek
 ```
 
-`cpa profile create` walks you through a new profile: name, description,
-gateway URL and key, then — having asked the gateway what it serves — the
-upstream family and the model behind each Claude Code slot. Both are picked
-from an arrow-key list of the models the gateway actually advertises, so a
-slot cannot be typo'd into a model that does not exist.
+`cpa profile create` walks you through a new profile: name, description, the
+agent it is for, gateway URL and key, then — having asked the gateway what it
+serves — the upstream family and the model behind each Claude Code slot. The
+family and the slots are picked from an arrow-key list of the models the
+gateway actually advertises, so a slot cannot be typo'd into a model that does
+not exist. A profile for another agent is asked for a single model instead:
+only Claude Code has slots.
 
 ```console
 $ cpa profile create
 ? Profile name devbox
 ? Description (optional) devbox gateway
+? Agent this profile is for (claude, codex, or a name from "agents") claude
 ? Gateway base URL http://127.0.0.1:18317
 ? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
 ? Upstream family
@@ -156,10 +159,10 @@ catalogue never looks like a short one. The key prompt accepts `env:NAME` and
 `cmd:...`, which resolve at launch and keep the secret out of the file.
 
 Without a terminal — a pipe, a script, CI — there are no prompts at all:
-every field comes from a flag (`--name`, `--base-url`, `--api-key`,
+every field comes from a flag (`--name`, `--agent`, `--base-url`, `--api-key`,
 `--family`, `--model`, …) and a missing required one is an error rather than
 a hang. Passing `--name` and `--base-url` is enough to create a profile
-non-interactively.
+non-interactively; without `--agent` it is a Claude Code profile.
 
 It writes to `$XDG_CONFIG_HOME/cpa/settings.json`; `--file` writes somewhere
 else instead.
@@ -216,6 +219,7 @@ your editor reads.
 
 | Field | Meaning |
 |---|---|
+| `agent` | The one agent this profile is for. See [one profile, one agent](#one-profile-one-agent). |
 | `baseUrl` | The gateway endpoint. Claude Code gets it as `ANTHROPIC_BASE_URL`. |
 | `apiKey` | Client key. Also accepts `"env:VAR"` and `"cmd:shell command"`. |
 | `apiKeyEnv` | Read the key from this environment variable. |
@@ -247,6 +251,31 @@ You can also define other agents:
 
 `kind` decides the variables injected: `claude` → `ANTHROPIC_*`, `openai` →
 `OPENAI_*`, `generic` → only the profile's own `env`.
+
+### One profile, one agent
+
+A profile says how one downstream application is pointed at one upstream. Its
+model slots and its settings belong to that application and mean nothing to
+another, so a profile fits a single agent — and launching it with an agent of a
+different kind is an error rather than a silent misapplication:
+
+```console
+$ cpa codex --profile deepseek
+cpa: profile "deepseek" is for agent "claude" (kind "claude"); "codex" is kind "openai"
+a profile is written for one downstream application — its model slots and its settings mean nothing to another — so cpa will not apply it here.
+launch it with an agent of kind "claude", or move the profile over with "agent": "codex"
+```
+
+Two agents of the same `kind` may share a profile: they read the same
+variables, so nothing is lost. An application that needs its own upstream gets
+its own profile — `examples/settings.json` has a `codex` profile next to the
+Claude Code ones.
+
+| What the profile says | Which agent it fits |
+|---|---|
+| `"agent": "codex"` | `codex`. Declaring always wins. |
+| no `agent`, but any of `models`, `modelNames`, `subagentModel`, `customModelOption`, `contextWindow`, `claudeSettings` | `claude`: only Claude Code understands those fields, so a profile using them is a Claude Code profile — including one written before this rule existed. |
+| no `agent`, none of those fields | Any agent. `cpa profile list` prints `-` for it, so an unbound profile is visible rather than assumed. |
 
 ## How a profile becomes a model mapping
 
@@ -293,11 +322,11 @@ mapping source: claude aliases
 | `cpa version` | Print the version. |
 
 Flags: `--profile`, `--dry-run`, `--no-discover`, `--json`, `--name`,
-`--file`, `--allow-settings-conflict`. Anything unrecognized is forwarded to
-the agent, so `cpa claude --profile deepseek --resume` does what you expect.
-`cpa profile create` additionally takes `--description`, `--base-url`,
-`--api-key`, `--family`, `--model` and `--force`, which answer its prompts
-without a terminal.
+`--agent`, `--file`, `--allow-settings-conflict`. Anything unrecognized is
+forwarded to the agent, so `cpa claude --profile deepseek --resume` does what
+you expect. `cpa profile create` additionally takes `--description`,
+`--base-url`, `--api-key`, `--family`, `--model` and `--force`, which answer
+its prompts without a terminal.
 
 ## Troubleshooting
 
@@ -308,6 +337,12 @@ names the gateway actually advertises.
 **Discovery fails but the launch works.** That is by design: a profile with
 hand-pinned `models` needs no discovery. `--no-discover` skips the query
 entirely for offline use.
+
+**`profile "X" is for agent "Y"`, and I asked for another.** A profile belongs
+to one agent — see [one profile, one agent](#one-profile-one-agent). Launch it
+with that agent, or set the profile's `agent` field to the one you meant. `cpa
+profile list` shows what each profile is bound to, and `-` for a profile that
+fits any agent.
 
 **My global `ANTHROPIC_CUSTOM_MODEL_OPTION` still shows up.** `cpa` overrides
 the variables it manages; anything else in your global `env` block — including

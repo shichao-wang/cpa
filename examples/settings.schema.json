@@ -61,6 +61,10 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "agent": {
+          "type": "string",
+          "description": "The one agent this profile is for: a name typed on the command line, e.g. \"claude\" or \"codex\", or a key under \"agents\". Launching the profile with an agent of another kind is an error, since the model slots and settings below mean nothing to it. Omit it and cpa infers \"claude\" when the profile uses Claude-only fields (models, modelNames, subagentModel, customModelOption, contextWindow, claudeSettings); a profile with none of those fits any agent."
+        },
         "description": { "type": "string", "description": "Free text shown by `cpa profile list`." },
         "baseUrl": { "type": "string", "description": "Gateway endpoint, e.g. http://127.0.0.1:8317" },
         "apiKey": {

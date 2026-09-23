@@ -44,6 +44,13 @@ type Defaults struct {
 
 // Profile is one named upstream configuration, e.g. "deepseek" or "gpt".
 type Profile struct {
+	// Agent is the one downstream application this profile is written for:
+	// an agent name, as typed on the command line ("claude", "codex", or a
+	// key under "agents"). cpa refuses to apply a profile to an agent of
+	// another kind, so a profile can never be half-used. Left empty,
+	// EffectiveAgent infers "claude" from the fields only Claude Code has.
+	Agent string `json:"agent,omitempty"`
+
 	Description string `json:"description,omitempty"`
 
 	// BaseURL is the CPA (or any Anthropic/OpenAI-compatible) endpoint.
@@ -387,4 +394,31 @@ func (p *Profile) ModelFor(slot string) string {
 // suppresses discovery.
 func (p *Profile) HasExplicitModels() bool {
 	return len(p.Models) > 0
+}
+
+// hasClaudeOnlyFields reports whether the profile carries anything only
+// Claude Code understands. A profile using those fields is a Claude Code
+// profile whether or not it says so, which is what lets EffectiveAgent name
+// the agent without the file having to be edited first.
+func (p *Profile) hasClaudeOnlyFields() bool {
+	return len(p.Models) > 0 ||
+		len(p.ModelNames) > 0 ||
+		p.SubagentModel != "" ||
+		p.CustomModelOption != "" ||
+		p.ContextWindow != 0 ||
+		len(p.ClaudeSettings) > 0
+}
+
+// EffectiveAgent returns the one agent this profile belongs to: the declared
+// "agent", or "claude" when the profile's own fields are Claude Code's alone.
+// Empty means the profile says nothing about its downstream, and may be used
+// with any agent.
+func (p *Profile) EffectiveAgent() string {
+	switch {
+	case p.Agent != "":
+		return p.Agent
+	case p.hasClaudeOnlyFields():
+		return "claude"
+	}
+	return ""
 }

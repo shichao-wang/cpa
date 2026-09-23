@@ -109,15 +109,17 @@ $ cpa doctor                   # 确认每个 profile 的端点可达
 $ cpa claude --profile deepseek
 ```
 
-`cpa profile create` 会逐项问你：名字、描述、网关地址与 key；随后先问网关
-它提供哪些模型，再让你从这些模型里选 upstream family，以及每个 Claude Code
-槽位用哪个模型。两项都是方向键选择的列表，选项来自网关真实返回的模型，因此
-不可能因为手误填进一个不存在的模型。
+`cpa profile create` 会逐项问你：名字、描述、这个 profile 服务哪个 agent、网关
+地址与 key；随后先问网关它提供哪些模型，再让你从这些模型里选 upstream family，
+以及每个 Claude Code 槽位用哪个模型。family 与槽位都是方向键选择的列表，选项来自
+网关真实返回的模型，因此不可能因为手误填进一个不存在的模型。给别的 agent 建的
+profile 只问一个模型：槽位是 Claude Code 独有的。
 
 ```console
 $ cpa profile create
 ? Profile name devbox
 ? Description (optional) devbox gateway
+? Agent this profile is for (claude, codex, or a name from "agents") claude
 ? Gateway base URL http://127.0.0.1:18317
 ? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
 ? Upstream family
@@ -141,9 +143,9 @@ ctrl-w 与 ctrl-u 删除，ctrl-c 放弃且不写任何文件。一行放不下�
 与 `cmd:...` 简写，它们在启动时才解析，密钥因此不必落进文件。
 
 没有终端时（管道、脚本、CI）完全不提问：所有字段都从命令行参数取
-（`--name`、`--base-url`、`--api-key`、`--family`、`--model` 等），缺少
-必填项会直接报错而不是卡住。脚本里只给 `--name` 与 `--base-url` 就能建出
-一个 profile。
+（`--name`、`--agent`、`--base-url`、`--api-key`、`--family`、`--model`
+等），缺少必填项会直接报错而不是卡住。脚本里只给 `--name` 与 `--base-url`
+就能建出一个 profile（不给 `--agent` 时它是一个 Claude Code profile）。
 
 写入目标是 `$XDG_CONFIG_HOME/cpa/settings.json`；`--file` 可改为写到别处。
 
@@ -194,6 +196,7 @@ $ cpa import-claude --name mygateway
 
 | 字段 | 含义 |
 |---|---|
+| `agent` | 这个 profile 唯一服务的那个 agent。见[一个 profile 只服务一个 agent](#一个-profile-只服务一个-agent)。 |
 | `baseUrl` | 网关端点，作为 `ANTHROPIC_BASE_URL` 传给 Claude Code。 |
 | `apiKey` | 客户端 key，也接受 `"env:VAR"` 与 `"cmd:shell 命令"`。 |
 | `apiKeyEnv` | 从该环境变量读取 key。 |
@@ -225,6 +228,29 @@ $ cpa import-claude --name mygateway
 
 `kind` 决定注入哪类变量：`claude` → `ANTHROPIC_*`，`openai` → `OPENAI_*`，
 `generic` → 只用 profile 自己的 `env`。
+
+### 一个 profile 只服务一个 agent
+
+一个 profile 说的是「某个下游应用该怎么接到某个上游」：它的槽位与设置属于那个
+应用，对别的应用毫无意义。所以一个 profile 只配一个 agent，拿另一种 kind 的
+agent 去启动它是报错，而不是把 Claude Code 的设置悄悄喂给读不懂它的程序：
+
+```console
+$ cpa codex --profile deepseek
+cpa: profile "deepseek" is for agent "claude" (kind "claude"); "codex" is kind "openai"
+a profile is written for one downstream application — its model slots and its settings mean nothing to another — so cpa will not apply it here.
+launch it with an agent of kind "claude", or move the profile over with "agent": "codex"
+```
+
+kind 相同的两个 agent 可以共用一个 profile——读的变量完全一样，不会有损失。
+需要各自上游的应用就各自建 profile：`examples/settings.json` 里在几个 Claude
+Code profile 旁边就有一个 `codex` profile。
+
+| profile 里写了什么 | 它服务于哪个 agent |
+|---|---|
+| `"agent": "codex"` | `codex`。显式声明永远优先。 |
+| 没写 `agent`，但用了 `models`、`modelNames`、`subagentModel`、`customModelOption`、`contextWindow`、`claudeSettings` 中任意一个 | `claude`：这些字段只有 Claude Code 认，用了它们的 profile 就是 Claude Code profile——包括这条规矩出现之前就写好的那些。 |
+| 没写 `agent`，上面那些字段一个也没用 | 任何 agent 都能用；`cpa profile list` 会给它显示 `-`，未绑定的 profile 是被看见的，而不是被默认假设的。 |
 
 ## Profile 如何变成模型映射
 
@@ -269,9 +295,9 @@ mapping source: claude aliases
 | `cpa version` | 打印版本。 |
 
 参数：`--profile`、`--dry-run`、`--no-discover`、`--json`、`--name`、
-`--file`、`--allow-settings-conflict`。未识别的参数一律透传给 agent，所以
-`cpa claude --profile deepseek --resume` 就是你想的那样。`cpa profile
-create` 另有 `--description`、`--base-url`、`--api-key`、`--family`、
+`--agent`、`--file`、`--allow-settings-conflict`。未识别的参数一律透传给
+agent，所以 `cpa claude --profile deepseek --resume` 就是你想的那样。`cpa
+profile create` 另有 `--description`、`--base-url`、`--api-key`、`--family`、
 `--model`、`--force`，用来在没有终端时回答它的提问。
 
 ## 排错
@@ -281,6 +307,11 @@ create` 另有 `--description`、`--base-url`、`--api-key`、`--family`、
 
 **模型发现失败但启动仍然成功。** 这是设计如此：手工钉了 `models` 的 profile
 不需要发现。离线场景可以加 `--no-discover` 完全跳过查询。
+
+**报 `profile "X" is for agent "Y"`，但我用的是另一个 agent。** 一个 profile
+只服务一个 agent，见[一个 profile 只服务一个 agent](#一个-profile-只服务一个-agent)。
+用它所属的 agent 启动，或把 profile 的 `agent` 改成你实际要用的那个。`cpa
+profile list` 会显示每个 profile 绑在哪个 agent 上，未绑定的显示 `-`。
 
 **我全局的 `ANTHROPIC_CUSTOM_MODEL_OPTION` 还在。** `cpa` 只覆盖它自己管理的
 变量；全局 `env` 块里的其他内容（包括模型选择器条目）保持原样。想让 profile

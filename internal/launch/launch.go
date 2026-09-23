@@ -81,6 +81,9 @@ func Build(cfg *config.Config, agentName, profileName string, userArgs []string,
 	if err != nil {
 		return nil, err
 	}
+	if err := profileFitsAgent(cfg, agentName, agent, resolvedName, profile); err != nil {
+		return nil, err
+	}
 
 	apiKey, err := profile.ResolveAPIKey()
 	if err != nil {
@@ -145,6 +148,32 @@ func Build(cfg *config.Config, agentName, profileName string, userArgs []string,
 	}
 	plan.Args = append(plan.Args, userArgs...)
 	return plan, nil
+}
+
+// profileFitsAgent refuses to apply a profile to a downstream application it
+// was not written for. The agent's kind decides which variables cpa injects
+// and whether the model slots mean anything at all, so profiles are matched by
+// kind: two agents of the same kind share a profile, and anything else is an
+// error rather than a launch of Claude-shaped settings into a tool that cannot
+// read them.
+func profileFitsAgent(cfg *config.Config, agentName string, agent config.Agent, profileName string, p *config.Profile) error {
+	target := p.EffectiveAgent()
+	if target == "" {
+		return nil
+	}
+	targetAgent, err := cfg.AgentFor(target)
+	if err != nil {
+		return fmt.Errorf("profile %q is for agent %q: %w", profileName, target, err)
+	}
+	if targetAgent.Kind == agent.Kind {
+		return nil
+	}
+	return fmt.Errorf(
+		"profile %q is for agent %q (kind %q); %q is kind %q\n"+
+			"a profile is written for one downstream application — its model slots and its "+
+			"settings mean nothing to another — so cpa will not apply it here.\n"+
+			"launch it with an agent of kind %q, or move the profile over with \"agent\": %q",
+		profileName, target, targetAgent.Kind, agentName, agent.Kind, targetAgent.Kind, agentName)
 }
 
 func hasSettingsFlag(args []string) bool {
