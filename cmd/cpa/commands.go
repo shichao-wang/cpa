@@ -13,8 +13,8 @@ import (
 	"github.com/shichao-wang/cpa/internal/proxy"
 )
 
-// flags holds cpa's own options. Anything not recognized here is forwarded
-// to the agent untouched, so agent flags never need escaping.
+// flags holds cpa's own options. Launch arguments after the agent name are
+// passed through untouched.
 type flags struct {
 	profile               string
 	dryRun                bool
@@ -92,6 +92,8 @@ func parseFlags(args []string) (*flags, error) {
 			f.dryRun = true
 		case a == "--no-discover":
 			f.noDiscover = true
+		case a == "--allow-settings-conflict":
+			f.allowSettingsConflict = true
 		case a == "--json":
 			f.jsonOut = true
 		case a == "--force":
@@ -153,11 +155,39 @@ func discover(ctx context.Context, p *config.Profile) ([]proxy.Model, string) {
 	return models, ""
 }
 
-func cmdLaunch(ctx context.Context, agentName string, args []string) error {
-	f, err := parseFlags(args)
-	if err != nil {
-		return err
+// parseLaunchArgs reads cpa options only until the agent name. Everything
+// after the agent belongs to that agent, even when its flags match cpa's.
+func parseLaunchArgs(args []string) (string, *flags, error) {
+	f := &flags{}
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--profile" || a == "-p":
+			if i+1 >= len(args) {
+				return "", nil, fmt.Errorf("%s needs a value", a)
+			}
+			i++
+			f.profile = args[i]
+		case strings.HasPrefix(a, "--profile="):
+			f.profile = strings.TrimPrefix(a, "--profile=")
+		case strings.HasPrefix(a, "-p="):
+			f.profile = strings.TrimPrefix(a, "-p=")
+		case a == "--dry-run":
+			f.dryRun = true
+		case a == "--no-discover":
+			f.noDiscover = true
+		case a == "--allow-settings-conflict":
+			f.allowSettingsConflict = true
+		case strings.HasPrefix(a, "-"):
+			return "", nil, fmt.Errorf("unknown cpa flag %q before agent", a)
+		default:
+			f.rest = append(f.rest, args[i+1:]...)
+			return a, f, nil
+		}
 	}
+	return "", nil, fmt.Errorf("missing agent name, e.g. `cpa -p deepseek claude`")
+}
+
+func cmdLaunch(ctx context.Context, agentName string, f *flags) error {
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
