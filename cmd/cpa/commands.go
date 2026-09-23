@@ -50,10 +50,12 @@ func parseFlags(args []string) (*flags, error) {
 		}
 		var err error
 		switch {
-		case a == "--profile":
+		case a == "--profile" || a == "-p":
 			f.profile, err = takeValue()
 		case strings.HasPrefix(a, "--profile="):
 			f.profile = strings.TrimPrefix(a, "--profile=")
+		case strings.HasPrefix(a, "-p="):
+			f.profile = strings.TrimPrefix(a, "-p=")
 		case a == "--name":
 			f.name, err = takeValue()
 		case strings.HasPrefix(a, "--name="):

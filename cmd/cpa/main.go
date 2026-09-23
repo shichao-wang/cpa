@@ -2,7 +2,7 @@
 // selected by named profiles.
 //
 //	cpa claude --profile deepseek      # Claude Code, upstream all-DeepSeek
-//	cpa claude --profile gpt           # Claude Code, upstream all-GPT
+//	cpa claude -p gpt                  # same profile flag, using its short alias
 //
 // Profiles live in cpa's own settings file, $XDG_CONFIG_HOME/cpa/settings.json
 // (~/.config/cpa/settings.json by default). Launching hands the profile to the
@@ -37,13 +37,13 @@ USAGE
 
 EXAMPLES
   cpa claude --profile deepseek
-  cpa claude --profile gpt -p "explain this repo"
+  cpa claude --profile gpt -- -p "explain this repo"
   cpa claude --profile deepseek --dry-run
   cpa models --profile deepseek
   cpa profile create
 
 FLAGS
-  --profile <name>   profile to launch (default: "defaultProfile")
+  --profile <name>, -p <name>  profile to launch (default: "defaultProfile")
   --dry-run          print the command and environment changes, launch nothing
   --no-discover      skip querying the gateway for its model catalogue
   --json             machine-readable output for "models" and "profile list"
@@ -56,8 +56,9 @@ FLAGS
   --check, --tag, --force
                      "cpa upgrade" only; see "cpa upgrade --help"
 
-Unrecognized arguments are passed straight through to the agent, so
-` + "`cpa claude --profile deepseek --resume`" + ` works as you would expect.
+Unrecognized arguments pass straight through to the agent. Put -- before agent
+arguments when needed; Claude Code's own -p prompt flag must follow it.
+For example: cpa claude --profile deepseek -- -p "explain this repo".
 
 CONFIGURATION
   Settings are read from $XDG_CONFIG_HOME/cpa/settings.json

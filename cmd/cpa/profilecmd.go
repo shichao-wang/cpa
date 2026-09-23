@@ -52,8 +52,8 @@ prompts at all: every field comes from the flags above, and a missing required
 one is an error.
 
 The prompts are line edited: left/right move the cursor, home/end and
-ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase, and ctrl-c abandons
-the profile without writing anything.
+ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase. Esc goes back to
+the previous question; ctrl-c abandons the profile without writing anything.
 `
 
 // cmdProfile dispatches the `cpa profile` subcommands.
@@ -175,34 +175,19 @@ func cmdProfileCreate(ctx context.Context, args []string) error {
 	}
 	defer pr.Close()
 
-	if err := promptBasics(pr, &name, p); err != nil {
+	form := newProfileForm(ctx, pr, &name, p, f.noDiscover)
+	if err := form.run(); err != nil {
 		return err
 	}
-	if err := promptDownstream(ctx, pr, p, f.noDiscover); err != nil {
-		return err
-	}
-	return commitProfile(ctx, path, name, p, f, pr)
-}
-
-// promptDownstream asks the questions that fit the agent. Only Claude Code has
-// the four model slots, so a profile for another agent is asked for one
-// catch-all model instead: opus/sonnet/haiku/fable would be asking for
-// something that agent cannot read.
-func promptDownstream(ctx context.Context, pr *prompt.Prompter, p *config.Profile, noDiscover bool) error {
-	switch resolveKind(p.Agent) {
-	case config.KindClaude:
-		if noDiscover {
-			return nil
+	for {
+		err := commitProfile(ctx, path, name, p, f, pr)
+		if !errors.Is(err, prompt.ErrBack) {
+			return err
 		}
-		return promptModels(ctx, pr, p)
-	case config.KindOpenAI:
-		model, err := pr.Input("Model (optional)", p.Model, nil)
-		if err != nil {
-			return aborted(err)
+		if err := form.backFromConfirmation(); err != nil {
+			return err
 		}
-		p.Model = model
 	}
-	return nil
 }
 
 // resolveKind answers what kind of agent a name is, which is what decides the
@@ -221,107 +206,6 @@ func resolveKind(name string) config.Kind {
 		return config.KindGeneric
 	}
 	return a.Kind
-}
-
-// promptBasics collects the fields that do not depend on the gateway. The base
-// URL arrives prefilled with the usual local gateway, so pressing enter
-// through the form still produces a working profile.
-func promptBasics(pr *prompt.Prompter, name *string, p *config.Profile) error {
-	if p.BaseURL == "" {
-		p.BaseURL = "http://127.0.0.1:8317"
-	}
-
-	picked, err := pr.Input("Profile name", *name, notBlank("a profile needs a name"))
-	if err != nil {
-		return aborted(err)
-	}
-	*name = picked
-
-	// The key need not be typed: the env: and cmd: shorthands are resolved at
-	// launch, which keeps the secret out of a file you might commit.
-	if p.Description, err = pr.Input("Description (optional)", p.Description, nil); err != nil {
-		return aborted(err)
-	}
-	// Asked before the gateway is queried, because it decides which of the
-	// later questions apply at all.
-	if p.Agent, err = pr.Input("Agent this profile is for (claude, codex, or a name from \"agents\")",
-		p.Agent, notBlank("a profile needs an agent")); err != nil {
-		return aborted(err)
-	}
-	if p.BaseURL, err = pr.Input("Gateway base URL", p.BaseURL, validBaseURL); err != nil {
-		return aborted(err)
-	}
-	if p.APIKey, err = pr.Input("API key (optional; env:NAME and cmd:... also work)", p.APIKey, nil); err != nil {
-		return aborted(err)
-	}
-	return nil
-}
-
-// promptModels asks which model on the gateway serves each model the agent
-// itself resolves. Everything offered is something the server actually
-// serves, so an answer cannot be typo'd into a model that does not exist.
-func promptModels(ctx context.Context, pr *prompt.Prompter, p *config.Profile) error {
-	available, note := discover(ctx, p)
-	if note != "" {
-		fmt.Fprintf(os.Stderr, "note: %s\n", note)
-	}
-	if len(available) == 0 {
-		// No catalogue to choose from. A profile pinned to explicit models,
-		// or one pointing at a gateway that is currently down, still has to
-		// be creatable, so fall back to typing the values.
-		var err error
-		if p.Family, err = pr.Input("Upstream family (optional)", p.Family, nil); err != nil {
-			return aborted(err)
-		}
-		if p.Model, err = pr.Input("Model for every slot (optional)", p.Model, nil); err != nil {
-			return aborted(err)
-		}
-		return nil
-	}
-
-	// A family passed on the command line still narrows the catalogue. The
-	// form asks no family question of its own: naming the model behind each
-	// slot is what says which upstream the profile talks to.
-	candidates := matching(available, p.Family)
-	if len(candidates) == 0 {
-		fmt.Fprintf(os.Stderr, "note: no advertised model matches family %q; leaving the slots unset\n", p.Family)
-		return nil
-	}
-	return promptSlots(pr, p, candidates)
-}
-
-// promptSlots asks for the mapping one row at a time: the model the agent
-// itself resolves on the left, the gateway model that should serve it on the
-// right. Each row starts on the gateway's model for that same slot — the
-// answer that needs no thought — so a profile that maps everything onto
-// itself is four enters. A slot the gateway does not serve starts unset rather
-// than starting wrong.
-func promptSlots(pr *prompt.Prompter, p *config.Profile, candidates []proxy.Model) error {
-	pinned := map[string]string{}
-	for _, slot := range config.Slots {
-		labels := []string{leaveUnset}
-		values := []string{""}
-		for _, m := range candidates {
-			labels = append(labels, candidateLabel(m, slot))
-			values = append(values, m.ID)
-		}
-		def := defaultSlotChoice(slot, candidates, p.Models[slot])
-
-		picked, err := pr.ChooseDefault(slotLabel(slot), labels, def)
-		if err != nil {
-			return aborted(err)
-		}
-		if values[picked] != "" {
-			pinned[slot] = values[picked]
-		}
-	}
-
-	// A profile that pins nothing is the normal case; leaving the map empty
-	// keeps it out of the written JSON.
-	if len(pinned) > 0 {
-		p.Models = pinned
-	}
-	return nil
 }
 
 // slotLabel names a row the way the model is known to whoever is answering: by
@@ -345,7 +229,7 @@ func candidateLabel(m proxy.Model, slot string) string {
 }
 
 // defaultSlotChoice is a row's starting answer, as an index into the options
-// promptSlots builds: 0 is the unset option, then the candidates in order. A
+// the form builds: 0 is the unset option, then the candidates in order. A
 // pin already in the profile stays selected, so re-running create does not
 // silently reset a choice that was made deliberately. Otherwise the gateway's
 // own model for that slot is offered — by exact id, or failing that by the
@@ -408,6 +292,9 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 		ok, err := pr.Confirm(
 			fmt.Sprintf("Profile %q already exists in %s (currently %s). Overwrite it?", name, path, describeProfile(old)),
 			"Overwrite", "Cancel")
+		if errors.Is(err, prompt.ErrBack) {
+			return err
+		}
 		if err != nil {
 			return aborted(err)
 		}
@@ -550,7 +437,7 @@ const (
 // aborted turns the prompter's cancel key into the message the CLI reports.
 // Nothing has been written when it fires.
 func aborted(err error) error {
-	if errors.Is(err, prompt.ErrInterrupted) || errors.Is(err, prompt.ErrEOF) {
+	if errors.Is(err, prompt.ErrInterrupted) || errors.Is(err, prompt.ErrEOF) || errors.Is(err, prompt.ErrBack) {
 		return fmt.Errorf("aborted at the prompt; nothing written")
 	}
 	return err

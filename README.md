@@ -5,7 +5,8 @@
 ```console
 $ cpa claude --profile deepseek     # Claude Code, upstream all-DeepSeek
 $ cpa claude --profile gpt          # Claude Code, upstream all-GPT
-$ cpa claude --profile deepseek -p "explain this repo"
+$ cpa claude -p deepseek            # -p is an alias for --profile
+$ cpa claude --profile deepseek -- -p "explain this repo"
 ```
 
 One gateway, many upstreams. `cpa` picks the upstream per invocation from
@@ -189,22 +190,25 @@ another agent is asked for a single model instead: only Claude Code has slots.
 
 ```console
 $ cpa profile create
-? Profile name devbox
-? Description (optional) devbox gateway
-? Agent this profile is for (claude, codex, or a name from "agents") claude
-? Gateway base URL http://127.0.0.1:18317
-? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
-? opus (Claude Code default: claude-opus-5-5)
-  (leave unset — resolve automatically)
-  claude-haiku-4-5 (Haiku 4.5)  [anthropic] → haiku
-❯ claude-opus-5 (Opus 5)  [anthropic]
-  claude-sonnet-5 (Sonnet 5)  [anthropic] → sonnet
-  deepseek-v4-flash  [commandcode] → haiku
-  deepseek-v4-pro  [commandcode]
-  gpt-6-sol  [openai]
-? sonnet (Claude Code default: claude-sonnet-5) gpt-6-sol  [openai]
-? haiku (Claude Code default: claude-haiku-4-5) claude-haiku-4-5 (Haiku 4.5)  [anthropic]
-? fable (Claude Code default: claude-fable-5-1) (leave unset — resolve automatically)
+✓ Profile name devbox
+✓ Description (optional) devbox gateway
+✓ Agent this profile is for (claude, codex, or a name from "agents") claude
+✓ Gateway base URL http://127.0.0.1:18317
+✓ API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
+Model configuration
+    ? opus (Claude Code default: claude-opus-5-5)
+      (leave unset — resolve automatically)
+      claude-haiku-4-5 (Haiku 4.5)  [anthropic] → haiku
+    ❯ claude-opus-5 (Opus 5)  [anthropic]
+      claude-sonnet-5 (Sonnet 5)  [anthropic] → sonnet
+      deepseek-v4-flash  [commandcode] → haiku
+      deepseek-v4-pro  [commandcode]
+      gpt-6-sol  [openai]
+# after answering the four slot questions:
+    ✓ opus (Claude Code default: claude-opus-5-5) claude-opus-5 (Opus 5)  [anthropic]
+    ✓ sonnet (Claude Code default: claude-sonnet-5) gpt-6-sol  [openai]
+    ✓ haiku (Claude Code default: claude-haiku-4-5) claude-haiku-4-5 (Haiku 4.5)  [anthropic]
+    ✓ fable (Claude Code default: claude-fable-5-1) (leave unset — resolve automatically)
 
 wrote profile "devbox" to ~/.config/cpa/settings.json
   behavesAs: gpt-6-sol behaves as claude-sonnet-5
@@ -255,11 +259,12 @@ matches), a catch-all `model`, and `customModelOption`. A manually configured
 cpa does not overwrite the user's choice.
 
 The prompts are line edited: left/right move the cursor, home/end and
-ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase, ctrl-c abandons the
-profile without writing anything. A value too long for one line scrolls
-sideways rather than wrapping. A list with more options than fit scrolls too,
-and says how many are off screen (`↑ 8 more`, `↓ 3 more`), so a long
-catalogue never looks like a short one. The key prompt accepts `env:NAME` and
+ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase, Esc returns to the
+previous question, and Ctrl-C cancels without writing anything. A value too
+long for one line scrolls sideways rather than wrapping. A list with more
+options than fit scrolls too, and says how many are off screen
+(`↑ 8 more`, `↓ 3 more`), so a long catalogue never looks like a short one.
+The key prompt accepts `env:NAME` and
 `cmd:...`, which resolve at launch and keep the secret out of the file.
 
 Without a terminal — a pipe, a script, CI — there are no prompts at all:
@@ -430,14 +435,16 @@ the slots that model serves.
 | `cpa upgrade [--check]` | Update cpa from its GitHub releases. |
 | `cpa version` | Print the version. |
 
-Flags: `--profile`, `--dry-run`, `--no-discover`, `--json`, `--name`,
+Flags: `--profile` (or `-p`), `--dry-run`, `--no-discover`, `--json`, `--name`,
 `--agent`, `--file`, `--allow-settings-conflict`. Anything unrecognized is
 forwarded to the agent, so `cpa claude --profile deepseek --resume` does what
-you expect. `cpa profile create` additionally takes `--description`,
-`--base-url`, `--api-key`, `--family`, `--model` and `--force`, which answer
-its prompts without a terminal. `--family` narrows the interactive list to the
-models whose id contains that substring and records it on the profile, where
-the launcher falls back to it for any slot left unpinned.
+you expect. Use `--` before agent arguments when needed; Claude Code's own `-p`
+prompt flag must follow it. For example:
+`cpa claude --profile deepseek -- -p "explain this repo"`.
+`cpa profile create` additionally takes `--description`, `--base-url`,
+`--api-key`, `--family`, `--model` and `--force`, which answer its prompts
+without a terminal. `--family` remains available as a fallback for any slot
+left unpinned; the interactive flow configures Claude Code's slots directly.
 
 ## Troubleshooting
 

@@ -5,7 +5,8 @@
 ```console
 $ cpa claude --profile deepseek     # 上游全 DeepSeek 的 Claude Code
 $ cpa claude --profile gpt          # 上游全 GPT 的 Claude Code
-$ cpa claude --profile deepseek -p "解释一下这个仓库"
+$ cpa claude -p deepseek            # -p 是 --profile 的简写
+$ cpa claude --profile deepseek -- -p "解释一下这个仓库"
 ```
 
 一个网关，多个上游。`cpa` 按命名 profile 逐次选择上游，并且**绝不改写你的
@@ -169,22 +170,25 @@ $ cpa claude --profile deepseek
 
 ```console
 $ cpa profile create
-? Profile name devbox
-? Description (optional) devbox gateway
-? Agent this profile is for (claude, codex, or a name from "agents") claude
-? Gateway base URL http://127.0.0.1:18317
-? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
-? opus (Claude Code default: claude-opus-5-5)
-  (leave unset — resolve automatically)
-  claude-haiku-4-5 (Haiku 4.5)  [anthropic] → haiku
-❯ claude-opus-5 (Opus 5)  [anthropic]
-  claude-sonnet-5 (Sonnet 5)  [anthropic] → sonnet
-  deepseek-v4-flash  [commandcode] → haiku
-  deepseek-v4-pro  [commandcode]
-  gpt-6-sol  [openai]
-? sonnet (Claude Code default: claude-sonnet-5) gpt-6-sol  [openai]
-? haiku (Claude Code default: claude-haiku-4-5) claude-haiku-4-5 (Haiku 4.5)  [anthropic]
-? fable (Claude Code default: claude-fable-5-1) (leave unset — resolve automatically)
+✓ Profile name devbox
+✓ Description (optional) devbox gateway
+✓ Agent this profile is for (claude, codex, or a name from "agents") claude
+✓ Gateway base URL http://127.0.0.1:18317
+✓ API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
+Model configuration
+    ? opus (Claude Code default: claude-opus-5-5)
+      (leave unset — resolve automatically)
+      claude-haiku-4-5 (Haiku 4.5)  [anthropic] → haiku
+    ❯ claude-opus-5 (Opus 5)  [anthropic]
+      claude-sonnet-5 (Sonnet 5)  [anthropic] → sonnet
+      deepseek-v4-flash  [commandcode] → haiku
+      deepseek-v4-pro  [commandcode]
+      gpt-6-sol  [openai]
+# 回答完四个槽位后：
+    ✓ opus (Claude Code default: claude-opus-5-5) claude-opus-5 (Opus 5)  [anthropic]
+    ✓ sonnet (Claude Code default: claude-sonnet-5) gpt-6-sol  [openai]
+    ✓ haiku (Claude Code default: claude-haiku-4-5) claude-haiku-4-5 (Haiku 4.5)  [anthropic]
+    ✓ fable (Claude Code default: claude-fable-5-1) (leave unset — resolve automatically)
 
 wrote profile "devbox" to ~/.config/cpa/settings.json
   behavesAs: gpt-6-sol behaves as claude-sonnet-5
@@ -225,8 +229,8 @@ profile，在加上这个声明之后认为自己只有 200k。两者各自都�
 profile 的 `claudeSettings` 已手写 `modelPicker`，则原样保留，不覆盖用户的选择。
 
 输入行支持编辑：左右方向键移动光标，home/end 与 ctrl-a/ctrl-e 跳到行首行尾，
-ctrl-w 与 ctrl-u 删除，ctrl-c 放弃且不写任何文件。一行放不下的输入会横向滚动
-而不换行。选项多到一屏放不下时列表同样会滚动，并标出屏外还有多少项
+ctrl-w 与 ctrl-u 删除，Esc 返回上一个问题，Ctrl-C 取消且不写任何文件。
+一行放不下的输入会横向滚动而不换行。选项多到一屏放不下时列表同样会滚动，并标出屏外还有多少项
 （`↑ 8 more`、`↓ 3 more`），因此再长的模型表也不会看起来像是只有这么多。key 那一项接受 `env:NAME`
 与 `cmd:...` 简写，它们在启动时才解析，密钥因此不必落进文件。
 
@@ -386,12 +390,14 @@ mapping source: claude aliases
 | `cpa upgrade [--check]` | 从 GitHub release 更新 cpa。 |
 | `cpa version` | 打印版本。 |
 
-参数：`--profile`、`--dry-run`、`--no-discover`、`--json`、`--name`、
+参数：`--profile`（也可写成 `-p`）、`--dry-run`、`--no-discover`、`--json`、`--name`、
 `--agent`、`--file`、`--allow-settings-conflict`。未识别的参数一律透传给
-agent，所以 `cpa claude --profile deepseek --resume` 就是你想的那样。`cpa
-profile create` 另有 `--description`、`--base-url`、`--api-key`、`--family`、
-`--model`、`--force`，用来在没有终端时回答它的提问。`--family` 会把交互列表收窄到
-id 含该子串的模型，并记录进 profile，供启动器给未 pin 的槽位兜底。
+agent，所以 `cpa claude --profile deepseek --resume` 就是你想的那样。需要传 Claude Code 自己的
+`-p` prompt 参数时，前面要加 `--`，例如：
+`cpa claude --profile deepseek -- -p "解释一下这个仓库"`。`cpa profile create`
+另有 `--description`、`--base-url`、`--api-key`、`--family`、`--model`、`--force`，
+用来在没有终端时回答它的提问。`--family` 仍可作为未 pin 槽位的兜底；交互流程会直接
+配置 Claude Code 的各个槽位，不再询问 family。
 
 ## 排错
 
