@@ -25,10 +25,9 @@ CREATE FLAGS
   --force          overwrite an existing profile without asking
   --no-discover    do not query the gateway to preview the slot mapping
 
-A created profile lands in $CPA_SETTINGS when that is set, else in
-$XDG_CONFIG_HOME/cpa/settings.json (~/.config/cpa/settings.json); --file
-overrides both. Every prompt accepts an empty line for its default, and
-stdin may be piped.
+A created profile lands in $XDG_CONFIG_HOME/cpa/settings.json
+(~/.config/cpa/settings.json); --file writes somewhere else instead. Every
+prompt accepts an empty line for its default, and stdin may be piped.
 `
 
 // cmdProfile dispatches the `cpa profile` subcommands.
@@ -105,7 +104,7 @@ func cmdProfileCreate(ctx context.Context, args []string) error {
 
 	path := f.file
 	if path == "" {
-		path = config.WritePath()
+		path = config.UserConfigPath()
 	}
 	if path == "" {
 		return fmt.Errorf("cannot determine where to write; pass --file <path>")

@@ -224,34 +224,24 @@ func TestUpsertProfileAtWarnsOnComments(t *testing.T) {
 	}
 }
 
-func TestProfileCreateHonoursPinnedSettings(t *testing.T) {
-	// CPA_SETTINGS pins an exact file for the whole session. An edit has to
-	// land there, not in the global config the user redirected away from.
-	path := filepath.Join(t.TempDir(), "pinned.json")
-	if err := os.WriteFile(path, []byte(`{"profiles": {}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("CPA_SETTINGS", path)
-	feedStdin(t, "http://pinned\n\n\n\n\n")
+func TestProfileCreateDefaultsToTheUserConfig(t *testing.T) {
+	// With no --file the profile belongs in $XDG_CONFIG_HOME/cpa/settings.json,
+	// the same place cpa reads from.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	feedStdin(t, "http://xdg\n\n\n\n\n")
 
 	if err := cmdProfileCreate(context.Background(), []string{
-		"--name", "pinned", "--no-discover",
+		"--name", "xdg", "--no-discover",
 	}); err != nil {
 		t.Fatalf("cmdProfileCreate: %v", err)
 	}
-	if _, ok := readProfiles(t, path)["pinned"]; !ok {
-		t.Error("the profile did not land in the file CPA_SETTINGS pins")
+	want := filepath.Join(dir, "cpa", "settings.json")
+	if _, err := os.Stat(want); err != nil {
+		t.Fatalf("expected the profile at %s: %v", want, err)
 	}
-}
-
-func TestWritePathFollowsPinnedSettings(t *testing.T) {
-	t.Setenv("CPA_SETTINGS", "")
-	if got := config.WritePath(); got != config.UserConfigPath() {
-		t.Errorf("unpinned WritePath = %q, want the user config %q", got, config.UserConfigPath())
-	}
-	t.Setenv("CPA_SETTINGS", "/tmp/pinned.json")
-	if got := config.WritePath(); got != "/tmp/pinned.json" {
-		t.Errorf("pinned WritePath = %q, want /tmp/pinned.json", got)
+	if _, ok := readProfiles(t, want)["xdg"]; !ok {
+		t.Error("the profile did not land in the user config")
 	}
 }
 

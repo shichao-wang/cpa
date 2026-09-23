@@ -146,8 +146,8 @@ Model for every slot, e.g. deepseek-flash[1m] (optional):
 wrote profile "devbox" to ~/.config/cpa/settings.json
 ```
 
-It writes to the file `$CPA_SETTINGS` pins, else the user config; `--file`
-overrides both. Rewriting a settings file that carries JSONC comments drops
+It writes to `$XDG_CONFIG_HOME/cpa/settings.json`; `--file` writes somewhere
+else instead. Rewriting a settings file that carries JSONC comments drops
 them, and `cpa profile create` says so before it does.
 
 Point a profile at an existing setup instead of starting from scratch — this
@@ -169,8 +169,7 @@ $ cpa import-claude --name mygateway
 Earlier versions used `~/.cpa/settings.json`. That path is **no longer read**;
 move the file to the location above.
 
-`$CPA_SETTINGS=/path/to/file.json` pins an exact file. Files are JSONC —
-comments and trailing commas are allowed.
+Files are JSONC — comments and trailing commas are allowed.
 
 ```jsonc
 {

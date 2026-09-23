@@ -26,7 +26,6 @@ func TestParseRawDoesNotMergeNeighbours(t *testing.T) {
 	// the user's file on the next upsert.
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("CPA_SETTINGS", "")
 
 	doc := []byte(`{
   // our own file

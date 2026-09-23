@@ -130,18 +130,6 @@ func LegacyConfigPath() string {
 	return filepath.Join(home, ".cpa", "settings.json")
 }
 
-// WritePath is the file a command should edit when the caller named no
-// explicit target: $CPA_SETTINGS when pinned, else the user config. It
-// mirrors the precedence Load uses, so an edit lands in the same file the
-// rest of the session is already reading rather than in a global the user
-// thought they had redirected away from.
-func WritePath() string {
-	if pinned := os.Getenv("CPA_SETTINGS"); pinned != "" {
-		return pinned
-	}
-	return UserConfigPath()
-}
-
 // Candidates lists the files consulted, in increasing order of precedence.
 func Candidates() []string {
 	var out []string
@@ -153,17 +141,9 @@ func Candidates() []string {
 	return out
 }
 
-// Load reads the first config found. $CPA_SETTINGS pins an exact file and is
-// an error when missing; the conventional paths are optional.
+// Load reads every candidate in Candidates, nearest last, and merges them.
+// Every path is optional; only "no config at all" is an error.
 func Load() (*Config, error) {
-	if pinned := os.Getenv("CPA_SETTINGS"); pinned != "" {
-		cfg, err := loadFile(pinned)
-		if err != nil {
-			return nil, fmt.Errorf("CPA_SETTINGS=%s: %w", pinned, err)
-		}
-		return cfg, nil
-	}
-
 	var found *Config
 	for _, path := range Candidates() {
 		cfg, err := loadFile(path)

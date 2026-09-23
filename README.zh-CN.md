@@ -132,7 +132,7 @@ Model for every slot, e.g. deepseek-flash[1m] (optional):
 wrote profile "devbox" to ~/.config/cpa/settings.json
 ```
 
-写入目标是 `$CPA_SETTINGS` 钉住的文件，否则是用户级配置；`--file` 可覆盖两者。
+写入目标是 `$XDG_CONFIG_HOME/cpa/settings.json`；`--file` 可改为写到别处。
 若某个配置文件里带 JSONC 注释，重写会丢掉它们，`cpa profile create` 会事先说明。
 
 也可以不从头写，而是把现有配置直接转成 profile——它会读取你的 Claude Code
@@ -152,7 +152,7 @@ $ cpa import-claude --name mygateway
 
 早期版本用的是 `~/.cpa/settings.json`，该路径**已不再读取**，把文件移至上表位置即可。
 
-`$CPA_SETTINGS=/path/to/file.json` 可钉死某个文件。文件按 JSONC 解析，允许注释与尾逗号。
+文件按 JSONC 解析，允许注释与尾逗号。
 
 ```jsonc
 {

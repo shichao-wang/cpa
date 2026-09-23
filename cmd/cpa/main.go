@@ -56,10 +56,10 @@ Unrecognized arguments are passed straight through to the agent, so
 ` + "`cpa claude --profile deepseek --resume`" + ` works as you would expect.
 
 CONFIGURATION
-  Settings are read from $CPA_SETTINGS, else $XDG_CONFIG_HOME/cpa/settings.json
+  Settings are read from $XDG_CONFIG_HOME/cpa/settings.json
   (~/.config/cpa/settings.json), merged with ./.cpa/settings.json and
-  ./cpa.settings.json. cpa writes only its own files; it never modifies
-  Claude Code's settings.
+  ./cpa.settings.json, nearest winning per profile. cpa writes only its own
+  files; it never modifies Claude Code's settings.
 `
 
 func main() {
