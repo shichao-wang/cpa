@@ -1,16 +1,18 @@
 name: ci
 
-# Pull requests are tested here. A merge to main that passes those tests is
-# tagged and released in the same run, so the tag is only ever created from a
-# green tree. Pushing a tag by hand (`git push origin v1.2.3`) takes the same
+# This runs after the merge, not on the pull request. A merge to main runs the
+# tests here, and a merge that passes them is tagged and released in the same
+# run, so a tag only ever comes from a green tree. Nothing gates a PR before
+# it is merged: the merge is what starts this.
+#
+# Pushing a tag by hand (`git push origin v2026.09.23-a1b2c3`) takes the same
 # path with the version you chose instead of inventing one.
 #
-# A merge with no label gets a patch bump; the merged PR's labels decide
-# otherwise:
+# A merge is tagged v<UTC date>-<commit>, the date plus the first six
+# characters of the merge commit (v2026.09.23-a1b2c3): the tag names exactly
+# the tree it was built from, and two merges in one day still get distinct
+# tags. One label still applies:
 #
-#   release:major   v1.2.3 -> v2.0.0
-#   release:minor   v1.2.3 -> v1.3.0
-#   release:patch   v1.2.3 -> v1.2.4   (also the default)
 #   skip-release    publish nothing for this merge
 #
 # The tag is pushed with the workflow's own token, which by design does not
@@ -18,7 +20,6 @@ name: ci
 # tag-triggered job.
 
 on:
-  pull_request:
   push:
     branches: [main]
     tags: ["v*"]
@@ -57,15 +58,17 @@ jobs:
               go build -o /dev/null ./cmd/cpa
           done
 
+  # Both triggers are release occasions — a merge to main, or a tag pushed by
+  # hand — so this job carries no ref guard of its own: `needs: test` is the
+  # whole condition.
   release:
     needs: test
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          # Tags: the version bump reads them, and --generate-notes needs the
-          # previous one to write its range.
+          # Tags: the already-released check reads them, and --generate-notes
+          # needs the previous one to write its range.
           fetch-depth: 0
 
       - uses: actions/setup-go@v5
@@ -81,6 +84,10 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+
+          # Read once, so a job that straddles midnight UTC does not write a
+          # date into the tag that its own log line disagrees with.
+          stamp="$(date -u +%Y.%m.%d)"
 
           # A tag pushed by hand names the version itself.
           if [[ "$REF" == refs/tags/v* ]]; then
@@ -111,21 +118,8 @@ jobs:
             exit 0
           fi
 
-          bump=patch
-          if grep -qx 'release:minor' <<<"$labels"; then bump=minor; fi
-          if grep -qx 'release:major' <<<"$labels"; then bump=major; fi
-
-          latest="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n1)"
-          latest="${latest:-v0.0.0}"
-          IFS=. read -r major minor patch <<<"${latest#v}"
-          case "$bump" in
-            major) major=$((major + 1)); minor=0; patch=0 ;;
-            minor) minor=$((minor + 1)); patch=0 ;;
-            patch) patch=$((patch + 1)) ;;
-          esac
-
-          echo "tag=v${major}.${minor}.${patch}" >>"$GITHUB_OUTPUT"
-          echo "${latest} + ${bump} -> v${major}.${minor}.${patch}"
+          echo "tag=v${stamp}-${SHA:0:6}" >>"$GITHUB_OUTPUT"
+          echo "v${stamp}-${SHA:0:6} for ${SHA:0:7}"
 
       - name: Build archives
         if: steps.version.outputs.skip != '1'
@@ -159,6 +153,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -180,3 +175,27 @@ jobs:
             --title "${TAG}" \
             --generate-notes \
             dist/*.tar.gz dist/checksums.txt install.sh
+
+          # The releases list/tags API answers with an empty asset list for a
+          # while after a release is published - v0.2.1 read as empty for an
+          # hour while all six assets were attached and downloadable the whole
+          # time - so the check below asks the URL cpa upgrade itself fetches
+          # rather than that API. It is a belt-and-braces check: no asset has
+          # ever gone missing here, but a release without them breaks cpa
+          # upgrade silently.
+          got=false
+          for _ in 1 2 3; do
+            if curl -fsS -o "${RUNNER_TEMP}/checksums.txt" \
+              "https://github.com/${REPO}/releases/download/${TAG}/checksums.txt"; then
+              got=true
+              break
+            fi
+            echo "checksums.txt not downloadable yet"
+            sleep 5
+          done
+          if [ "$got" != true ]; then
+            echo "release ${TAG} has nothing downloadable behind it; cpa upgrade would fail"
+            echo "repair it with: gh release upload ${TAG} --clobber dist/*.tar.gz dist/checksums.txt install.sh"
+            exit 1
+          fi
+          diff -u dist/checksums.txt "${RUNNER_TEMP}/checksums.txt"
