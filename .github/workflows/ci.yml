@@ -1,9 +1,12 @@
 name: ci
 
-# Pull requests are tested here. A merge to main that passes those tests is
-# tagged and released in the same run, so the tag is only ever created from a
-# green tree. Pushing a tag by hand (`git push origin v1.2.3`) takes the same
-# path with the version you chose instead of inventing one.
+# This runs after the merge, not on the pull request. A merge to main runs the
+# tests here, and a merge that passes them is tagged and released in the same
+# run, so a tag only ever comes from a green tree. Nothing gates a PR before
+# it is merged: the merge is what starts this.
+#
+# Pushing a tag by hand (`git push origin v1.2.3`) takes the same path with the
+# version you chose instead of inventing one.
 #
 # A merge with no label gets a patch bump; the merged PR's labels decide
 # otherwise:
@@ -18,7 +21,6 @@ name: ci
 # tag-triggered job.
 
 on:
-  pull_request:
   push:
     branches: [main]
     tags: ["v*"]
@@ -57,9 +59,11 @@ jobs:
               go build -o /dev/null ./cmd/cpa
           done
 
+  # Both triggers are release occasions — a merge to main, or a tag pushed by
+  # hand — so this job carries no ref guard of its own: `needs: test` is the
+  # whole condition.
   release:
     needs: test
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
