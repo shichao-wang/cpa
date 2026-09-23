@@ -65,6 +65,8 @@ type Profile struct {
 	// Family selects models from the endpoint's /v1/models listing by
 	// substring. When exactly one model matches, it fills every slot —
 	// which is what "all upstream traffic goes to DeepSeek" looks like.
+	// Only Claude Code has slots, so setting it makes this a Claude Code
+	// profile, exactly as pinning Models does.
 	Family string `json:"family,omitempty"`
 	// Model is the catch-all model used for any slot not set explicitly.
 	Model string `json:"model,omitempty"`
@@ -401,7 +403,8 @@ func (p *Profile) HasExplicitModels() bool {
 // profile whether or not it says so, which is what lets EffectiveAgent name
 // the agent without the file having to be edited first.
 func (p *Profile) hasClaudeOnlyFields() bool {
-	return len(p.Models) > 0 ||
+	return p.Family != "" ||
+		len(p.Models) > 0 ||
 		len(p.ModelNames) > 0 ||
 		p.SubagentModel != "" ||
 		p.CustomModelOption != "" ||

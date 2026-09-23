@@ -13,8 +13,9 @@ func TestEffectiveAgent(t *testing.T) {
 		want string
 	}{
 		{"a declared agent wins", Profile{Agent: "codex", Models: map[string]string{"opus": "x"}}, "codex"},
-		{"nothing declared, nothing implied", Profile{BaseURL: "http://gw", Family: "deepseek"}, ""},
+		{"nothing declared, nothing implied", Profile{BaseURL: "http://gw", Model: "gpt-6-sol"}, ""},
 		{"a catch-all model implies nothing", Profile{Model: "gpt-6-sol"}, ""},
+		{"a family fills Claude Code's slots", Profile{Family: "deepseek"}, "claude"},
 		{"pinned slots are Claude Code's", Profile{Models: map[string]string{"opus": "x"}}, "claude"},
 		{"slot labels are Claude Code's", Profile{ModelNames: map[string]string{"opus": "x"}}, "claude"},
 		{"a subagent model is Claude Code's", Profile{SubagentModel: "m"}, "claude"},

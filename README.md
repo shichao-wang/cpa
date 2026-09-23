@@ -136,7 +136,7 @@ $ cpa profile create
 ? Agent this profile is for (claude, codex, or a name from "agents") claude
 ? Gateway base URL http://127.0.0.1:18317
 ? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
-? Upstream family
+? Upstream family (which models fill Claude Code's slots)
 ❯ (every advertised model — 4)
   deepseek — deepseek-chat, deepseek-flash[1m] +1 more
   (type a family…)
@@ -224,7 +224,7 @@ your editor reads.
 | `apiKey` | Client key. Also accepts `"env:VAR"` and `"cmd:shell command"`. |
 | `apiKeyEnv` | Read the key from this environment variable. |
 | `apiKeyCmd` | Read the key from this command's stdout. |
-| `family` | Substring match against the gateway's `/v1/models` listing. |
+| `family` | Substring match against the gateway's `/v1/models` listing. It fills Claude Code's slots, so it also makes the profile a Claude Code one. |
 | `model` | Catch-all model for every slot not otherwise set. |
 | `models` | Pin slots by hand: `{"opus": …, "sonnet": …, "haiku": …, "fable": …}`. Pinning skips discovery entirely. |
 | `modelNames` | Override the label shown in Claude Code's model picker, per slot. |
@@ -274,7 +274,7 @@ Claude Code ones.
 | What the profile says | Which agent it fits |
 |---|---|
 | `"agent": "codex"` | `codex`. Declaring always wins. |
-| no `agent`, but any of `models`, `modelNames`, `subagentModel`, `customModelOption`, `contextWindow`, `claudeSettings` | `claude`: only Claude Code understands those fields, so a profile using them is a Claude Code profile — including one written before this rule existed. |
+| no `agent`, but any of `family`, `models`, `modelNames`, `subagentModel`, `customModelOption`, `contextWindow`, `claudeSettings` | `claude`: only Claude Code understands those fields, so a profile using them is a Claude Code profile — including one written before this rule existed. |
 | no `agent`, none of those fields | Any agent. `cpa profile list` prints `-` for it, so an unbound profile is visible rather than assumed. |
 
 ## How a profile becomes a model mapping

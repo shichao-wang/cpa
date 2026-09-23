@@ -122,7 +122,7 @@ $ cpa profile create
 ? Agent this profile is for (claude, codex, or a name from "agents") claude
 ? Gateway base URL http://127.0.0.1:18317
 ? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
-? Upstream family
+? Upstream family (which models fill Claude Code's slots)
 ❯ (every advertised model — 4)
   deepseek — deepseek-chat, deepseek-flash[1m] +1 more
   (type a family…)
@@ -201,7 +201,7 @@ $ cpa import-claude --name mygateway
 | `apiKey` | 客户端 key，也接受 `"env:VAR"` 与 `"cmd:shell 命令"`。 |
 | `apiKeyEnv` | 从该环境变量读取 key。 |
 | `apiKeyCmd` | 从该命令的标准输出读取 key。 |
-| `family` | 对网关 `/v1/models` 列表做子串匹配。 |
+| `family` | 对网关 `/v1/models` 列表做子串匹配。它填的是 Claude Code 的槽位，所以设了它这个 profile 也就是 Claude Code 的了。 |
 | `model` | 兜底模型，用于所有未显式指定的槽位。 |
 | `models` | 手工钉死槽位：`{"opus": …, "sonnet": …, "haiku": …, "fable": …}`。钉死后完全跳过模型发现。 |
 | `modelNames` | 按槽位覆盖模型选择器里显示的标签。 |
@@ -249,7 +249,7 @@ Code profile 旁边就有一个 `codex` profile。
 | profile 里写了什么 | 它服务于哪个 agent |
 |---|---|
 | `"agent": "codex"` | `codex`。显式声明永远优先。 |
-| 没写 `agent`，但用了 `models`、`modelNames`、`subagentModel`、`customModelOption`、`contextWindow`、`claudeSettings` 中任意一个 | `claude`：这些字段只有 Claude Code 认，用了它们的 profile 就是 Claude Code profile——包括这条规矩出现之前就写好的那些。 |
+| 没写 `agent`，但用了 `family`、`models`、`modelNames`、`subagentModel`、`customModelOption`、`contextWindow`、`claudeSettings` 中任意一个 | `claude`：这些字段只有 Claude Code 认，用了它们的 profile 就是 Claude Code profile——包括这条规矩出现之前就写好的那些。 |
 | 没写 `agent`，上面那些字段一个也没用 | 任何 agent 都能用；`cpa profile list` 会给它显示 `-`，未绑定的 profile 是被看见的，而不是被默认假设的。 |
 
 ## Profile 如何变成模型映射

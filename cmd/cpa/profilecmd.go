@@ -277,7 +277,7 @@ func promptModels(ctx context.Context, pr *prompt.Prompter, p *config.Profile) e
 	}
 
 	labels, values := familyChoices(available, p.Family)
-	picked, err := pr.Choose("Upstream family", labels)
+	picked, err := pr.Choose("Upstream family (which models fill Claude Code's slots)", labels)
 	if err != nil {
 		return aborted(err)
 	}

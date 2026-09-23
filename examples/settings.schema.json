@@ -63,7 +63,7 @@
       "properties": {
         "agent": {
           "type": "string",
-          "description": "The one agent this profile is for: a name typed on the command line, e.g. \"claude\" or \"codex\", or a key under \"agents\". Launching the profile with an agent of another kind is an error, since the model slots and settings below mean nothing to it. Omit it and cpa infers \"claude\" when the profile uses Claude-only fields (models, modelNames, subagentModel, customModelOption, contextWindow, claudeSettings); a profile with none of those fits any agent."
+          "description": "The one agent this profile is for: a name typed on the command line, e.g. \"claude\" or \"codex\", or a key under \"agents\". Launching the profile with an agent of another kind is an error, since the model slots and settings below mean nothing to it. Omit it and cpa infers \"claude\" when the profile uses Claude-only fields (family, models, modelNames, subagentModel, customModelOption, contextWindow, claudeSettings); a profile with none of those fits any agent."
         },
         "description": { "type": "string", "description": "Free text shown by `cpa profile list`." },
         "baseUrl": { "type": "string", "description": "Gateway endpoint, e.g. http://127.0.0.1:8317" },
@@ -75,7 +75,7 @@
         "apiKeyCmd": { "type": "string", "description": "Shell command whose stdout is the key, e.g. a password manager lookup. Run at launch." },
         "family": {
           "type": "string",
-          "description": "Substring matched against the gateway's /v1/models listing. When exactly one model matches, that model fills every slot."
+          "description": "Substring matched against the gateway's /v1/models listing. When exactly one model matches, that model fills every slot. It fills Claude Code's slots and nothing else, so it also makes the profile a Claude Code one."
         },
         "model": { "type": "string", "description": "Catch-all model for any slot not set explicitly." },
         "models": {

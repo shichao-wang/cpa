@@ -33,6 +33,18 @@ func TestBuildRefusesAProfileForAnotherAgent(t *testing.T) {
 		}
 	})
 
+	t.Run("a family alone makes a profile Claude Code's", func(t *testing.T) {
+		// The shape `profile create` leaves behind when every slot is left on
+		// "follow the family": no pinned models, just the family that will
+		// resolve them. There is nowhere for it to go but Claude Code's slots.
+		cfg := &config.Config{Profiles: map[string]*config.Profile{
+			"famonly": {BaseURL: "http://gw", Family: "gpt"},
+		}}
+		if _, err := Build(cfg, "codex", "famonly", nil, Options{}); err == nil {
+			t.Fatal("a family-only profile was applied to codex")
+		}
+	})
+
 	t.Run("another agent of the same kind is fine", func(t *testing.T) {
 		cfg := testConfig()
 		cfg.Agents = map[string]config.Agent{"claude-dev": {Bin: "claude", Kind: config.KindClaude}}
