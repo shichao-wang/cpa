@@ -17,6 +17,8 @@ func TestEffectiveAgent(t *testing.T) {
 		{"a catch-all model implies nothing", Profile{Model: "gpt-6-sol"}, ""},
 		{"a family fills Claude Code's slots", Profile{Family: "deepseek"}, "claude"},
 		{"pinned slots are Claude Code's", Profile{Models: map[string]string{"opus": "x"}}, "claude"},
+		{"fallback models are Claude Code's", Profile{FallbackModel: []string{"sonnet"}}, "claude"},
+		{"empty fallback models imply nothing", Profile{FallbackModel: []string{}}, ""},
 		{"slot labels are Claude Code's", Profile{ModelNames: map[string]string{"opus": "x"}}, "claude"},
 		{"a subagent model is Claude Code's", Profile{SubagentModel: "m"}, "claude"},
 		{"a picker entry is Claude Code's", Profile{CustomModelOption: "m"}, "claude"},

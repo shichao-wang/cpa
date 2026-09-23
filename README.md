@@ -268,7 +268,10 @@ long for one line scrolls sideways rather than wrapping. A list with more
 options than fit scrolls too, and says how many are off screen
 (`↑ 8 more`, `↓ 3 more`), so a long catalogue never looks like a short one.
 The key prompt accepts `env:NAME` and
-`cmd:...`, which resolve at launch and keep the secret out of the file.
+`cmd:...`, which resolve at launch and keep the secret out of the file. The
+optional fallback-model prompt accepts comma-separated model IDs; the order you
+enter is the order Claude Code tries them, and leaving it blank sets no
+fallbacks.
 
 Without a terminal — a pipe, a script, CI — there are no prompts at all:
 every field comes from a flag (`--name`, `--agent`, `--base-url`, `--api-key`,
@@ -316,6 +319,7 @@ still has comments is rejected with an error saying so.)
       "baseUrl": "http://127.0.0.1:8317",
       "apiKeyEnv": "CPA_API_KEY",
       "family": "deepseek",
+      "fallbackModel": ["deepseek-flash", "claude-haiku-4-5"],
       "subagentModel": "deepseek-flash"
     }
   }
@@ -338,6 +342,7 @@ your editor reads.
 | `apiKeyCmd` | Read the key from this command's stdout. |
 | `family` | Substring match against the gateway's `/v1/models` listing. It fills Claude Code's slots, so it also makes the profile a Claude Code one. |
 | `model` | Catch-all model for every slot not otherwise set. |
+| `fallbackModel` | Optional array of Claude Code fallback model IDs, tried in array order. `cpa profile create` accepts a comma-separated list and preserves its order. Passed through cpa's temporary per-launch `--settings` file; it never writes `~/.claude/settings.json`. |
 | `models` | Pin slots by hand: `{"opus": …, "sonnet": …, "haiku": …, "fable": …}`. Pinning skips discovery entirely. |
 | `modelNames` | Override the label shown in Claude Code's model picker, per slot; `create` writes it into the row's `label`. |
 | `subagentModel` | Model for subagents (`CLAUDE_CODE_SUBAGENT_MODEL`). |
@@ -386,7 +391,7 @@ Claude Code ones.
 | What the profile says | Which agent it fits |
 |---|---|
 | `"agent": "codex"` | `codex`. Declaring always wins. |
-| no `agent`, but any of `family`, `models`, `modelNames`, `subagentModel`, `customModelOption`, `contextWindow`, `claudeSettings` | `claude`: only Claude Code understands those fields, so a profile using them is a Claude Code profile — including one written before this rule existed. |
+| no `agent`, but any of `family`, `models`, `fallbackModel`, `modelNames`, `subagentModel`, `customModelOption`, `contextWindow`, `claudeSettings` | `claude`: only Claude Code understands those fields, so a profile using them is a Claude Code profile — including one written before this rule existed. |
 | no `agent`, none of those fields | Any agent. `cpa profile list` prints `-` for it, so an unbound profile is visible rather than assumed. |
 
 ## How a profile becomes a model mapping

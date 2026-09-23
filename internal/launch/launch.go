@@ -224,6 +224,9 @@ func buildSettings(cfg *config.Config, p *config.Profile, env map[string]string,
 	for k, v := range p.ClaudeSettings {
 		settings[k] = v
 	}
+	if len(p.FallbackModel) > 0 {
+		settings["fallbackModel"] = p.FallbackModel
+	}
 	// An explicit picker in either settings layer wins. For older profiles
 	// without one, use the models this launch actually resolved, including
 	// family matches and gateway aliases that were unknown at create time.

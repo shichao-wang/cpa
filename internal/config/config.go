@@ -73,6 +73,8 @@ type Profile struct {
 	// Models pins slots explicitly: {"opus": "...", "sonnet": "...",
 	// "haiku": "...", "fable": "..."}.
 	Models map[string]string `json:"models,omitempty"`
+	// FallbackModel lists Claude Code fallback models in attempt order.
+	FallbackModel []string `json:"fallbackModel,omitempty"`
 	// ModelNames overrides the human-readable label shown in Claude Code's
 	// model picker, per slot.
 	ModelNames map[string]string `json:"modelNames,omitempty"`
@@ -431,6 +433,7 @@ func (p *Profile) HasExplicitModels() bool {
 func (p *Profile) hasClaudeOnlyFields() bool {
 	return p.Family != "" ||
 		len(p.Models) > 0 ||
+		len(p.FallbackModel) > 0 ||
 		len(p.ModelNames) > 0 ||
 		p.SubagentModel != "" ||
 		p.CustomModelOption != "" ||

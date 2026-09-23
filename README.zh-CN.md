@@ -234,7 +234,8 @@ profile 的 `claudeSettings` 已手写 `modelPicker`，则原样保留，不覆�
 ctrl-w 与 ctrl-u 删除，Esc 返回上一个问题，Ctrl-C 取消且不写任何文件。
 一行放不下的输入会横向滚动而不换行。选项多到一屏放不下时列表同样会滚动，并标出屏外还有多少项
 （`↑ 8 more`、`↓ 3 more`），因此再长的模型表也不会看起来像是只有这么多。key 那一项接受 `env:NAME`
-与 `cmd:...` 简写，它们在启动时才解析，密钥因此不必落进文件。
+与 `cmd:...` 简写，它们在启动时才解析，密钥因此不必落进文件。可选的 fallbackModel 提示可以留空，
+也可以输入逗号分隔的模型 ID；输入顺序就是 Claude Code 的尝试顺序。
 
 没有终端时（管道、脚本、CI）完全不提问：所有字段都从命令行参数取
 （`--name`、`--agent`、`--base-url`、`--api-key`、`--family`、`--model`
@@ -277,6 +278,7 @@ $ cpa import-claude --name mygateway
       "baseUrl": "http://127.0.0.1:8317",
       "apiKeyEnv": "CPA_API_KEY",
       "family": "deepseek",
+      "fallbackModel": ["deepseek-flash", "claude-haiku-4-5"],
       "subagentModel": "deepseek-flash"
     }
   }
@@ -297,6 +299,7 @@ $ cpa import-claude --name mygateway
 | `apiKeyCmd` | 从该命令的标准输出读取 key。 |
 | `family` | 对网关 `/v1/models` 列表做子串匹配。它填的是 Claude Code 的槽位，所以设了它这个 profile 也就是 Claude Code 的了。 |
 | `model` | 兜底模型，用于所有未显式指定的槽位。 |
+| `fallbackModel` | Claude Code 的后备模型 ID 字符串数组，按数组顺序尝试。交互式创建可留空或输入逗号分隔的列表，并保留输入顺序。cpa 只将它放入每次启动生成的临时 `--settings` 文件，不会写入 `~/.claude/settings.json`。 |
 | `models` | 手工钉死槽位：`{"opus": …, "sonnet": …, "haiku": …, "fable": …}`。钉死后完全跳过模型发现。 |
 | `modelNames` | 按槽位覆盖模型选择器里显示的标签；`create` 会把它写进行里的 `label`。 |
 | `subagentModel` | 子 agent 使用的模型（`CLAUDE_CODE_SUBAGENT_MODEL`）。 |
@@ -343,7 +346,7 @@ Code profile 旁边就有一个 `codex` profile。
 | profile 里写了什么 | 它服务于哪个 agent |
 |---|---|
 | `"agent": "codex"` | `codex`。显式声明永远优先。 |
-| 没写 `agent`，但用了 `family`、`models`、`modelNames`、`subagentModel`、`customModelOption`、`contextWindow`、`claudeSettings` 中任意一个 | `claude`：这些字段只有 Claude Code 认，用了它们的 profile 就是 Claude Code profile——包括这条规矩出现之前就写好的那些。 |
+| 没写 `agent`，但用了 `family`、`models`、`fallbackModel`、`modelNames`、`subagentModel`、`customModelOption`、`contextWindow`、`claudeSettings` 中任意一个 | `claude`：这些字段只有 Claude Code 认，用了它们的 profile 就是 Claude Code profile——包括这条规矩出现之前就写好的那些。 |
 | 没写 `agent`，上面那些字段一个也没用 | 任何 agent 都能用；`cpa profile list` 会给它显示 `-`，未绑定的 profile 是被看见的，而不是被默认假设的。 |
 
 ## Profile 如何变成模型映射
