@@ -20,6 +20,10 @@ var ErrInterrupted = errors.New("interrupted")
 // ErrEOF is returned when the terminal goes away mid-prompt.
 var ErrEOF = errors.New("input ended")
 
+// ErrBack is returned when the user asks the caller to return to the previous
+// question by pressing escape.
+var ErrBack = errors.New("back")
+
 const (
 	// how many list options are shown at once, before the list scrolls
 	listHeight = 10
@@ -38,7 +42,16 @@ type Prompter struct {
 	closed bool
 	// drawn is how many lines were painted below the current label, so the
 	// next redraw knows how far up to travel.
-	drawn int
+	drawn   int
+	indent  string
+	answers []answerMark
+	// sectionsSinceAnswer counts section headings printed after the most recent
+	// confirmed answer, so Back can erase through them when returning farther.
+	sectionsSinceAnswer int
+}
+
+type answerMark struct {
+	sectionsBefore int
 }
 
 // New takes the terminal into raw mode. It returns ErrNotATerminal when in is
@@ -52,7 +65,7 @@ func New(in *os.File, out io.Writer) (*Prompter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Prompter{fd: fd, dec: newDecoder(in), out: out, state: state}, nil
+	return &Prompter{fd: fd, dec: newTerminalDecoder(in, fd), out: out, state: state}, nil
 }
 
 // Close restores the terminal. It is safe to call more than once.
@@ -62,6 +75,39 @@ func (p *Prompter) Close() error {
 	}
 	p.closed = true
 	return term.Restore(p.fd, p.state)
+}
+
+// SetIndent indents subsequent prompts and confirmed answers by n spaces.
+func (p *Prompter) SetIndent(n int) {
+	if n < 0 {
+		n = 0
+	}
+	p.indent = strings.Repeat(" ", n)
+}
+
+// Section prints a heading between questions. Back removes section headings
+// printed after the answer it rewinds.
+func (p *Prompter) Section(label string) {
+	if p.drawn > 0 {
+		p.rewind()
+	}
+	fmt.Fprintf(p.out, "\r\x1b[K%s\x1b[1m%s\x1b[0m\x1b[J\r\n", p.indent, clip(label, max(p.width()-len(p.indent)-1, 1)))
+	p.drawn = 0
+	p.sectionsSinceAnswer++
+}
+
+// Back erases the most recently confirmed answer and anything after it. It is
+// intended to be called after Input or Choose returns ErrBack.
+func (p *Prompter) Back() {
+	if len(p.answers) == 0 {
+		return
+	}
+	mark := p.answers[len(p.answers)-1]
+	p.answers = p.answers[:len(p.answers)-1]
+	rows := p.sectionsSinceAnswer + 1
+	fmt.Fprintf(p.out, "\x1b[%dA\r\x1b[K\x1b[J", rows)
+	p.drawn = 0
+	p.sectionsSinceAnswer = mark.sectionsBefore
 }
 
 // Input asks for a single line. A non-empty def is offered as editable text
@@ -85,6 +131,10 @@ func (p *Prompter) Input(label, def string, validate func(string) error) (string
 		if k == KeyInterrupt {
 			p.abort()
 			return "", ErrInterrupted
+		}
+		if k == KeyBack {
+			p.eraseActive()
+			return "", ErrBack
 		}
 		if k == KeyEnter {
 			value := strings.TrimSpace(e.String())
@@ -132,6 +182,9 @@ func (p *Prompter) ChooseDefault(label string, options []string, def int) (int, 
 		case KeyInterrupt:
 			p.abort()
 			return -1, ErrInterrupted
+		case KeyBack:
+			p.eraseActive()
+			return -1, ErrBack
 		}
 		l.Apply(k)
 	}
@@ -161,20 +214,20 @@ func (p *Prompter) listHeight() int {
 
 func (p *Prompter) drawInput(label string, e *Editor, errText string) {
 	p.rewind()
-	label = clip(label, max(p.width()/2, 8))
+	label = clip(label, max((p.width()-len(p.indent))/2, 8))
 	// Text wider than the terminal would wrap onto a second row, which the
 	// next redraw cannot erase and the cursor arithmetic cannot follow. Show a
 	// window that keeps the editing position on screen instead: it scrolls
 	// sideways as the line grows. Runes are counted, not display cells, so a
 	// line of wide characters lands a little off — acceptable for the ids and
 	// URLs typed at these prompts.
-	avail := p.width() - 3 - len([]rune(label))
+	avail := p.width() - len(p.indent) - 3 - len([]rune(label))
 	if avail < 1 {
 		avail = 1
 	}
 	text := []rune(e.String())
 	start, end := lineWindow(text, e.Cursor(), avail)
-	fmt.Fprintf(p.out, "\r\x1b[K\x1b[1m?\x1b[0m %s %s", label, string(text[start:end]))
+	fmt.Fprintf(p.out, "\r\x1b[K%s\x1b[1m?\x1b[0m %s %s", p.indent, label, string(text[start:end]))
 	if back := end - e.Cursor(); back > 0 {
 		fmt.Fprintf(p.out, "\x1b[%dD", back)
 	}
@@ -184,28 +237,28 @@ func (p *Prompter) drawInput(label string, e *Editor, errText string) {
 		}
 		return
 	}
-	// Save the cursor, print the message under the line, come back.
-	fmt.Fprint(p.out, "\x1b7")
-	fmt.Fprintf(p.out, "\n\r\x1b[K\x1b[31m%s\x1b[0m\x1b[J", errText)
-	fmt.Fprint(p.out, "\x1b8")
+	// Leave the cursor on the message row: rewind() then moves up exactly
+	// one row, including when Escape removes this unanswered question.
+	fmt.Fprintf(p.out, "\n\r\x1b[K\x1b[31m%s\x1b[0m\x1b[J", clip(errText, p.width()-1))
 	p.drawn = 1
 }
 
 func (p *Prompter) endInput(label, value string) {
 	p.rewind()
-	fmt.Fprintf(p.out, "\r\x1b[K\x1b[1m?\x1b[0m %s %s\x1b[J\r\n", label, value)
+	fmt.Fprintf(p.out, "\r\x1b[K%s\x1b[1m✓\x1b[0m %s\x1b[J\r\n", p.indent, clip(label+" "+value, max(p.width()-len(p.indent)-3, 1)))
 	p.drawn = 0
+	p.confirmAnswer()
 }
 
 func (p *Prompter) drawList(label string, l *List) {
 	p.rewind()
 	width := p.width()
-	fmt.Fprintf(p.out, "\r\x1b[K\x1b[1m?\x1b[0m %s", clip(label, width-2))
+	fmt.Fprintf(p.out, "\r\x1b[K%s\x1b[1m?\x1b[0m %s", p.indent, clip(label, width-len(p.indent)-2))
 	n := 0
 	// A window shorter than the list says so on its own first and last rows,
 	// dimmed; otherwise the list looks complete at the bottom edge.
 	if above, _ := l.Hidden(); above > 0 {
-		fmt.Fprintf(p.out, "\n\r\x1b[K\x1b[2m  ↑ %d more\x1b[0m", above)
+		fmt.Fprintf(p.out, "\n\r\x1b[K%s\x1b[2m  ↑ %d more\x1b[0m", p.indent, above)
 		n++
 	}
 	for _, it := range l.Visible() {
@@ -213,11 +266,11 @@ func (p *Prompter) drawList(label string, l *List) {
 		if it.Selected {
 			mark = marker
 		}
-		fmt.Fprintf(p.out, "\n\r\x1b[K%s%s", mark, clip(it.Text, width-2))
+		fmt.Fprintf(p.out, "\n\r\x1b[K%s%s%s", p.indent, mark, clip(it.Text, width-len(p.indent)-2))
 		n++
 	}
 	if _, below := l.Hidden(); below > 0 {
-		fmt.Fprintf(p.out, "\n\r\x1b[K\x1b[2m  ↓ %d more\x1b[0m", below)
+		fmt.Fprintf(p.out, "\n\r\x1b[K%s\x1b[2m  ↓ %d more\x1b[0m", p.indent, below)
 		n++
 	}
 	// Scrolling can drop an indicator and so paint fewer rows than last time;
@@ -267,7 +320,21 @@ func clip(s string, n int) string {
 
 func (p *Prompter) endChoose(label, value string) {
 	p.rewind()
-	fmt.Fprintf(p.out, "\r\x1b[K\x1b[1m?\x1b[0m %s %s\x1b[J\r\n", label, value)
+	fmt.Fprintf(p.out, "\r\x1b[K%s\x1b[1m✓\x1b[0m %s\x1b[J\r\n", p.indent, clip(label+" "+value, max(p.width()-len(p.indent)-3, 1)))
+	p.drawn = 0
+	p.confirmAnswer()
+}
+
+func (p *Prompter) confirmAnswer() {
+	p.answers = append(p.answers, answerMark{sectionsBefore: p.sectionsSinceAnswer})
+	p.sectionsSinceAnswer = 0
+}
+
+// eraseActive removes the current unanswered prompt without leaving a cancel
+// marker or advancing the cursor, so a caller can redraw it in place.
+func (p *Prompter) eraseActive() {
+	p.rewind()
+	fmt.Fprint(p.out, "\r\x1b[K\x1b[J")
 	p.drawn = 0
 }
 

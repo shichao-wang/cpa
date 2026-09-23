@@ -54,6 +54,8 @@ func parseFlags(args []string) (*flags, error) {
 			f.profile, err = takeValue()
 		case strings.HasPrefix(a, "--profile="):
 			f.profile = strings.TrimPrefix(a, "--profile=")
+		case strings.HasPrefix(a, "-p="):
+			f.profile = strings.TrimPrefix(a, "-p=")
 		case a == "--name":
 			f.name, err = takeValue()
 		case strings.HasPrefix(a, "--name="):
@@ -167,6 +169,8 @@ func parseLaunchArgs(args []string) (string, *flags, error) {
 			f.profile = args[i]
 		case strings.HasPrefix(a, "--profile="):
 			f.profile = strings.TrimPrefix(a, "--profile=")
+		case strings.HasPrefix(a, "-p="):
+			f.profile = strings.TrimPrefix(a, "-p=")
 		case a == "--dry-run":
 			f.dryRun = true
 		case a == "--no-discover":

@@ -2,7 +2,7 @@
 // selected by named profiles.
 //
 //	cpa --profile deepseek claude      # Claude Code, upstream all-DeepSeek
-//	cpa -p gpt claude                  # Claude Code, upstream all-GPT
+//	cpa -p gpt claude                  # same profile flag, using its short alias
 //
 // Profiles live in cpa's own settings file, $XDG_CONFIG_HOME/cpa/settings.json
 // (~/.config/cpa/settings.json by default). Launching hands the profile to the
