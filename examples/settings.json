@@ -1,6 +1,7 @@
 // cpa 的完整示例配置。文件按 JSONC 解析：允许注释和尾逗号。
 //
-// 放到 ~/.cpa/settings.json（全局）或 ./.cpa/settings.json（项目内，优先级更高）。
+// 放到 $XDG_CONFIG_HOME/cpa/settings.json（默认 ~/.config/cpa/settings.json），
+// 或 ./.cpa/settings.json（项目内，优先级更高）。
 {
   "$schema": "./settings.schema.json",
 

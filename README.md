@@ -64,11 +64,13 @@ back into plain env injection.
 
 - **Never writes** `~/.claude/settings.json`, `~/.claude.json`, or anything
   else Claude Code owns. It only ever reads them.
-- Settings are read from its own file: `~/.cpa/settings.json` (see
+- Settings are read from its own file, `$XDG_CONFIG_HOME/cpa/settings.json`
+  (`~/.config/cpa/settings.json` by default — see
   [Configuration](#configuration)).
-- The only thing it writes is a per-launch settings document at
-  `~/.cpa/run/settings-<pid>.json`, mode `0600` inside a `0700` directory.
-  Documents older than a day are swept on the next launch.
+- The only thing it writes is a per-launch settings document, mode `0600`
+  inside a `0700` directory, under `$XDG_RUNTIME_DIR/cpa/run/` when that is
+  set and `~/.local/state/cpa/run/` otherwise. Documents older than a day are
+  swept on the next launch.
 - The native `claude` command is untouched, and a plain `claude` started
   outside `cpa` behaves exactly as it did before.
 - `--dry-run` prints the full command, the complete environment, and the exact
@@ -113,7 +115,7 @@ $ make install
 ## Quick start
 
 ```console
-$ cpa init                     # writes ~/.cpa/settings.json
+$ cpa init                     # writes ~/.config/cpa/settings.json
 $ export CPA_API_KEY=sk-...    # whatever your gateway expects
 $ cpa doctor                   # confirm each profile's endpoint answers
 $ cpa claude --profile deepseek
@@ -131,9 +133,12 @@ $ cpa import-claude --name mygateway
 
 `cpa` reads, in increasing order of precedence:
 
-1. `~/.cpa/settings.json`
-2. `$XDG_CONFIG_HOME/cpa/settings.json`
-3. `./.cpa/settings.json` and `./cpa.settings.json` (project-local)
+1. `$XDG_CONFIG_HOME/cpa/settings.json`, or `~/.config/cpa/settings.json`
+   when `XDG_CONFIG_HOME` is unset
+2. `./.cpa/settings.json` and `./cpa.settings.json` (project-local)
+
+Earlier versions used `~/.cpa/settings.json`. That path is **no longer read**;
+move the file to the location above.
 
 `$CPA_SETTINGS=/path/to/file.json` pins an exact file. Files are JSONC —
 comments and trailing commas are allowed.

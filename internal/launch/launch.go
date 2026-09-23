@@ -189,11 +189,19 @@ func buildSettings(cfg *config.Config, p *config.Profile, env map[string]string)
 // settingsPath is a private, per-process file. Keeping the document on disk
 // rather than inline in argv keeps the API key out of `ps` output.
 func settingsPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(os.TempDir(), fmt.Sprintf("cpa-settings-%d.json", os.Getpid()))
+	base := os.Getenv("XDG_RUNTIME_DIR")
+	if base == "" {
+		base = os.Getenv("XDG_STATE_HOME")
 	}
-	return filepath.Join(home, ".cpa", "run", fmt.Sprintf("settings-%d.json", os.Getpid()))
+	if base == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			base = filepath.Join(home, ".local", "state")
+		}
+	}
+	if base == "" {
+		base = os.TempDir()
+	}
+	return filepath.Join(base, "cpa", "run", fmt.Sprintf("settings-%d.json", os.Getpid()))
 }
 
 // applyClaudeEnv fills the ANTHROPIC_* variables Claude Code reads.

@@ -96,8 +96,33 @@ type Config struct {
 // Slots are the model slots Claude Code resolves through ANTHROPIC_DEFAULT_*.
 var Slots = []string{"opus", "sonnet", "haiku", "fable"}
 
-// userConfigPath returns ~/.cpa/settings.json.
-func userConfigPath() string {
+// userConfigDir returns the user-level configuration directory, per the XDG
+// Base Directory spec: $XDG_CONFIG_HOME when set, else ~/.config.
+func userConfigDir() string {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return xdg
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config")
+}
+
+// UserConfigPath is where `cpa init` writes and where cpa looks first:
+// $XDG_CONFIG_HOME/cpa/settings.json, which is ~/.config/cpa/settings.json
+// when XDG_CONFIG_HOME is unset.
+func UserConfigPath() string {
+	dir := userConfigDir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "cpa", "settings.json")
+}
+
+// LegacyConfigPath is the pre-XDG location, ~/.cpa/settings.json. cpa no
+// longer reads it; it is here so callers can tell users where their file went.
+func LegacyConfigPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
@@ -108,11 +133,8 @@ func userConfigPath() string {
 // Candidates lists the files consulted, in increasing order of precedence.
 func Candidates() []string {
 	var out []string
-	if p := userConfigPath(); p != "" {
+	if p := UserConfigPath(); p != "" {
 		out = append(out, p)
-	}
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		out = append(out, filepath.Join(xdg, "cpa", "settings.json"))
 	}
 	// Project-local overrides, nearest last.
 	out = append(out, ".cpa/settings.json", "cpa.settings.json")

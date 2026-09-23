@@ -57,9 +57,11 @@ ok                      # ← 用的是 settings.json 里的端点，不是你�
 `cpa` 的保证：
 
 - **绝不写入** `~/.claude/settings.json`、`~/.claude.json` 或任何属于 Claude Code 的文件，只读取。
-- 配置读取自它自己的文件：`~/.cpa/settings.json`（见[配置](#配置)）。
-- 唯一会写的东西是每次启动的 settings 文档：`~/.cpa/run/settings-<pid>.json`，
-  `0700` 目录下的 `0600` 文件；超过一天的文档会在下次启动时清理。
+- 配置读取自它自己的文件：`$XDG_CONFIG_HOME/cpa/settings.json`，未设置该变量时为
+  `~/.config/cpa/settings.json`（见[配置](#配置)）。
+- 唯一会写的东西是每次启动的 settings 文档：`0700` 目录下的 `0600` 文件，位置在
+  `$XDG_RUNTIME_DIR/cpa/run/`，该变量未设置时用 `~/.local/state/cpa/run/`；
+  超过一天的文档会在下次启动时清理。
 - 原生 `claude` 不受影响，在 `cpa` 之外直接运行 `claude` 的行为与以前完全一致。
 - `--dry-run` 会打印完整命令、完整环境变量和确切的 settings 文档，且不启动任何东西。
 
@@ -101,7 +103,7 @@ $ make install
 ## 快速开始
 
 ```console
-$ cpa init                     # 写入 ~/.cpa/settings.json
+$ cpa init                     # 写入 ~/.config/cpa/settings.json
 $ export CPA_API_KEY=sk-...    # 你的网关要求的 key
 $ cpa doctor                   # 确认每个 profile 的端点可达
 $ cpa claude --profile deepseek
@@ -118,9 +120,11 @@ $ cpa import-claude --name mygateway
 
 `cpa` 按优先级递增读取：
 
-1. `~/.cpa/settings.json`
-2. `$XDG_CONFIG_HOME/cpa/settings.json`
-3. `./.cpa/settings.json` 与 `./cpa.settings.json`（项目内）
+1. `$XDG_CONFIG_HOME/cpa/settings.json`，未设置 `XDG_CONFIG_HOME` 时为
+   `~/.config/cpa/settings.json`
+2. `./.cpa/settings.json` 与 `./cpa.settings.json`（项目内）
+
+早期版本用的是 `~/.cpa/settings.json`，该路径**已不再读取**，把文件移至上表位置即可。
 
 `$CPA_SETTINGS=/path/to/file.json` 可钉死某个文件。文件按 JSONC 解析，允许注释与尾逗号。
 

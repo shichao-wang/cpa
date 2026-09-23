@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -77,17 +76,27 @@ func loadConfig() (*config.Config, error) {
 		return cfg, nil
 	}
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("no settings file found; run `cpa init` to create %s", defaultConfigPath())
+		warnLegacyConfig()
+		return nil, fmt.Errorf("no settings file found; run `cpa init` to create %s", config.UserConfigPath())
 	}
 	return nil, err
 }
 
-func defaultConfigPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "~/.cpa/settings.json"
+// warnLegacyConfig points users at the move when their settings are still at
+// the pre-XDG location and nothing sits at the new one. It stays silent once
+// the file has been moved, and on machines that never had one.
+func warnLegacyConfig() {
+	legacy, current := config.LegacyConfigPath(), config.UserConfigPath()
+	if legacy == "" || current == "" {
+		return
 	}
-	return filepath.Join(home, ".cpa", "settings.json")
+	if _, err := os.Stat(legacy); err != nil {
+		return
+	}
+	if _, err := os.Stat(current); err == nil {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "note: %s is no longer read; move it to %s\n", legacy, current)
 }
 
 // discover fetches the gateway's model catalogue for a profile. Failure is

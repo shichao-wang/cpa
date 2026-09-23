@@ -72,7 +72,7 @@ func cmdInit(args []string) error {
 	if err != nil {
 		return err
 	}
-	path := defaultConfigPath()
+	path := config.UserConfigPath()
 	if _, err := os.Stat(path); err == nil && !f.force {
 		return fmt.Errorf("%s already exists; pass --force to overwrite", path)
 	}
@@ -179,7 +179,7 @@ func cmdImportClaude(args []string) error {
 	if err := upsertProfile(name, profile); err != nil {
 		return err
 	}
-	fmt.Printf("imported profile %q into %s\n", name, defaultConfigPath())
+	fmt.Printf("imported profile %q into %s\n", name, config.UserConfigPath())
 	keyNote := ""
 	if profile.APIKey != "" {
 		keyNote = "\n  note: the API key was copied into that file as plain text.\n" +
@@ -192,7 +192,7 @@ func cmdImportClaude(args []string) error {
 // upsertProfile merges one profile into the user's settings file, creating
 // the file if needed. It only ever touches cpa's own config.
 func upsertProfile(name string, profile *config.Profile) error {
-	path := defaultConfigPath()
+	path := config.UserConfigPath()
 	raw := map[string]interface{}{}
 
 	if data, err := os.ReadFile(path); err == nil {

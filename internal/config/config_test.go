@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -114,5 +115,47 @@ func TestResolveAPIKeyIndirections(t *testing.T) {
 				t.Errorf("got %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestCandidatesFollowXDG(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	t.Setenv("XDG_CONFIG_HOME", "")
+	got := Candidates()
+	want := filepath.Join(home, ".config", "cpa", "settings.json")
+	if len(got) == 0 || got[0] != want {
+		t.Errorf("without XDG_CONFIG_HOME: Candidates()[0] = %q, want %q", got, want)
+	}
+
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	got = Candidates()
+	want = filepath.Join(xdg, "cpa", "settings.json")
+	if len(got) == 0 || got[0] != want {
+		t.Errorf("with XDG_CONFIG_HOME: Candidates()[0] = %q, want %q", got, want)
+	}
+
+	// The pre-XDG location must not be consulted at all. Project-local
+	// candidates are relative (".cpa/settings.json"), so match on the
+	// rooted form only.
+	for _, p := range got {
+		if strings.Contains(p, string(filepath.Separator)+".cpa"+string(filepath.Separator)) {
+			t.Errorf("legacy ~/.cpa path is still a candidate: %q", got)
+		}
+	}
+}
+
+func TestUserConfigPathIsNotTheLegacyLocation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	if UserConfigPath() == LegacyConfigPath() {
+		t.Fatalf("UserConfigPath() must differ from LegacyConfigPath(), both %q", UserConfigPath())
+	}
+	if got := LegacyConfigPath(); got != filepath.Join(home, ".cpa", "settings.json") {
+		t.Errorf("LegacyConfigPath() = %q", got)
 	}
 }

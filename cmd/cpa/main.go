@@ -4,10 +4,11 @@
 //	cpa claude --profile deepseek      # Claude Code, upstream all-DeepSeek
 //	cpa claude --profile gpt           # Claude Code, upstream all-GPT
 //
-// Profiles live in cpa's own settings file (~/.cpa/settings.json). Launching
-// injects environment variables into the child process and never rewrites
-// Claude Code's configuration, so the native `claude` command keeps working
-// exactly as before.
+// Profiles live in cpa's own settings file, $XDG_CONFIG_HOME/cpa/settings.json
+// (~/.config/cpa/settings.json by default). Launching hands the profile to the
+// agent through its own child process -- environment plus a per-launch
+// `--settings` document -- and never rewrites Claude Code's configuration, so
+// the native `claude` command keeps working exactly as before.
 package main
 
 import (
@@ -52,8 +53,9 @@ Unrecognized arguments are passed straight through to the agent, so
 ` + "`cpa claude --profile deepseek --resume`" + ` works as you would expect.
 
 CONFIGURATION
-  Settings are read from $CPA_SETTINGS, else ~/.cpa/settings.json merged
-  with ./.cpa/settings.json. cpa writes only its own file; it never modifies
+  Settings are read from $CPA_SETTINGS, else $XDG_CONFIG_HOME/cpa/settings.json
+  (~/.config/cpa/settings.json), merged with ./.cpa/settings.json and
+  ./cpa.settings.json. cpa writes only its own files; it never modifies
   Claude Code's settings.
 `
 
