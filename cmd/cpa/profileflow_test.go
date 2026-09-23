@@ -74,6 +74,7 @@ func (s *scriptedQuestions) Back()          { s.backs++ }
 
 const agentQuestion = "Agent this profile is for (claude, codex, or a name from \"agents\")"
 const keyQuestion = "API key (optional; env:NAME and cmd:... also work)"
+const fallbackQuestion = "Fallback models (optional; comma-separated, in order, max 3)"
 
 func TestProfileFormBackAndRediscover(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
@@ -93,6 +94,7 @@ func TestProfileFormBackAndRediscover(t *testing.T) {
 		{label: slotLabel("sonnet"), index: 0},
 		{label: slotLabel("haiku"), index: 0},
 		{label: slotLabel("fable"), index: 0},
+		{label: fallbackQuestion, text: "sonnet, haiku"},
 	}}
 	calls := 0
 	name := ""
@@ -112,7 +114,7 @@ func TestProfileFormBackAndRediscover(t *testing.T) {
 	if calls != 2 || q.backs != 3 || q.sections != 2 {
 		t.Errorf("discovery calls = %d, back steps = %d, sections = %d; want 2, 3, 2", calls, q.backs, q.sections)
 	}
-	if name != "devbox" || p.BaseURL != "http://second" || len(p.Models) != 0 || len(q.answers) != 0 {
+	if name != "devbox" || p.BaseURL != "http://second" || len(p.Models) != 0 || !reflect.DeepEqual(p.FallbackModel, []string{"sonnet", "haiku"}) || len(q.answers) != 0 {
 		t.Errorf("name=%q, baseURL=%q, pins=%v, remaining=%v", name, p.BaseURL, p.Models, q.answers)
 	}
 }
@@ -128,6 +130,7 @@ func TestProfileFormOfflineClaudeBack(t *testing.T) {
 		{label: "Model for every slot (optional)", back: true},
 		{label: "Upstream family (optional)", text: "gpt"},
 		{label: "Model for every slot (optional)", text: "gpt-5"},
+		{label: fallbackQuestion},
 	}}
 	name := ""
 	p := &config.Profile{Agent: "claude"}
@@ -149,6 +152,7 @@ func TestProfileFormNoDiscoverSkipsModelQuestions(t *testing.T) {
 		{label: agentQuestion, text: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: keyQuestion},
+		{label: fallbackQuestion, text: "opus, haiku"},
 	}}
 	name := ""
 	p := &config.Profile{Agent: "claude"}
@@ -241,7 +245,8 @@ func TestProfileFormBackFromOverwriteConfirmation(t *testing.T) {
 		{label: agentQuestion, text: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: keyQuestion, text: "old-key"},
-		{label: keyQuestion, text: "new-key"},
+		{label: fallbackQuestion},
+		{label: fallbackQuestion, text: "new-model"},
 	}}
 	name := ""
 	p := &config.Profile{Agent: "claude"}
@@ -253,8 +258,8 @@ func TestProfileFormBackFromOverwriteConfirmation(t *testing.T) {
 	if err := form.backFromConfirmation(); err != nil {
 		t.Fatal(err)
 	}
-	if p.APIKey != "new-key" || q.backs != 1 || len(q.answers) != 0 {
-		t.Errorf("key=%q, backs=%d, remaining=%v", p.APIKey, q.backs, q.answers)
+	if !reflect.DeepEqual(p.FallbackModel, []string{"new-model"}) || q.backs != 1 || len(q.answers) != 0 {
+		t.Errorf("fallback=%v, backs=%d, remaining=%v", p.FallbackModel, q.backs, q.answers)
 	}
 }
 

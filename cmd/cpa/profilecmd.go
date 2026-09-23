@@ -43,7 +43,8 @@ been queried — which of its models serves each of the agent's own. Claude Code
 is asked one row per slot, named by the model Claude Code itself resolves for
 it and answered from the models the gateway actually advertises. A profile for
 another agent is asked for a single model instead, since only Claude Code has
-slots. The mapping is then written into the profile as claudeSettings
+slots. Claude profiles also ask for up to three optional fallback model IDs,
+comma-separated in attempt order; leave the line blank to skip them. The mapping is then written into the profile as claudeSettings
 modelPicker rows — one per model, with replaceBuiltInOptions, so the /model
 picker lists those and nothing else. A row also carries behavesAs when the id
 is one Claude Code does not know: without it, Claude Code calls the id unknown

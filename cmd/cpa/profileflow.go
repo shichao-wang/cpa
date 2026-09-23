@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/prompt"
@@ -28,6 +29,7 @@ const (
 	stepSonnet
 	stepHaiku
 	stepFable
+	stepFallbackModel
 	stepDone
 )
 
@@ -83,13 +85,15 @@ func (f *profileForm) runFrom(step profileStep) error {
 			if step == stepDone {
 				break
 			}
-			f.pr.SetIndent(0)
-			f.pr.Section("Model configuration")
+			if !f.noDiscover {
+				f.pr.SetIndent(0)
+				f.pr.Section("Model configuration")
+			}
 		}
 		indent := 0
 		if step >= stepFamily {
 			indent = 2
-			if step >= stepOpus {
+			if step >= stepOpus && step <= stepFable {
 				indent = 4
 			}
 		}
@@ -118,7 +122,7 @@ func (f *profileForm) downstream() profileStep {
 	switch resolveKind(f.profile.Agent) {
 	case config.KindClaude:
 		if f.noDiscover {
-			return stepDone
+			return stepFallbackModel
 		}
 		f.discover()
 		if len(f.available) == 0 {
@@ -128,14 +132,16 @@ func (f *profileForm) downstream() profileStep {
 		if len(candidates) == 0 {
 			f.profile.Models = nil
 			fmt.Fprintf(os.Stderr, "note: no advertised model matches family %q; leaving the slots unset\n", f.profile.Family)
-			return stepDone
+			return stepFallbackModel
 		}
 		f.profile.Models = validPins(f.profile.Models, candidates)
 		return stepOpus
 	case config.KindOpenAI:
+		f.profile.FallbackModel = nil
 		f.profile.Models = nil
 		return stepOtherModel
 	default:
+		f.profile.FallbackModel = nil
 		f.profile.Models = nil
 		return stepDone
 	}
@@ -182,9 +188,19 @@ func (f *profileForm) ask(step profileStep) (profileStep, error) {
 	case stepFamily:
 		return input("Upstream family (optional)", &p.Family, nil, stepModel)
 	case stepModel:
-		return input("Model for every slot (optional)", &p.Model, nil, stepDone)
+		return input("Model for every slot (optional)", &p.Model, nil, stepFallbackModel)
 	case stepOtherModel:
 		return input("Model (optional)", &p.Model, nil, stepDone)
+	case stepFallbackModel:
+		answer, err := f.pr.Input("Fallback models (optional; comma-separated, in order, max 3)", strings.Join(p.FallbackModel, ", "), func(s string) error {
+			_, err := parseFallbackModels(s)
+			return err
+		})
+		if err != nil {
+			return stepDone, err
+		}
+		p.FallbackModel, _ = parseFallbackModels(answer)
+		return stepDone, nil
 	case stepOpus, stepSonnet, stepHaiku, stepFable:
 		slot := config.Slots[int(step-stepOpus)]
 		candidates := matching(f.available, p.Family)
@@ -212,6 +228,28 @@ func (f *profileForm) ask(step profileStep) (profileStep, error) {
 		return step + 1, nil
 	}
 	return stepDone, fmt.Errorf("unknown profile step %d", step)
+}
+
+func parseFallbackModels(s string) ([]string, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	parts := strings.Split(s, ",")
+	if len(parts) > 3 {
+		return nil, fmt.Errorf("at most 3 fallback models are allowed")
+	}
+	seen := make(map[string]bool, len(parts))
+	for i, part := range parts {
+		parts[i] = strings.TrimSpace(part)
+		if parts[i] == "" {
+			return nil, fmt.Errorf("fallback models cannot contain an empty entry")
+		}
+		if seen[parts[i]] {
+			return nil, fmt.Errorf("duplicate fallback model %q", parts[i])
+		}
+		seen[parts[i]] = true
+	}
+	return parts, nil
 }
 
 // A changed gateway or family cannot keep slot pins it no longer offers.
