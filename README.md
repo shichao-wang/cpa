@@ -154,6 +154,11 @@ $ cpa profile create
 ? fable (Claude Code default: claude-fable-5-1) (leave unset — resolve automatically)
 
 wrote profile "devbox" to ~/.config/cpa/settings.json
+  behavesAs: gpt-6-sol behaves as claude-sonnet-5
+  (Claude Code will no longer call those ids unknown; the 200k window it assumes
+   is unchanged — set the profile's contextWindow if the upstream offers more)
+  cpa profile list
+  cpa claude --profile devbox
 ```
 
 The ids the rows are named by are Claude Code's own alias table, built into cpa
@@ -162,6 +167,27 @@ The ids the rows are named by are Claude Code's own alias table, built into cpa
 them: the row is labelled by what Claude Code *means*, so the choice reads as
 "Claude Code's opus becomes this". A row left unset pins nothing and lets the
 launcher resolve that slot on its own.
+
+Those answers also decide what Claude Code is told about the gateway's ids. One
+only your gateway serves is one Claude Code has never heard of: at each launch
+it warns that the id is not described by the model catalogue it ships with, and
+assumes 200k tokens for it. The slot mapping already says what each such id
+stands in for, so `create` writes that down — a `claudeSettings.modelPicker`
+row per mapped slot, naming the gateway id and the Claude model it fills in for
+— and prints what it wrote. Slots pinned to Claude Code's own ids are left out:
+that namespace belongs to the agent, and a row claiming `claude-opus-5` behaves
+as `claude-opus-5-5` would be cpa talking over it. A model serving two slots is
+declared once, as the stronger one, because an id carries one `behavesAs` and
+opus is the larger claim.
+
+One trade-off comes with it. `behavesAs` makes Claude Code read the window off
+the model a row names, and that reading outranks
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS`: measured, a profile asking for 1M through
+`contextWindow` believes 200k once rows are added. Each knob silences the
+warning on its own, so the one that also widens the window is the one that gets
+to stay — a profile with a `contextWindow` gets no rows, and one carrying rows
+by hand next to a `contextWindow` is told at launch which of the two it will
+get. A `[1m]` suffix sidesteps the choice: Claude Code reads it off the id.
 
 The prompts are line edited: left/right move the cursor, home/end and
 ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase, ctrl-c abandons the
@@ -242,10 +268,10 @@ your editor reads.
 | `models` | Pin slots by hand: `{"opus": …, "sonnet": …, "haiku": …, "fable": …}`. Pinning skips discovery entirely. |
 | `modelNames` | Override the label shown in Claude Code's model picker, per slot. |
 | `subagentModel` | Model for subagents (`CLAUDE_CODE_SUBAGENT_MODEL`). |
-| `contextWindow` | `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. A `[1m]` model suffix implies `1000000`. |
+| `contextWindow` | `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. A `[1m]` model suffix implies `1000000`. `behavesAs` rows outrank it — see above. |
 | `customModelOption` | Surface one model as a hand-picked entry in the picker. |
 | `env` | Extra environment variables; these win over generated ones. |
-| `claudeSettings` | Extra Claude Code settings, merged into the `--settings` document. |
+| `claudeSettings` | Extra Claude Code settings, merged into the `--settings` document. `cpa profile create` writes the derived `modelPicker` behavesAs rows here. |
 | `args` | Extra arguments for the agent. |
 
 Keep keys out of the file where you can — `apiKeyEnv` and `apiKeyCmd` exist so

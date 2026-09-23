@@ -138,6 +138,11 @@ $ cpa profile create
 ? fable (Claude Code default: claude-fable-5-1) (leave unset — resolve automatically)
 
 wrote profile "devbox" to ~/.config/cpa/settings.json
+  behavesAs: gpt-6-sol behaves as claude-sonnet-5
+  (Claude Code will no longer call those ids unknown; the 200k window it assumes
+   is unchanged — set the profile's contextWindow if the upstream offers more)
+  cpa profile list
+  cpa claude --profile devbox
 ```
 
 行名用的 id 来自 Claude Code 自己的别名表，内置在 cpa 里（2.1.280：`opus` →
@@ -145,6 +150,22 @@ wrote profile "devbox" to ~/.config/cpa/settings.json
 `fable` → `claude-fable-5-1`）。网关不必真的提供这些模型——行名表达的是 Claude
 Code *想要*什么，所以这一问读起来是「Claude Code 的 opus 换成这个」。某行留空即
 不 pin，让启动器自己解析该槽位。
+
+这些答案同时决定了要告诉 Claude Code 什么。只有你的网关提供的 id，对 Claude Code
+来说就是没听说过的 id：每次启动它都会警告该 id 不在它自带的模型目录里，并据此假定
+200k 上下文。槽位映射本来就已经说明了每个网关模型顶替谁，于是 `create` 把它写下来
+——在 `claudeSettings.modelPicker` 里为每个已映射的槽位写一行，记下网关 id 与它顶替
+的 Claude 模型——并把它写的内容打印出来。凡是指向 Claude Code 自家 id 的槽位都跳过：
+那个命名空间归 agent 自己描述，一行声称 `claude-opus-5` 等价于 `claude-opus-5-5`
+只是 cpa 越俎代庖。一个模型同时占两个槽位时只声明一次，取更强的那一个——一个 id 只能
+带一个 `behavesAs`，而 opus 是更大的那个说法。
+
+这里有一个需要知道的取舍。`behavesAs` 会让 Claude Code 按它指名的模型去读窗口，而
+这个读法压过 `CLAUDE_CODE_MAX_CONTEXT_TOKENS`：实测中，一个用 `contextWindow` 要求
+1M 的 profile，在加上这些行之后认为自己只有 200k。两者各自都能消掉那条警告，所以留下
+的是同时还能拓宽窗口的那一个——带 `contextWindow` 的 profile 不写这些行；而手工带着
+这些行又同时设了 `contextWindow` 的 profile，会在启动时被告知它实际会拿到哪一个。
+`[1m]` 后缀可以绕开这个选择：Claude Code 直接从 id 上读它。
 
 输入行支持编辑：左右方向键移动光标，home/end 与 ctrl-a/ctrl-e 跳到行首行尾，
 ctrl-w 与 ctrl-u 删除，ctrl-c 放弃且不写任何文件。一行放不下的输入会横向滚动
@@ -216,10 +237,10 @@ $ cpa import-claude --name mygateway
 | `models` | 手工钉死槽位：`{"opus": …, "sonnet": …, "haiku": …, "fable": …}`。钉死后完全跳过模型发现。 |
 | `modelNames` | 按槽位覆盖模型选择器里显示的标签。 |
 | `subagentModel` | 子 agent 使用的模型（`CLAUDE_CODE_SUBAGENT_MODEL`）。 |
-| `contextWindow` | `CLAUDE_CODE_MAX_CONTEXT_TOKENS`；模型名带 `[1m]` 后缀时隐含 `1000000`。 |
+| `contextWindow` | `CLAUDE_CODE_MAX_CONTEXT_TOKENS`；模型名带 `[1m]` 后缀时隐含 `1000000`。`behavesAs` 行会压过它，见上文。 |
 | `customModelOption` | 把某个模型作为手工条目放进模型选择器。 |
 | `env` | 额外环境变量，优先级高于自动生成的。 |
-| `claudeSettings` | 额外 Claude Code 设置，合并进 `--settings` 文档。 |
+| `claudeSettings` | 额外 Claude Code 设置，合并进 `--settings` 文档。`cpa profile create` 推导出的 `modelPicker` behavesAs 行也写在这里。 |
 | `args` | 传给 agent 的额外参数。 |
 
 尽量别把 key 写进文件——`apiKeyEnv` 和 `apiKeyCmd` 就是为此存在的，让配置文件

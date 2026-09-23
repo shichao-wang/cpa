@@ -43,9 +43,12 @@ been queried — which of its models serves each of the agent's own. Claude Code
 is asked one row per slot, named by the model Claude Code itself resolves for
 it and answered from the models the gateway actually advertises. A profile for
 another agent is asked for a single model instead, since only Claude Code has
-slots. Without a terminal (a pipe, a script, CI) there are no prompts at all:
-every field comes from the flags above, and a missing required one is an
-error.
+slots. The mapping is then written into the profile as claudeSettings
+modelPicker rows, which is how Claude Code is told what those ids stand in
+for; without them it calls every id it does not know unknown, and assumes a
+200k window for it. Without a terminal (a pipe, a script, CI) there are no
+prompts at all: every field comes from the flags above, and a missing required
+one is an error.
 
 The prompts are line edited: left/right move the cursor, home/end and
 ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase, and ctrl-c abandons
@@ -420,6 +423,31 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 		pr.Close()
 	}
 
+	// A model id that only the gateway serves is one Claude Code does not
+	// know: it assumes a 200k window and warns at every launch that the id is
+	// not in its catalogue. A modelPicker row carrying behavesAs tells it
+	// which of its own models this one stands in for, and the slot mapping
+	// just collected says exactly that — so the rows are derived rather than
+	// asked for, and a profile that pinned nothing stays untouched.
+	//
+	// But not when the profile carries a contextWindow. behavesAs makes
+	// Claude Code read the window off the model it names, and that reading
+	// wins over CLAUDE_CODE_MAX_CONTEXT_TOKENS: measured, a profile asking
+	// for 1M through contextWindow showed 200k once behavesAs rows were
+	// added. Each knob silences the notice on its own, so the one that also
+	// widens the window is the one that gets to stay.
+	//
+	// And only for a Claude Code profile: behavesAs is a settings key that
+	// agent alone reads, so writing it onto a profile for another one would
+	// change which agent the profile is even for.
+	rows := []behavesAsRow(nil)
+	if p.ContextWindow == 0 && resolveKind(p.Agent) == config.KindClaude {
+		rows = behavesAsRows(p.Models)
+	}
+	if len(rows) > 0 {
+		p.ClaudeSettings = withModelPicker(p.ClaudeSettings, rows)
+	}
+
 	replacing := ""
 	if exists {
 		replacing = fmt.Sprintf(" (was: %s)", describeProfile(old))
@@ -428,8 +456,79 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 		return err
 	}
 	fmt.Printf("\nwrote profile %q to %s%s\n", name, path, replacing)
+	for _, line := range behavesAsReport(rows) {
+		fmt.Printf("  %s\n", line)
+	}
 	fmt.Printf("  cpa profile list\n  cpa %s --profile %s\n", p.Agent, name)
 	return nil
+}
+
+// behavesAsRow is one entry of Claude Code's settings `modelPicker.options`:
+// the id the profile sends, and the Claude model it stands in for. No label
+// or description is written — cpa already names these models through
+// ANTHROPIC_DEFAULT_<SLOT>_MODEL_NAME, and a label here would win over it.
+type behavesAsRow struct {
+	Model     string `json:"model"`
+	BehavesAs string `json:"behavesAs"`
+}
+
+// behavesAsRows turns a slot mapping into the rows that stop Claude Code
+// treating the mapped ids as unknown. Slots are walked in their own order —
+// strongest first — so a gateway model serving both opus and sonnet is
+// declared as the opus one: an id carries one behavesAs, and opus is the
+// larger claim. A slot whose meaning cpa has no id for is left alone.
+func behavesAsRows(models map[string]string) []behavesAsRow {
+	if len(models) == 0 {
+		return nil
+	}
+	claimed := map[string]bool{}
+	var rows []behavesAsRow
+	for _, slot := range config.Slots {
+		id, target := models[slot], config.ClaudeCodeDefaults[slot]
+		if id == "" || target == "" || claimed[id] || isAgentsOwnID(id) {
+			continue
+		}
+		claimed[id] = true
+		rows = append(rows, behavesAsRow{Model: id, BehavesAs: target})
+	}
+	return rows
+}
+
+// isAgentsOwnID reports whether an id is one of the agent's own. Claude Code
+// is the authority on the ids named claude-*: it either knows one or has a
+// reason not to, and a behavesAs row would only talk over that — claude-opus-5
+// is not claude-opus-5-5, however the slot it fills is labelled. An id from
+// anyone else's namespace is the case the row exists for, and pointing a slot
+// at a gateway is what produces those.
+func isAgentsOwnID(id string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(id)), "claude-")
+}
+
+// withModelPicker returns settings carrying the behavesAs rows, leaving any
+// other Claude Code settings in place.
+func withModelPicker(settings map[string]interface{}, rows []behavesAsRow) map[string]interface{} {
+	if settings == nil {
+		settings = map[string]interface{}{}
+	}
+	settings["modelPicker"] = map[string]interface{}{"options": rows}
+	return settings
+}
+
+// behavesAsReport describes what was written, so the mapping Claude Code will
+// apply is visible at the prompt rather than buried in the settings file.
+func behavesAsReport(rows []behavesAsRow) []string {
+	if len(rows) == 0 {
+		return nil
+	}
+	parts := make([]string, len(rows))
+	for i, r := range rows {
+		parts[i] = fmt.Sprintf("%s behaves as %s", r.Model, r.BehavesAs)
+	}
+	return []string{
+		"behavesAs: " + strings.Join(parts, ", "),
+		"(Claude Code will no longer call those ids unknown; the 200k window it assumes",
+		" is unchanged — set the profile's contextWindow if the upstream offers more)",
+	}
 }
 
 // previewMapping asks the gateway what it advertises and prints the slot

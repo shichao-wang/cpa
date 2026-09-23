@@ -321,6 +321,55 @@ func TestBuildCarriesExtraClaudeSettings(t *testing.T) {
 	}
 }
 
+// behavesAs outranks CLAUDE_CODE_MAX_CONTEXT_TOKENS, so a profile carrying
+// both is told that its contextWindow will not be the one used, rather than
+// finding out from a session that compacts at 200k.
+func TestBuildWarnsWhenBehavesAsOverridesTheContextWindow(t *testing.T) {
+	cfg := testConfig()
+	p := cfg.Profiles["deepseek"]
+	p.ContextWindow = 1000000
+	p.ClaudeSettings = map[string]interface{}{
+		"modelPicker": map[string]interface{}{
+			"options": []interface{}{
+				map[string]interface{}{"model": "deepseek-flash", "behavesAs": "claude-opus-5-5"},
+			},
+		},
+	}
+	plan, err := Build(cfg, "claude", "", nil, Options{Available: models("deepseek-flash")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.Env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"]; got != "1000000" {
+		t.Errorf("CLAUDE_CODE_MAX_CONTEXT_TOKENS = %q; the profile's own window should still be set", got)
+	}
+	if !hasNotice(plan, "instead of the one asked for") {
+		t.Errorf("expected a notice about the overridden window, got %v", plan.Notices)
+	}
+}
+
+func TestBuildKeepsQuietAboutAWindowWithNoBehavesAs(t *testing.T) {
+	cfg := testConfig()
+	p := cfg.Profiles["deepseek"]
+	p.ContextWindow = 1000000
+	plan, err := Build(cfg, "claude", "", nil, Options{Available: models("deepseek-flash")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasNotice(plan, "instead of the one asked for") {
+		t.Errorf("nothing overrides the window here: %v", plan.Notices)
+	}
+}
+
+// hasNotice reports whether any notice carries the given phrase.
+func hasNotice(plan *Plan, phrase string) bool {
+	for _, n := range plan.Notices {
+		if strings.Contains(n, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
 // Two writers for one flag would silently pick the wrong upstream, so the
 // conflict is reported instead of guessed at.
 func TestBuildRefusesCompetingSettingsFlag(t *testing.T) {

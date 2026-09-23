@@ -105,6 +105,12 @@ func Build(cfg *config.Config, agentName, profileName string, userArgs []string,
 		plan.Source = source
 		plan.Notices = append(plan.Notices, notices...)
 		applyClaudeEnv(plan, profile, models, apiKey)
+		if profile.ContextWindow > 0 && declaresBehavesAs(cfg, profile) {
+			plan.Notices = append(plan.Notices,
+				"this profile sets contextWindow and also declares modelPicker behavesAs rows; "+
+					"Claude Code reads the window off the model a row names, so it will use that "+
+					"model's window instead of the one asked for here")
+		}
 	} else {
 		applyOtherEnv(plan, profile, apiKey)
 	}
@@ -180,6 +186,28 @@ func hasSettingsFlag(args []string) bool {
 	for _, a := range args {
 		if a == "--settings" || strings.HasPrefix(a, "--settings=") {
 			return true
+		}
+	}
+	return false
+}
+
+// declaresBehavesAs reports whether the settings Claude Code will be handed —
+// the config's defaults under the profile's own, as buildSettings merges them
+// — carry any modelPicker row naming a model it should behave as. Such a row
+// outranks CLAUDE_CODE_MAX_CONTEXT_TOKENS, which is worth saying out loud to
+// a profile that set a contextWindow without meaning to give it up.
+func declaresBehavesAs(cfg *config.Config, p *config.Profile) bool {
+	for _, settings := range []map[string]interface{}{cfg.Defaults.ClaudeSettings, p.ClaudeSettings} {
+		picker, ok := settings["modelPicker"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		options, _ := picker["options"].([]interface{})
+		for _, option := range options {
+			row, _ := option.(map[string]interface{})
+			if target, _ := row["behavesAs"].(string); strings.TrimSpace(target) != "" {
+				return true
+			}
 		}
 	}
 	return false
