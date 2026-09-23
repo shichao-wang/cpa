@@ -65,6 +65,33 @@ func TestMapModelsPrecedence(t *testing.T) {
 		}
 	})
 
+	t.Run("a family with no size hints reports instead of pinning nothing", func(t *testing.T) {
+		p := &config.Profile{Family: "acme"}
+		got, source, notices := MapModels(p, models("acme-1", "acme-2", "acme-3"))
+		if source != SourceNone {
+			t.Fatalf("source = %q, want %q", source, SourceNone)
+		}
+		if len(got) != 0 {
+			t.Errorf("mapping = %v, want it empty rather than guessed", got)
+		}
+		if joined := strings.Join(notices, "; "); !strings.Contains(joined, "acme") {
+			t.Errorf("notices = %v, want one naming the family", notices)
+		}
+	})
+
+	t.Run("an unclassifiable family still honours an explicit catch-all", func(t *testing.T) {
+		p := &config.Profile{Family: "acme", Model: "acme-2"}
+		got, source, _ := MapModels(p, models("acme-1", "acme-2"))
+		if source != SourceCatchAll {
+			t.Fatalf("source = %q, want %q", source, SourceCatchAll)
+		}
+		for _, slot := range config.Slots {
+			if got[slot] != "acme-2" {
+				t.Errorf("slot %s = %q, want acme-2", slot, got[slot])
+			}
+		}
+	})
+
 	t.Run("falls back to claude-shaped aliases", func(t *testing.T) {
 		p := &config.Profile{Family: "gemini"}
 		got, source, _ := MapModels(p, models("claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5"))

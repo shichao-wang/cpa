@@ -332,6 +332,19 @@ func MapModels(p *config.Profile, available []proxy.Model) (map[string]string, M
 			return models, SourceFamily, notices
 		default:
 			bySlot := classifyAll(hits)
+			if len(bySlot) == 0 {
+				// None of the family's names carries a size hint, so there is no
+				// basis for bucketing them and no non-arbitrary way to choose one
+				// for all four slots. Say so rather than pin nothing in silence.
+				notices = append(notices, fmt.Sprintf(
+					"family %q matches %d models but none names a size, so no slot could be filled; pin them with `models`",
+					p.Family, len(hits)))
+				if p.Model != "" {
+					fillMissing(models, p.Model)
+					return models, SourceCatchAll, notices
+				}
+				return models, SourceNone, notices
+			}
 			for _, slot := range config.Slots {
 				if models[slot] == "" && bySlot[slot] != "" {
 					models[slot] = bySlot[slot]

@@ -64,14 +64,17 @@ func (c *Client) ListModels(ctx context.Context) ([]Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Gateways differ on which header they read; sending both is harmless
-	// and works against CLIProxyAPI and the Anthropic API alike.
+	// Gateways differ on which header they read: Anthropic-style endpoints read
+	// x-api-key, OpenAI-compatible ones read the bearer token.
 	if c.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 		req.Header.Set("x-api-key", c.APIKey)
 	}
-	req.Header.Set("anthropic-version", "2023-06-01")
-
+	// No anthropic-version on purpose. Some gateways treat that header as a switch
+	// between two model-id spaces, answering with aliased ids (and display names)
+	// instead of the names the upstream really uses. The aliases are opaque and
+	// make family matching useless, and both spaces route identically, so the
+	// unversioned catalogue is the better one to choose from.
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return nil, err
