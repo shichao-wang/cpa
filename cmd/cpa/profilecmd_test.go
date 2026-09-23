@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -220,17 +221,36 @@ func TestProfileRejectsUnknownSubcommand(t *testing.T) {
 	}
 }
 
-// familiesOf offers the handle a person would type, which for a family (a
-// substring match) is the part of the id before its first separator.
-func TestFamiliesOf(t *testing.T) {
-	models := []proxy.Model{
-		{ID: "deepseek-chat"}, {ID: "deepseek-reasoner"},
-		{ID: "gpt-4o"}, {ID: "o1"}, {ID: "deepseek-chat"},
+// A row is named by the model the agent itself means, so the answer reads as
+// "Claude Code's opus becomes this" instead of as a bare slot name.
+func TestSlotLabelNamesTheAgentsOwnModel(t *testing.T) {
+	for _, slot := range config.Slots {
+		want := config.ClaudeCodeDefaults[slot]
+		if want == "" {
+			t.Fatalf("slot %q has no Claude Code default to name it by", slot)
+		}
+		got := slotLabel(slot)
+		if !strings.Contains(got, slot) || !strings.Contains(got, want) {
+			t.Errorf("slotLabel(%q) = %q, want it to name %q", slot, got, want)
+		}
 	}
-	got := familiesOf(models)
-	want := []string{"deepseek", "gpt", "o1"}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("familiesOf = %v, want %v", got, want)
+	if got := slotLabel("not-a-slot"); got != "not-a-slot" {
+		t.Errorf("slotLabel of a slot Claude Code does not have = %q, want it unchanged", got)
+	}
+}
+
+// A candidate the gateway files under another slot says so: that hint is the
+// difference between reading one row and reading the whole catalogue.
+func TestCandidateLabelHintsAtAnotherSlot(t *testing.T) {
+	flash := proxy.Model{ID: "deepseek-v4-flash"}
+	if got := candidateLabel(flash, "opus"); !strings.HasSuffix(got, " → haiku") {
+		t.Errorf("candidateLabel(flash, opus) = %q, want the haiku hint", got)
+	}
+	if got := candidateLabel(flash, "haiku"); got != "deepseek-v4-flash" {
+		t.Errorf("candidateLabel(flash, haiku) = %q, want no hint on its own row", got)
+	}
+	if got := candidateLabel(proxy.Model{ID: "gpt-6-sol"}, "opus"); got != "gpt-6-sol" {
+		t.Errorf("candidateLabel(a name with no size in it) = %q, want the plain label", got)
 	}
 }
 
@@ -249,16 +269,38 @@ func TestMatchingAgreesWithTheLauncher(t *testing.T) {
 	}
 }
 
-func TestSummariseCapsTheList(t *testing.T) {
-	models := []proxy.Model{{ID: "c"}, {ID: "a"}, {ID: "b"}, {ID: "d"}}
-	got := summarise(models)
-	if !strings.Contains(got, "a, b") || !strings.Contains(got, "+2 more") {
-		t.Errorf("summarise = %q, want the first two ids and a count", got)
+// Each row starts on the gateway's model for that same slot, since mapping a
+// slot onto itself is the answer that needs no thought. The two sides do not
+// always agree on the version — a gateway's claude-opus-5 against an alias's
+// claude-opus-5-5 — so the claude-<slot> prefix the launcher matches is the
+// fallback, and a slot the gateway does not serve starts unset rather than
+// starting wrong.
+func TestDefaultSlotChoice(t *testing.T) {
+	available := []proxy.Model{
+		{ID: "gpt-6-sol"},
+		{ID: "claude-opus-5"},
+		{ID: "claude-sonnet-5"},
 	}
-	if got := summarise(nil); got != "no models" {
-		t.Errorf("summarise(nil) = %q", got)
+	cases := []struct {
+		name    string
+		slot    string
+		current string
+		want    int
+	}{
+		{"gpt-6-sol is not an opus, so the exact id is not there to pick", "opus", "", 2},
+		{"an exact match on the agent's own id wins", "sonnet", "", 3},
+		{"a slot the gateway does not serve starts unset", "haiku", "", 0},
+		{"a pin already in the profile stays selected", "haiku", "gpt-6-sol", 1},
+		{"a pin the gateway no longer serves falls back", "haiku", "long-gone", 0},
+	}
+	for _, tc := range cases {
+		if got := defaultSlotChoice(tc.slot, available, tc.current); got != tc.want {
+			t.Errorf("%s: defaultSlotChoice(%q, 3 models, %q) = %d, want %d",
+				tc.name, tc.slot, tc.current, got, tc.want)
+		}
 	}
 }
+
 func TestUpsertProfileAtRefusesACommentedFile(t *testing.T) {
 	// Settings are plain JSON now, and a rewrite must never silently drop a
 	// file's comments. Refusing is the safe half of that: the error explains
@@ -334,5 +376,147 @@ func TestUpsertProfileAtSurvivesANullDocument(t *testing.T) {
 	}
 	if _, ok := readProfiles(t, path)["a"]; !ok {
 		t.Error("the profile was not written")
+	}
+}
+
+func TestBehavesAsRows(t *testing.T) {
+	cases := []struct {
+		name   string
+		models map[string]string
+		want   []behavesAsRow
+	}{
+		{
+			"nothing pinned means nothing to declare",
+			nil,
+			nil,
+		},
+		{
+			"each slot gets the agent's own model for it, in slot order",
+			map[string]string{"haiku": "gpt-6-luna", "opus": "gpt-6-sol"},
+			[]behavesAsRow{
+				{Model: "gpt-6-sol", BehavesAs: "claude-opus-5-5"},
+				{Model: "gpt-6-luna", BehavesAs: "claude-haiku-4-5"},
+			},
+		},
+		{
+			// One id carries one behavesAs, and opus is the larger claim:
+			// a model serving both slots is declared as the opus one.
+			"a model serving two slots is declared once, as the stronger one",
+			map[string]string{"opus": "gpt-6-sol", "sonnet": "gpt-6-sol"},
+			[]behavesAsRow{{Model: "gpt-6-sol", BehavesAs: "claude-opus-5-5"}},
+		},
+		{
+			// The row would say the model behaves as itself.
+			"a slot already pinned to the agent's own id needs no row",
+			map[string]string{"haiku": "claude-haiku-4-5"},
+			nil,
+		},
+		{
+			// Claude Code is the authority on its own ids: claude-opus-5 is
+			// not claude-opus-5-5, and a row saying so would be cpa talking
+			// over the agent about the agent's own namespace.
+			"an id in the agent's own namespace is left alone",
+			map[string]string{"opus": "claude-opus-5"},
+			nil,
+		},
+		{
+			"a whole mapping onto the agent's own ids needs no rows",
+			map[string]string{
+				"opus":   "claude-opus-5-5",
+				"sonnet": "claude-sonnet-5",
+				"haiku":  "claude-haiku-4-5",
+				"fable":  "claude-fable-5-1",
+			},
+			nil,
+		},
+	}
+	for _, tc := range cases {
+		if got := behavesAsRows(tc.models); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: behavesAsRows(%v) = %v, want %v", tc.name, tc.models, got, tc.want)
+		}
+	}
+}
+
+func TestProfileCreateWritesBehavesAsRows(t *testing.T) {
+	// The interactive path is what fills Models, so the write is driven
+	// through commitProfile — the one path a terminal-driven run also uses.
+	path := filepath.Join(t.TempDir(), "cpa", "settings.json")
+	p := &config.Profile{
+		Agent:   "claude",
+		BaseURL: "http://127.0.0.1:18317",
+		Models:  map[string]string{"opus": "gpt-6-sol", "haiku": "gpt-6-luna"},
+	}
+	if err := commitProfile(context.Background(), path, "openai", p, &flags{}, nil); err != nil {
+		t.Fatalf("commitProfile: %v", err)
+	}
+
+	got, ok := readProfiles(t, path)["openai"]
+	if !ok {
+		t.Fatal("the profile was not written")
+	}
+	if got.Models["opus"] != "gpt-6-sol" {
+		t.Errorf("models = %v; the mapping itself was lost", got.Models)
+	}
+	picker, ok := got.ClaudeSettings["modelPicker"]
+	if !ok {
+		t.Fatalf("claudeSettings has no modelPicker: %v", got.ClaudeSettings)
+	}
+	blob, err := json.Marshal(picker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Options []behavesAsRow `json:"options"`
+	}
+	if err := json.Unmarshal(blob, &decoded); err != nil {
+		t.Fatalf("modelPicker = %s: %v", blob, err)
+	}
+	want := []behavesAsRow{
+		{Model: "gpt-6-sol", BehavesAs: "claude-opus-5-5"},
+		{Model: "gpt-6-luna", BehavesAs: "claude-haiku-4-5"},
+	}
+	if !reflect.DeepEqual(decoded.Options, want) {
+		t.Errorf("modelPicker options = %v, want %v", decoded.Options, want)
+	}
+}
+
+func TestProfileCreateWritesNoBehavesAsWithoutSlots(t *testing.T) {
+	// A catch-all model serves every slot, so there is no one model it
+	// behaves as; and the flag-driven flow never pins slots at all.
+	path := filepath.Join(t.TempDir(), "cpa", "settings.json")
+	if err := cmdProfileCreate(context.Background(), []string{
+		"--file", path, "--name", "devbox",
+		"--base-url", "http://127.0.0.1:18317",
+		"--model", "deepseek-flash[1m]",
+		"--no-discover",
+	}); err != nil {
+		t.Fatalf("cmdProfileCreate: %v", err)
+	}
+	if got := readProfiles(t, path)["devbox"]; len(got.ClaudeSettings) != 0 {
+		t.Errorf("claudeSettings = %v; a profile with no slot pins needs none", got.ClaudeSettings)
+	}
+}
+
+func TestProfileCreateWritesNoBehavesAsWithAContextWindow(t *testing.T) {
+	// behavesAs makes Claude Code read the window off the model a row names,
+	// which outranks CLAUDE_CODE_MAX_CONTEXT_TOKENS: writing both would throw
+	// the window away. The notice is silenced either way, so the rows go.
+	path := filepath.Join(t.TempDir(), "cpa", "settings.json")
+	p := &config.Profile{
+		Agent:         "claude",
+		BaseURL:       "http://127.0.0.1:18317",
+		Models:        map[string]string{"opus": "gpt-6-sol"},
+		ContextWindow: 1000000,
+	}
+	if err := commitProfile(context.Background(), path, "openai", p, &flags{}, nil); err != nil {
+		t.Fatalf("commitProfile: %v", err)
+	}
+	got := readProfiles(t, path)["openai"]
+	if len(got.ClaudeSettings) != 0 {
+		t.Errorf("claudeSettings = %v; a contextWindow profile must not also declare behavesAs",
+			got.ClaudeSettings)
+	}
+	if got.ContextWindow != 1000000 {
+		t.Errorf("contextWindow = %d, want 1000000", got.ContextWindow)
 	}
 }

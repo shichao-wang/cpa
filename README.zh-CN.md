@@ -109,30 +109,63 @@ $ cpa doctor                   # 确认每个 profile 的端点可达
 $ cpa claude --profile deepseek
 ```
 
-`cpa profile create` 会逐项问你：名字、描述、网关地址与 key；随后先问网关
-它提供哪些模型，再让你从这些模型里选 upstream family，以及每个 Claude Code
-槽位用哪个模型。两项都是方向键选择的列表，选项来自网关真实返回的模型，因此
-不可能因为手误填进一个不存在的模型。
+`cpa profile create` 会逐项问你：名字、描述、这个 profile 服务哪个 agent、网关
+地址与 key；随后先问网关它提供哪些模型，再为 agent 自己认的每个模型指定网关侧
+由谁服务。对 Claude Code 来说这就是一张映射表，一个槽位一行，且是从 agent 这一侧
+读的：行名是 Claude Code 自己会给该槽位解析出的模型，答案是网关上应该服务它的那个
+模型。每个选项都来自网关真实返回的模型列表，因此不可能因为手误填进一个不存在的
+模型；每行的初始答案就是网关同槽位的那个模型，所以「全部原样映射」就是连按四次
+回车。网关会归到别的槽位的候选会标出来（`→ haiku`），一张二十多个模型的表因此
+仍然读得下去。给别的 agent 建的 profile 只问一个模型：槽位是 Claude Code 独有的。
 
 ```console
 $ cpa profile create
 ? Profile name devbox
 ? Description (optional) devbox gateway
+? Agent this profile is for (claude, codex, or a name from "agents") claude
 ? Gateway base URL http://127.0.0.1:18317
 ? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
-? Upstream family
-❯ (every advertised model — 4)
-  deepseek — deepseek-chat, deepseek-flash[1m] +1 more
-  (type a family…)
-# 选定后列表收成一行答案，随后依次问四个槽位：
-? opus
-❯ (follow the family — choose automatically)
-? sonnet (follow the family — choose automatically)
-? haiku (follow the family — choose automatically)
-? fable (follow the family — choose automatically)
+? opus (Claude Code default: claude-opus-5-5)
+  (leave unset — resolve automatically)
+  claude-haiku-4-5 (Haiku 4.5) → haiku
+❯ claude-opus-5 (Opus 5)
+  claude-sonnet-5 (Sonnet 5) → sonnet
+  deepseek-v4-flash → haiku
+  deepseek-v4-pro
+  gpt-6-sol
+? sonnet (Claude Code default: claude-sonnet-5) gpt-6-sol
+? haiku (Claude Code default: claude-haiku-4-5) claude-haiku-4-5 (Haiku 4.5)
+? fable (Claude Code default: claude-fable-5-1) (leave unset — resolve automatically)
 
 wrote profile "devbox" to ~/.config/cpa/settings.json
+  behavesAs: gpt-6-sol behaves as claude-sonnet-5
+  (Claude Code will no longer call those ids unknown; the 200k window it assumes
+   is unchanged — set the profile's contextWindow if the upstream offers more)
+  cpa profile list
+  cpa claude --profile devbox
 ```
+
+行名用的 id 来自 Claude Code 自己的别名表，内置在 cpa 里（2.1.280：`opus` →
+`claude-opus-5-5`、`sonnet` → `claude-sonnet-5`、`haiku` → `claude-haiku-4-5`、
+`fable` → `claude-fable-5-1`）。网关不必真的提供这些模型——行名表达的是 Claude
+Code *想要*什么，所以这一问读起来是「Claude Code 的 opus 换成这个」。某行留空即
+不 pin，让启动器自己解析该槽位。
+
+这些答案同时决定了要告诉 Claude Code 什么。只有你的网关提供的 id，对 Claude Code
+来说就是没听说过的 id：每次启动它都会警告该 id 不在它自带的模型目录里，并据此假定
+200k 上下文。槽位映射本来就已经说明了每个网关模型顶替谁，于是 `create` 把它写下来
+——在 `claudeSettings.modelPicker` 里为每个已映射的槽位写一行，记下网关 id 与它顶替
+的 Claude 模型——并把它写的内容打印出来。凡是指向 Claude Code 自家 id 的槽位都跳过：
+那个命名空间归 agent 自己描述，一行声称 `claude-opus-5` 等价于 `claude-opus-5-5`
+只是 cpa 越俎代庖。一个模型同时占两个槽位时只声明一次，取更强的那一个——一个 id 只能
+带一个 `behavesAs`，而 opus 是更大的那个说法。
+
+这里有一个需要知道的取舍。`behavesAs` 会让 Claude Code 按它指名的模型去读窗口，而
+这个读法压过 `CLAUDE_CODE_MAX_CONTEXT_TOKENS`：实测中，一个用 `contextWindow` 要求
+1M 的 profile，在加上这些行之后认为自己只有 200k。两者各自都能消掉那条警告，所以留下
+的是同时还能拓宽窗口的那一个——带 `contextWindow` 的 profile 不写这些行；而手工带着
+这些行又同时设了 `contextWindow` 的 profile，会在启动时被告知它实际会拿到哪一个。
+`[1m]` 后缀可以绕开这个选择：Claude Code 直接从 id 上读它。
 
 输入行支持编辑：左右方向键移动光标，home/end 与 ctrl-a/ctrl-e 跳到行首行尾，
 ctrl-w 与 ctrl-u 删除，ctrl-c 放弃且不写任何文件。一行放不下的输入会横向滚动
@@ -141,9 +174,9 @@ ctrl-w 与 ctrl-u 删除，ctrl-c 放弃且不写任何文件。一行放不下�
 与 `cmd:...` 简写，它们在启动时才解析，密钥因此不必落进文件。
 
 没有终端时（管道、脚本、CI）完全不提问：所有字段都从命令行参数取
-（`--name`、`--base-url`、`--api-key`、`--family`、`--model` 等），缺少
-必填项会直接报错而不是卡住。脚本里只给 `--name` 与 `--base-url` 就能建出
-一个 profile。
+（`--name`、`--agent`、`--base-url`、`--api-key`、`--family`、`--model`
+等），缺少必填项会直接报错而不是卡住。脚本里只给 `--name` 与 `--base-url`
+就能建出一个 profile（不给 `--agent` 时它是一个 Claude Code profile）。
 
 写入目标是 `$XDG_CONFIG_HOME/cpa/settings.json`；`--file` 可改为写到别处。
 
@@ -194,19 +227,20 @@ $ cpa import-claude --name mygateway
 
 | 字段 | 含义 |
 |---|---|
+| `agent` | 这个 profile 唯一服务的那个 agent。见[一个 profile 只服务一个 agent](#一个-profile-只服务一个-agent)。 |
 | `baseUrl` | 网关端点，作为 `ANTHROPIC_BASE_URL` 传给 Claude Code。 |
 | `apiKey` | 客户端 key，也接受 `"env:VAR"` 与 `"cmd:shell 命令"`。 |
 | `apiKeyEnv` | 从该环境变量读取 key。 |
 | `apiKeyCmd` | 从该命令的标准输出读取 key。 |
-| `family` | 对网关 `/v1/models` 列表做子串匹配。 |
+| `family` | 对网关 `/v1/models` 列表做子串匹配。它填的是 Claude Code 的槽位，所以设了它这个 profile 也就是 Claude Code 的了。 |
 | `model` | 兜底模型，用于所有未显式指定的槽位。 |
 | `models` | 手工钉死槽位：`{"opus": …, "sonnet": …, "haiku": …, "fable": …}`。钉死后完全跳过模型发现。 |
 | `modelNames` | 按槽位覆盖模型选择器里显示的标签。 |
 | `subagentModel` | 子 agent 使用的模型（`CLAUDE_CODE_SUBAGENT_MODEL`）。 |
-| `contextWindow` | `CLAUDE_CODE_MAX_CONTEXT_TOKENS`；模型名带 `[1m]` 后缀时隐含 `1000000`。 |
+| `contextWindow` | `CLAUDE_CODE_MAX_CONTEXT_TOKENS`；模型名带 `[1m]` 后缀时隐含 `1000000`。`behavesAs` 行会压过它，见上文。 |
 | `customModelOption` | 把某个模型作为手工条目放进模型选择器。 |
 | `env` | 额外环境变量，优先级高于自动生成的。 |
-| `claudeSettings` | 额外 Claude Code 设置，合并进 `--settings` 文档。 |
+| `claudeSettings` | 额外 Claude Code 设置，合并进 `--settings` 文档。`cpa profile create` 推导出的 `modelPicker` behavesAs 行也写在这里。 |
 | `args` | 传给 agent 的额外参数。 |
 
 尽量别把 key 写进文件——`apiKeyEnv` 和 `apiKeyCmd` 就是为此存在的，让配置文件
@@ -226,6 +260,29 @@ $ cpa import-claude --name mygateway
 `kind` 决定注入哪类变量：`claude` → `ANTHROPIC_*`，`openai` → `OPENAI_*`，
 `generic` → 只用 profile 自己的 `env`。
 
+### 一个 profile 只服务一个 agent
+
+一个 profile 说的是「某个下游应用该怎么接到某个上游」：它的槽位与设置属于那个
+应用，对别的应用毫无意义。所以一个 profile 只配一个 agent，拿另一种 kind 的
+agent 去启动它是报错，而不是把 Claude Code 的设置悄悄喂给读不懂它的程序：
+
+```console
+$ cpa codex --profile deepseek
+cpa: profile "deepseek" is for agent "claude" (kind "claude"); "codex" is kind "openai"
+a profile is written for one downstream application — its model slots and its settings mean nothing to another — so cpa will not apply it here.
+launch it with an agent of kind "claude", or move the profile over with "agent": "codex"
+```
+
+kind 相同的两个 agent 可以共用一个 profile——读的变量完全一样，不会有损失。
+需要各自上游的应用就各自建 profile：`examples/settings.json` 里在几个 Claude
+Code profile 旁边就有一个 `codex` profile。
+
+| profile 里写了什么 | 它服务于哪个 agent |
+|---|---|
+| `"agent": "codex"` | `codex`。显式声明永远优先。 |
+| 没写 `agent`，但用了 `family`、`models`、`modelNames`、`subagentModel`、`customModelOption`、`contextWindow`、`claudeSettings` 中任意一个 | `claude`：这些字段只有 Claude Code 认，用了它们的 profile 就是 Claude Code profile——包括这条规矩出现之前就写好的那些。 |
+| 没写 `agent`，上面那些字段一个也没用 | 任何 agent 都能用；`cpa profile list` 会给它显示 `-`，未绑定的 profile 是被看见的，而不是被默认假设的。 |
+
 ## Profile 如何变成模型映射
 
 Claude Code 通过槽位（opus / sonnet / haiku / fable）寻址上游模型。`cpa`
@@ -233,7 +290,7 @@ Claude Code 通过槽位（opus / sonnet / haiku / fable）寻址上游模型。
 
 | # | 规则 | 说明 |
 |---|---|---|
-| 1 | `models` 手工钉死 | 显式指定永远优先。 |
+| 1 | `models` 手工钉死 | 显式指定永远优先。pin 只填自己那个槽位，其余槽位仍由后面的规则补上；只 pin 了一部分槽位的 profile，source 照样报 `explicit`——因为它的映射除了这些 pin 没有别的来源。 |
 | 2 | `family` 恰好命中一个已公布模型 | 即「全部流量走 DeepSeek」的情形——一个模型填满所有槽位。 |
 | 3 | `family` 命中多个 | 按名字分桶：`flash`/`mini`/`nano` → haiku，`pro`/`max`/`ultra` → opus，`sonnet`/`medium` → sonnet；剩余槽位取其中最强的一个。 |
 | 4 | 存在四个 `claude-<槽位>-*` 条目 | 网关把上游别名成了 Claude 形状的名字。 |
@@ -269,10 +326,11 @@ mapping source: claude aliases
 | `cpa version` | 打印版本。 |
 
 参数：`--profile`、`--dry-run`、`--no-discover`、`--json`、`--name`、
-`--file`、`--allow-settings-conflict`。未识别的参数一律透传给 agent，所以
-`cpa claude --profile deepseek --resume` 就是你想的那样。`cpa profile
-create` 另有 `--description`、`--base-url`、`--api-key`、`--family`、
-`--model`、`--force`，用来在没有终端时回答它的提问。
+`--agent`、`--file`、`--allow-settings-conflict`。未识别的参数一律透传给
+agent，所以 `cpa claude --profile deepseek --resume` 就是你想的那样。`cpa
+profile create` 另有 `--description`、`--base-url`、`--api-key`、`--family`、
+`--model`、`--force`，用来在没有终端时回答它的提问。`--family` 会把交互列表收窄到
+id 含该子串的模型，并记录进 profile，供启动器给未 pin 的槽位兜底。
 
 ## 排错
 
@@ -281,6 +339,11 @@ create` 另有 `--description`、`--base-url`、`--api-key`、`--family`、
 
 **模型发现失败但启动仍然成功。** 这是设计如此：手工钉了 `models` 的 profile
 不需要发现。离线场景可以加 `--no-discover` 完全跳过查询。
+
+**报 `profile "X" is for agent "Y"`，但我用的是另一个 agent。** 一个 profile
+只服务一个 agent，见[一个 profile 只服务一个 agent](#一个-profile-只服务一个-agent)。
+用它所属的 agent 启动，或把 profile 的 `agent` 改成你实际要用的那个。`cpa
+profile list` 会显示每个 profile 绑在哪个 agent 上，未绑定的显示 `-`。
 
 **我全局的 `ANTHROPIC_CUSTOM_MODEL_OPTION` 还在。** `cpa` 只覆盖它自己管理的
 变量；全局 `env` 块里的其他内容（包括模型选择器条目）保持原样。想让 profile

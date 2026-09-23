@@ -44,6 +44,13 @@ type Defaults struct {
 
 // Profile is one named upstream configuration, e.g. "deepseek" or "gpt".
 type Profile struct {
+	// Agent is the one downstream application this profile is written for:
+	// an agent name, as typed on the command line ("claude", "codex", or a
+	// key under "agents"). cpa refuses to apply a profile to an agent of
+	// another kind, so a profile can never be half-used. Left empty,
+	// EffectiveAgent infers "claude" from the fields only Claude Code has.
+	Agent string `json:"agent,omitempty"`
+
 	Description string `json:"description,omitempty"`
 
 	// BaseURL is the CPA (or any Anthropic/OpenAI-compatible) endpoint.
@@ -58,6 +65,8 @@ type Profile struct {
 	// Family selects models from the endpoint's /v1/models listing by
 	// substring. When exactly one model matches, it fills every slot —
 	// which is what "all upstream traffic goes to DeepSeek" looks like.
+	// Only Claude Code has slots, so setting it makes this a Claude Code
+	// profile, exactly as pinning Models does.
 	Family string `json:"family,omitempty"`
 	// Model is the catch-all model used for any slot not set explicitly.
 	Model string `json:"model,omitempty"`
@@ -100,6 +109,32 @@ const SchemaURL = "https://raw.githubusercontent.com/shichao-wang/cpa/main/examp
 
 // Slots are the model slots Claude Code resolves through ANTHROPIC_DEFAULT_*.
 var Slots = []string{"opus", "sonnet", "haiku", "fable"}
+
+// ClaudeCodeDefaults is what each slot means: the model Claude Code's own
+// alias resolves to when nothing overrides it. Read from Claude Code 2.1.280,
+// whose alias table is
+//
+//	aliases:{opus:{default:"claude-opus-5-5"},sonnet:{default:"claude-sonnet-5"},
+//	         haiku:{default:"claude-haiku-4-5"},fable:{default:"claude-fable-5-1"}}
+//
+// `cpa profile create` shows these beside each slot, so the mapping it asks
+// for reads as "Claude Code's Opus becomes this model on my gateway". They are
+// labels and nothing else: cpa hands the slot over through
+// ANTHROPIC_DEFAULT_<SLOT>_MODEL, so the id Claude Code would otherwise have
+// picked never reaches the gateway. Refresh the table when Claude Code's
+// aliases move — it is only as current as the release it was read from, and a
+// stale id is a stale label rather than a broken launch.
+//
+// Claude Code carries a per-provider variant of the same aliases: pointed at a
+// gateway, 2.1.280 resolves opus to claude-opus-4-7 and sonnet to
+// claude-sonnet-4-6. The default is shown because it is what the alias means;
+// the slot is intercepted whichever id it would have resolved to.
+var ClaudeCodeDefaults = map[string]string{
+	"opus":   "claude-opus-5-5",
+	"sonnet": "claude-sonnet-5",
+	"haiku":  "claude-haiku-4-5",
+	"fable":  "claude-fable-5-1",
+}
 
 // userConfigDir returns the user-level configuration directory, per the XDG
 // Base Directory spec: $XDG_CONFIG_HOME when set, else ~/.config.
@@ -387,4 +422,32 @@ func (p *Profile) ModelFor(slot string) string {
 // suppresses discovery.
 func (p *Profile) HasExplicitModels() bool {
 	return len(p.Models) > 0
+}
+
+// hasClaudeOnlyFields reports whether the profile carries anything only
+// Claude Code understands. A profile using those fields is a Claude Code
+// profile whether or not it says so, which is what lets EffectiveAgent name
+// the agent without the file having to be edited first.
+func (p *Profile) hasClaudeOnlyFields() bool {
+	return p.Family != "" ||
+		len(p.Models) > 0 ||
+		len(p.ModelNames) > 0 ||
+		p.SubagentModel != "" ||
+		p.CustomModelOption != "" ||
+		p.ContextWindow != 0 ||
+		len(p.ClaudeSettings) > 0
+}
+
+// EffectiveAgent returns the one agent this profile belongs to: the declared
+// "agent", or "claude" when the profile's own fields are Claude Code's alone.
+// Empty means the profile says nothing about its downstream, and may be used
+// with any agent.
+func (p *Profile) EffectiveAgent() string {
+	switch {
+	case p.Agent != "":
+		return p.Agent
+	case p.hasClaudeOnlyFields():
+		return "claude"
+	}
+	return ""
 }

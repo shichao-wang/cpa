@@ -81,6 +81,9 @@ func Build(cfg *config.Config, agentName, profileName string, userArgs []string,
 	if err != nil {
 		return nil, err
 	}
+	if err := profileFitsAgent(cfg, agentName, agent, resolvedName, profile); err != nil {
+		return nil, err
+	}
 
 	apiKey, err := profile.ResolveAPIKey()
 	if err != nil {
@@ -102,6 +105,12 @@ func Build(cfg *config.Config, agentName, profileName string, userArgs []string,
 		plan.Source = source
 		plan.Notices = append(plan.Notices, notices...)
 		applyClaudeEnv(plan, profile, models, apiKey)
+		if profile.ContextWindow > 0 && declaresBehavesAs(cfg, profile) {
+			plan.Notices = append(plan.Notices,
+				"this profile sets contextWindow and also declares modelPicker behavesAs rows; "+
+					"Claude Code reads the window off the model a row names, so it will use that "+
+					"model's window instead of the one asked for here")
+		}
 	} else {
 		applyOtherEnv(plan, profile, apiKey)
 	}
@@ -147,10 +156,58 @@ func Build(cfg *config.Config, agentName, profileName string, userArgs []string,
 	return plan, nil
 }
 
+// profileFitsAgent refuses to apply a profile to a downstream application it
+// was not written for. The agent's kind decides which variables cpa injects
+// and whether the model slots mean anything at all, so profiles are matched by
+// kind: two agents of the same kind share a profile, and anything else is an
+// error rather than a launch of Claude-shaped settings into a tool that cannot
+// read them.
+func profileFitsAgent(cfg *config.Config, agentName string, agent config.Agent, profileName string, p *config.Profile) error {
+	target := p.EffectiveAgent()
+	if target == "" {
+		return nil
+	}
+	targetAgent, err := cfg.AgentFor(target)
+	if err != nil {
+		return fmt.Errorf("profile %q is for agent %q: %w", profileName, target, err)
+	}
+	if targetAgent.Kind == agent.Kind {
+		return nil
+	}
+	return fmt.Errorf(
+		"profile %q is for agent %q (kind %q); %q is kind %q\n"+
+			"a profile is written for one downstream application — its model slots and its "+
+			"settings mean nothing to another — so cpa will not apply it here.\n"+
+			"launch it with an agent of kind %q, or move the profile over with \"agent\": %q",
+		profileName, target, targetAgent.Kind, agentName, agent.Kind, targetAgent.Kind, agentName)
+}
+
 func hasSettingsFlag(args []string) bool {
 	for _, a := range args {
 		if a == "--settings" || strings.HasPrefix(a, "--settings=") {
 			return true
+		}
+	}
+	return false
+}
+
+// declaresBehavesAs reports whether the settings Claude Code will be handed —
+// the config's defaults under the profile's own, as buildSettings merges them
+// — carry any modelPicker row naming a model it should behave as. Such a row
+// outranks CLAUDE_CODE_MAX_CONTEXT_TOKENS, which is worth saying out loud to
+// a profile that set a contextWindow without meaning to give it up.
+func declaresBehavesAs(cfg *config.Config, p *config.Profile) bool {
+	for _, settings := range []map[string]interface{}{cfg.Defaults.ClaudeSettings, p.ClaudeSettings} {
+		picker, ok := settings["modelPicker"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		options, _ := picker["options"].([]interface{})
+		for _, option := range options {
+			row, _ := option.(map[string]interface{})
+			if target, _ := row["behavesAs"].(string); strings.TrimSpace(target) != "" {
+				return true
+			}
 		}
 	}
 	return false
@@ -377,6 +434,13 @@ func MapModels(p *config.Profile, available []proxy.Model) (map[string]string, M
 		notices = append(notices, "no model resolved for slot(s) "+strings.Join(missing, ", ")+
 			"; Claude Code will use its own defaults for those")
 	}
+	// No fallback filled anything, so whatever the mapping holds is the pins
+	// themselves. Reporting "unset" over a mapping that is half decided would
+	// misdescribe it, and partial pins are ordinary now that `profile create`
+	// asks slot by slot and offers to leave a row unset.
+	if len(models) > 0 {
+		return models, SourceExplicit, notices
+	}
 	return models, SourceNone, notices
 }
 
@@ -416,6 +480,12 @@ var (
 	largeHints = []string{"opus", "pro", "max", "ultra", "large", "heavy", "70b", "72b", "235b", "405b", "671b"}
 	midHints   = []string{"sonnet", "medium", "balanced", "32b", "34b"}
 )
+
+// Classify reports which Claude Code slot a model id naturally fills, by the
+// size hint in its name, or "" when the name carries none. `cpa profile
+// create` marks each candidate with it, so a catalogue of two dozen models can
+// be read for the row in hand rather than in full.
+func Classify(id string) string { return classify(id) }
 
 // classify guesses which slot a model belongs in from its name. It is a
 // heuristic on purpose: an explicit `models` map always beats it.

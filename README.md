@@ -121,31 +121,73 @@ $ cpa doctor                   # confirm each profile's endpoint answers
 $ cpa claude --profile deepseek
 ```
 
-`cpa profile create` walks you through a new profile: name, description,
-gateway URL and key, then — having asked the gateway what it serves — the
-upstream family and the model behind each Claude Code slot. Both are picked
-from an arrow-key list of the models the gateway actually advertises, so a
-slot cannot be typo'd into a model that does not exist.
+`cpa profile create` walks you through a new profile: name, description, the
+agent it is for, gateway URL and key, then — having asked the gateway what it
+serves — the mapping from what the agent itself asks for onto what the gateway
+has. For Claude Code that is one row per slot, read from the agent's side: the
+row is named by the model Claude Code resolves for that slot, and the answer is
+the model on your gateway that should serve it. Every answer is picked from an
+arrow-key list of the models the gateway actually advertises, so it cannot be
+typo'd into a model that does not exist, and each row starts on the gateway's
+model for that same slot — mapping everything onto itself is four enters. A
+candidate the gateway would file under another slot says so (`→ haiku`), which
+is what keeps a two-dozen-model catalogue readable. A profile for another agent
+is asked for a single model instead: only Claude Code has slots.
 
 ```console
 $ cpa profile create
 ? Profile name devbox
 ? Description (optional) devbox gateway
+? Agent this profile is for (claude, codex, or a name from "agents") claude
 ? Gateway base URL http://127.0.0.1:18317
 ? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
-? Upstream family
-❯ (every advertised model — 4)
-  deepseek — deepseek-chat, deepseek-flash[1m] +1 more
-  (type a family…)
-# choosing one collapses the list onto the answer, and the four slots follow:
-? opus
-❯ (follow the family — choose automatically)
-? sonnet (follow the family — choose automatically)
-? haiku (follow the family — choose automatically)
-? fable (follow the family — choose automatically)
+? opus (Claude Code default: claude-opus-5-5)
+  (leave unset — resolve automatically)
+  claude-haiku-4-5 (Haiku 4.5) → haiku
+❯ claude-opus-5 (Opus 5)
+  claude-sonnet-5 (Sonnet 5) → sonnet
+  deepseek-v4-flash → haiku
+  deepseek-v4-pro
+  gpt-6-sol
+? sonnet (Claude Code default: claude-sonnet-5) gpt-6-sol
+? haiku (Claude Code default: claude-haiku-4-5) claude-haiku-4-5 (Haiku 4.5)
+? fable (Claude Code default: claude-fable-5-1) (leave unset — resolve automatically)
 
 wrote profile "devbox" to ~/.config/cpa/settings.json
+  behavesAs: gpt-6-sol behaves as claude-sonnet-5
+  (Claude Code will no longer call those ids unknown; the 200k window it assumes
+   is unchanged — set the profile's contextWindow if the upstream offers more)
+  cpa profile list
+  cpa claude --profile devbox
 ```
+
+The ids the rows are named by are Claude Code's own alias table, built into cpa
+(2.1.280: `opus` → `claude-opus-5-5`, `sonnet` → `claude-sonnet-5`, `haiku` →
+`claude-haiku-4-5`, `fable` → `claude-fable-5-1`). The gateway need not serve
+them: the row is labelled by what Claude Code *means*, so the choice reads as
+"Claude Code's opus becomes this". A row left unset pins nothing and lets the
+launcher resolve that slot on its own.
+
+Those answers also decide what Claude Code is told about the gateway's ids. One
+only your gateway serves is one Claude Code has never heard of: at each launch
+it warns that the id is not described by the model catalogue it ships with, and
+assumes 200k tokens for it. The slot mapping already says what each such id
+stands in for, so `create` writes that down — a `claudeSettings.modelPicker`
+row per mapped slot, naming the gateway id and the Claude model it fills in for
+— and prints what it wrote. Slots pinned to Claude Code's own ids are left out:
+that namespace belongs to the agent, and a row claiming `claude-opus-5` behaves
+as `claude-opus-5-5` would be cpa talking over it. A model serving two slots is
+declared once, as the stronger one, because an id carries one `behavesAs` and
+opus is the larger claim.
+
+One trade-off comes with it. `behavesAs` makes Claude Code read the window off
+the model a row names, and that reading outranks
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS`: measured, a profile asking for 1M through
+`contextWindow` believes 200k once rows are added. Each knob silences the
+warning on its own, so the one that also widens the window is the one that gets
+to stay — a profile with a `contextWindow` gets no rows, and one carrying rows
+by hand next to a `contextWindow` is told at launch which of the two it will
+get. A `[1m]` suffix sidesteps the choice: Claude Code reads it off the id.
 
 The prompts are line edited: left/right move the cursor, home/end and
 ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase, ctrl-c abandons the
@@ -156,10 +198,10 @@ catalogue never looks like a short one. The key prompt accepts `env:NAME` and
 `cmd:...`, which resolve at launch and keep the secret out of the file.
 
 Without a terminal — a pipe, a script, CI — there are no prompts at all:
-every field comes from a flag (`--name`, `--base-url`, `--api-key`,
+every field comes from a flag (`--name`, `--agent`, `--base-url`, `--api-key`,
 `--family`, `--model`, …) and a missing required one is an error rather than
 a hang. Passing `--name` and `--base-url` is enough to create a profile
-non-interactively.
+non-interactively; without `--agent` it is a Claude Code profile.
 
 It writes to `$XDG_CONFIG_HOME/cpa/settings.json`; `--file` writes somewhere
 else instead.
@@ -216,19 +258,20 @@ your editor reads.
 
 | Field | Meaning |
 |---|---|
+| `agent` | The one agent this profile is for. See [one profile, one agent](#one-profile-one-agent). |
 | `baseUrl` | The gateway endpoint. Claude Code gets it as `ANTHROPIC_BASE_URL`. |
 | `apiKey` | Client key. Also accepts `"env:VAR"` and `"cmd:shell command"`. |
 | `apiKeyEnv` | Read the key from this environment variable. |
 | `apiKeyCmd` | Read the key from this command's stdout. |
-| `family` | Substring match against the gateway's `/v1/models` listing. |
+| `family` | Substring match against the gateway's `/v1/models` listing. It fills Claude Code's slots, so it also makes the profile a Claude Code one. |
 | `model` | Catch-all model for every slot not otherwise set. |
 | `models` | Pin slots by hand: `{"opus": …, "sonnet": …, "haiku": …, "fable": …}`. Pinning skips discovery entirely. |
 | `modelNames` | Override the label shown in Claude Code's model picker, per slot. |
 | `subagentModel` | Model for subagents (`CLAUDE_CODE_SUBAGENT_MODEL`). |
-| `contextWindow` | `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. A `[1m]` model suffix implies `1000000`. |
+| `contextWindow` | `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. A `[1m]` model suffix implies `1000000`. `behavesAs` rows outrank it — see above. |
 | `customModelOption` | Surface one model as a hand-picked entry in the picker. |
 | `env` | Extra environment variables; these win over generated ones. |
-| `claudeSettings` | Extra Claude Code settings, merged into the `--settings` document. |
+| `claudeSettings` | Extra Claude Code settings, merged into the `--settings` document. `cpa profile create` writes the derived `modelPicker` behavesAs rows here. |
 | `args` | Extra arguments for the agent. |
 
 Keep keys out of the file where you can — `apiKeyEnv` and `apiKeyCmd` exist so
@@ -248,6 +291,31 @@ You can also define other agents:
 `kind` decides the variables injected: `claude` → `ANTHROPIC_*`, `openai` →
 `OPENAI_*`, `generic` → only the profile's own `env`.
 
+### One profile, one agent
+
+A profile says how one downstream application is pointed at one upstream. Its
+model slots and its settings belong to that application and mean nothing to
+another, so a profile fits a single agent — and launching it with an agent of a
+different kind is an error rather than a silent misapplication:
+
+```console
+$ cpa codex --profile deepseek
+cpa: profile "deepseek" is for agent "claude" (kind "claude"); "codex" is kind "openai"
+a profile is written for one downstream application — its model slots and its settings mean nothing to another — so cpa will not apply it here.
+launch it with an agent of kind "claude", or move the profile over with "agent": "codex"
+```
+
+Two agents of the same `kind` may share a profile: they read the same
+variables, so nothing is lost. An application that needs its own upstream gets
+its own profile — `examples/settings.json` has a `codex` profile next to the
+Claude Code ones.
+
+| What the profile says | Which agent it fits |
+|---|---|
+| `"agent": "codex"` | `codex`. Declaring always wins. |
+| no `agent`, but any of `family`, `models`, `modelNames`, `subagentModel`, `customModelOption`, `contextWindow`, `claudeSettings` | `claude`: only Claude Code understands those fields, so a profile using them is a Claude Code profile — including one written before this rule existed. |
+| no `agent`, none of those fields | Any agent. `cpa profile list` prints `-` for it, so an unbound profile is visible rather than assumed. |
+
 ## How a profile becomes a model mapping
 
 Claude Code addresses upstream models through slots (opus / sonnet / haiku /
@@ -256,7 +324,7 @@ produces something:
 
 | # | Rule | Notes |
 |---|---|---|
-| 1 | `models` pins | Explicit always wins. |
+| 1 | `models` pins | Explicit always wins. A pin fills its own slot and the rules below fill the rest; a profile that pins only some slots still reports `explicit`, because nothing but the pins decided its mapping. |
 | 2 | `family` matches exactly one advertised model | The "*all* traffic goes to DeepSeek" case — one model fills every slot. |
 | 3 | `family` matches several | Bucketed by name: `flash`/`mini`/`nano` → haiku, `pro`/`max`/`ultra` → opus, `sonnet`/`medium` → sonnet. Unmatched slots get the strongest match. |
 | 4 | Four `claude-<slot>-*` entries exist | Gateways that alias the upstream onto Claude-shaped names. |
@@ -293,11 +361,13 @@ mapping source: claude aliases
 | `cpa version` | Print the version. |
 
 Flags: `--profile`, `--dry-run`, `--no-discover`, `--json`, `--name`,
-`--file`, `--allow-settings-conflict`. Anything unrecognized is forwarded to
-the agent, so `cpa claude --profile deepseek --resume` does what you expect.
-`cpa profile create` additionally takes `--description`, `--base-url`,
-`--api-key`, `--family`, `--model` and `--force`, which answer its prompts
-without a terminal.
+`--agent`, `--file`, `--allow-settings-conflict`. Anything unrecognized is
+forwarded to the agent, so `cpa claude --profile deepseek --resume` does what
+you expect. `cpa profile create` additionally takes `--description`,
+`--base-url`, `--api-key`, `--family`, `--model` and `--force`, which answer
+its prompts without a terminal. `--family` narrows the interactive list to the
+models whose id contains that substring and records it on the profile, where
+the launcher falls back to it for any slot left unpinned.
 
 ## Troubleshooting
 
@@ -308,6 +378,12 @@ names the gateway actually advertises.
 **Discovery fails but the launch works.** That is by design: a profile with
 hand-pinned `models` needs no discovery. `--no-discover` skips the query
 entirely for offline use.
+
+**`profile "X" is for agent "Y"`, and I asked for another.** A profile belongs
+to one agent — see [one profile, one agent](#one-profile-one-agent). Launch it
+with that agent, or set the profile's `agent` field to the one you meant. `cpa
+profile list` shows what each profile is bound to, and `-` for a profile that
+fits any agent.
 
 **My global `ANTHROPIC_CUSTOM_MODEL_OPTION` still shows up.** `cpa` overrides
 the variables it manages; anything else in your global `env` block — including

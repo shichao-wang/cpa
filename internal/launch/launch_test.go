@@ -114,6 +114,24 @@ func TestMapModelsPrecedence(t *testing.T) {
 		}
 	})
 
+	t.Run("pins that leave slots open are still the whole mapping", func(t *testing.T) {
+		// What `profile create` writes when a slot is mapped by hand and the
+		// rest are left to resolve: nothing else fires, so the mapping is the
+		// pins, and calling that "unset" would contradict what is printed
+		// right above it.
+		p := &config.Profile{Models: map[string]string{"sonnet": "gpt-6-sol"}}
+		got, source, notices := MapModels(p, models("gpt-6-sol", "unrelated"))
+		if source != SourceExplicit {
+			t.Fatalf("source = %q, want %q", source, SourceExplicit)
+		}
+		if got["sonnet"] != "gpt-6-sol" {
+			t.Errorf("sonnet = %q, want the pin", got["sonnet"])
+		}
+		if len(notices) == 0 {
+			t.Error("expected a notice for the slots left unset")
+		}
+	})
+
 	t.Run("a lone advertised model is used", func(t *testing.T) {
 		p := &config.Profile{}
 		got, source, _ := MapModels(p, models("solo"))
@@ -301,6 +319,55 @@ func TestBuildCarriesExtraClaudeSettings(t *testing.T) {
 	if !strings.Contains(string(plan.SettingsBlob), "acceptEdits") {
 		t.Errorf("claudeSettings missing from the document: %s", plan.SettingsBlob)
 	}
+}
+
+// behavesAs outranks CLAUDE_CODE_MAX_CONTEXT_TOKENS, so a profile carrying
+// both is told that its contextWindow will not be the one used, rather than
+// finding out from a session that compacts at 200k.
+func TestBuildWarnsWhenBehavesAsOverridesTheContextWindow(t *testing.T) {
+	cfg := testConfig()
+	p := cfg.Profiles["deepseek"]
+	p.ContextWindow = 1000000
+	p.ClaudeSettings = map[string]interface{}{
+		"modelPicker": map[string]interface{}{
+			"options": []interface{}{
+				map[string]interface{}{"model": "deepseek-flash", "behavesAs": "claude-opus-5-5"},
+			},
+		},
+	}
+	plan, err := Build(cfg, "claude", "", nil, Options{Available: models("deepseek-flash")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.Env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"]; got != "1000000" {
+		t.Errorf("CLAUDE_CODE_MAX_CONTEXT_TOKENS = %q; the profile's own window should still be set", got)
+	}
+	if !hasNotice(plan, "instead of the one asked for") {
+		t.Errorf("expected a notice about the overridden window, got %v", plan.Notices)
+	}
+}
+
+func TestBuildKeepsQuietAboutAWindowWithNoBehavesAs(t *testing.T) {
+	cfg := testConfig()
+	p := cfg.Profiles["deepseek"]
+	p.ContextWindow = 1000000
+	plan, err := Build(cfg, "claude", "", nil, Options{Available: models("deepseek-flash")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasNotice(plan, "instead of the one asked for") {
+		t.Errorf("nothing overrides the window here: %v", plan.Notices)
+	}
+}
+
+// hasNotice reports whether any notice carries the given phrase.
+func hasNotice(plan *Plan, phrase string) bool {
+	for _, n := range plan.Notices {
+		if strings.Contains(n, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 // Two writers for one flag would silently pick the wrong upstream, so the

@@ -50,6 +50,7 @@ FLAGS
   --allow-settings-conflict
                      proceed even if you passed your own --settings
   --name <name>      profile name to create ("import-claude", "profile create")
+  --agent <name>     agent the profile is for ("profile create", default: claude)
   --file <path>      settings file to write ("profile create")
 
 Unrecognized arguments are passed straight through to the agent, so

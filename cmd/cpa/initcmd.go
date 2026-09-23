@@ -23,6 +23,7 @@ const starterConfig = `{
   },
   "profiles": {
     "deepseek": {
+      "agent": "claude",
       "description": "全量 DeepSeek 上游",
       "baseUrl": "http://127.0.0.1:8317",
       "apiKeyEnv": "CPA_API_KEY",
@@ -30,12 +31,14 @@ const starterConfig = `{
       "subagentModel": "deepseek-flash"
     },
     "gpt": {
+      "agent": "claude",
       "description": "全量 GPT 上游",
       "baseUrl": "http://127.0.0.1:8317",
       "apiKeyEnv": "CPA_API_KEY",
       "family": "gpt"
     },
     "pinned": {
+      "agent": "claude",
       "description": "手工指定槽位映射",
       "baseUrl": "http://127.0.0.1:8317",
       "apiKeyEnv": "CPA_API_KEY",
@@ -108,7 +111,10 @@ func cmdImportClaude(args []string) error {
 		name = "imported"
 	}
 
-	profile := &config.Profile{Description: "imported from " + source}
+	// The source is Claude Code's own settings, so the profile is a Claude Code
+	// profile whatever it ends up containing — including the case where it
+	// carries nothing Claude-specific beyond an endpoint and a key.
+	profile := &config.Profile{Agent: "claude", Description: "imported from " + source}
 	consumed := map[string]bool{}
 	take := func(key string) string {
 		consumed[key] = true
