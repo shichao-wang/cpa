@@ -181,7 +181,10 @@ row is named by the model Claude Code resolves for that slot, and the answer is
 the model on your gateway that should serve it. Every answer is picked from an
 arrow-key list of the models the gateway actually advertises, so it cannot be
 typo'd into a model that does not exist, and each row starts on the gateway's
-model for that same slot — mapping everything onto itself is four enters. A
+model for that same slot — mapping everything onto itself is four enters. In
+model lists, type to filter by model ID, name, or provider (case-insensitively),
+use backspace to edit the search and arrow keys to choose; Esc returns to the
+previous question, and enter does nothing if no models match. A
 candidate the gateway would file under another slot says so (`→ haiku`), which
 is what keeps a two-dozen-model catalogue readable. Each row also names the
 provider the gateway files the model under (`[commandcode]`), which is what a

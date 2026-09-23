@@ -25,6 +25,7 @@ type scriptedQuestions struct {
 	calls    []string
 	backs    int
 	sections int
+	searches int
 }
 
 func (s *scriptedQuestions) next(label string) (formAnswer, error) {
@@ -58,7 +59,8 @@ func (s *scriptedQuestions) Input(label, _ string, validate func(string) error) 
 	}
 	return a.text, nil
 }
-func (s *scriptedQuestions) ChooseDefault(label string, options []string, _ int) (int, error) {
+func (s *scriptedQuestions) ChooseSearchDefault(label string, options []string, _ int) (int, error) {
+	s.searches++
 	a, err := s.next(label)
 	if err != nil {
 		return 0, err
@@ -264,6 +266,33 @@ func TestProfileFormInterrupt(t *testing.T) {
 	form := &profileForm{ctx: context.Background(), pr: q, name: &name, profile: &config.Profile{}}
 	if err := form.run(); err == nil || !strings.Contains(err.Error(), "nothing written") {
 		t.Errorf("interrupt error = %v", err)
+	}
+}
+
+func TestProfileFormSearchChoiceKeepsModelIndex(t *testing.T) {
+	q := &scriptedQuestions{answers: []formAnswer{
+		{label: "Profile name", text: "searched"},
+		{label: "Description (optional)"},
+		{label: agentQuestion, text: "claude"},
+		{label: "Gateway base URL", text: "http://gateway"},
+		{label: keyQuestion},
+		{label: slotLabel("opus"), index: 3},
+		{label: slotLabel("sonnet"), index: 0},
+		{label: slotLabel("haiku"), index: 0},
+		{label: slotLabel("fable"), index: 0},
+	}}
+	name := ""
+	p := &config.Profile{Agent: "claude"}
+	form := &profileForm{ctx: context.Background(), pr: q, name: &name, profile: p,
+		lookup: func(context.Context, *config.Profile) ([]proxy.Model, string) {
+			return []proxy.Model{{ID: "alpha"}, {ID: "beta"}, {ID: "gamma"}}, ""
+		},
+	}
+	if err := form.run(); err != nil {
+		t.Fatal(err)
+	}
+	if q.searches != 4 || p.Models["opus"] != "gamma" || len(p.Models) != 1 {
+		t.Errorf("searches=%d, models=%v; want four searched slots and opus=gamma", q.searches, p.Models)
 	}
 }
 

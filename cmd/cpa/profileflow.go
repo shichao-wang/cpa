@@ -33,7 +33,7 @@ const (
 
 type profileQuestions interface {
 	Input(string, string, func(string) error) (string, error)
-	ChooseDefault(string, []string, int) (int, error)
+	ChooseSearchDefault(string, []string, int) (int, error)
 	SetIndent(int)
 	Section(string)
 	Back()
@@ -194,7 +194,7 @@ func (f *profileForm) ask(step profileStep) (profileStep, error) {
 			labels = append(labels, candidateLabel(m, slot))
 			values = append(values, m.ID)
 		}
-		picked, err := f.pr.ChooseDefault(slotLabel(slot), labels, defaultSlotChoice(slot, candidates, p.Models[slot]))
+		picked, err := f.pr.ChooseSearchDefault(slotLabel(slot), labels, defaultSlotChoice(slot, candidates, p.Models[slot]))
 		if err != nil {
 			return step, err
 		}

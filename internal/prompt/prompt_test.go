@@ -504,3 +504,94 @@ func TestDrawListClipsRowsTooWideForTheTerminal(t *testing.T) {
 		t.Errorf("the clipped option is not marked as clipped: %q", out)
 	}
 }
+
+func TestSearchOptionsPreservesOriginalIndicesAndHighlight(t *testing.T) {
+	options := []string{"leave unset", "claude-opus", "DeepSeek V4", "deepseek-r1"}
+	l, indices := searchOptions(options, "DEEP", 3, 1)
+	if got := l.Selected(); got != "deepseek-r1" || l.Offset() != 1 {
+		t.Errorf("selected = %q, offset = %d; want deepseek-r1 at 1", got, l.Offset())
+	}
+	if len(indices) != 2 || indices[0] != 2 || indices[1] != 3 {
+		t.Fatalf("filtered indices = %v, want [2 3]", indices)
+	}
+	l, indices = searchOptions(options, "deep", 1, 2)
+	if l.Index() != 0 || indices[l.Index()] != 2 {
+		t.Errorf("missing highlight should move to first result: index %d, indices %v", l.Index(), indices)
+	}
+	l, indices = searchOptions(options, "", indices[l.Index()], 2)
+	if l.Len() != len(options) || indices[l.Index()] != 2 {
+		t.Errorf("clearing query should restore all and keep selection: length %d, selected %d", l.Len(), indices[l.Index()])
+	}
+}
+
+func TestChooseSearchDefaultFiltersAndReturnsOriginalIndex(t *testing.T) {
+	options := []string{"leave unset", "claude-opus", "DeepSeek V4", "deepseek-r1"}
+	var out bytes.Buffer
+	p := &Prompter{out: &out, dec: newDecoder(strings.NewReader("DEEP\x1b[B\r"))}
+	got, err := p.ChooseSearchDefault("opus", options, 1)
+	if err != nil || got != 3 {
+		t.Fatalf("chosen index = %d, error = %v; want 3", got, err)
+	}
+	if !strings.Contains(out.String(), "[search: DEEP]") || !strings.Contains(out.String(), "deepseek-r1") {
+		t.Errorf("search display or selected model missing: %q", out.String())
+	}
+}
+
+func TestChooseSearchDefaultBackspaceAndNoMatches(t *testing.T) {
+	var out bytes.Buffer
+	p := &Prompter{out: &out, dec: newDecoder(strings.NewReader("中x\ré\x7f\x7f\r"))}
+	got, err := p.ChooseSearchDefault("opus", []string{"leave unset", "中文-model"}, 1)
+	if err != nil || got != 1 {
+		t.Fatalf("chosen index = %d, error = %v; want 1", got, err)
+	}
+	if !strings.Contains(out.String(), "No matching models") || !strings.Contains(out.String(), "[search: 中]") {
+		t.Errorf("missing search or empty-state feedback: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "\x1b[J") {
+		t.Errorf("shorter filtered list left old rows: %q", out.String())
+	}
+}
+
+func TestChooseSearchDefaultRestoresSelectionAfterNoMatches(t *testing.T) {
+	var out bytes.Buffer
+	p := &Prompter{out: &out, dec: newDecoder(strings.NewReader("z\x7f\r"))}
+	got, err := p.ChooseSearchDefault("opus", []string{"leave unset", "saved-model"}, 1)
+	if err != nil || got != 1 {
+		t.Fatalf("restored choice = %d, error = %v; want existing model at 1", got, err)
+	}
+}
+
+func TestChooseSearchDefaultEscapeAndPlainChoose(t *testing.T) {
+	var out bytes.Buffer
+	p := &Prompter{out: &out, dec: newDecoder(strings.NewReader("deep\x1b"))}
+	if _, err := p.ChooseSearchDefault("opus", []string{"deepseek"}, 0); !errors.Is(err, ErrBack) {
+		t.Errorf("search escape = %v, want ErrBack", err)
+	}
+	out.Reset()
+	p = &Prompter{out: &out, dec: newDecoder(strings.NewReader("x\r"))}
+	if got, err := p.ChooseDefault("confirm", []string{"yes", "no"}, 1); err != nil || got != 1 {
+		t.Errorf("plain choose index = %d, error = %v; want 1", got, err)
+	}
+	if strings.Contains(out.String(), "search:") {
+		t.Errorf("plain choice unexpectedly became searchable: %q", out.String())
+	}
+}
+
+func TestDrawSearchListClipsLongQuery(t *testing.T) {
+	for _, query := range []string{strings.Repeat("x", 100), strings.Repeat("中", 40)} {
+		var out bytes.Buffer
+		p := &Prompter{out: &out}
+		p.drawSearchList(strings.Repeat("slot", 30), NewList(nil, 2), query)
+		if !strings.Contains(out.String(), "No matching models") || !strings.Contains(out.String(), "…") || p.drawn != 1 {
+			t.Errorf("empty search rendering = %q, drawn = %d", out.String(), p.drawn)
+		}
+		if !strings.HasSuffix(out.String(), "\x1b[J") {
+			t.Errorf("empty search did not clear old rows: %q", out.String())
+		}
+		row := strings.SplitN(out.String(), "\n", 2)[0]
+		row = strings.ReplaceAll(row, "\r\x1b[K\x1b[1m?\x1b[0m ", "")
+		if columns := searchColumns(row) + 2; columns > p.width() {
+			t.Errorf("search heading occupies %d columns (width %d): %q", columns, p.width(), row)
+		}
+	}
+}
