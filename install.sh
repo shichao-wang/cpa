@@ -132,6 +132,6 @@ esac
 
 say ""
 say "next:"
-say "  ${BIN} init                      # write ~/.cpa/settings.json"
+say "  ${BIN} init                      # write ~/.config/cpa/settings.json"
 say "  ${BIN} doctor                    # check your gateway"
 say "  ${BIN} claude --profile <name>   # launch Claude Code"
