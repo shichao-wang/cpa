@@ -8,6 +8,10 @@ name: ci
 # Pushing a tag by hand (`git push origin v1.2.3`) takes the same path with the
 # version you chose instead of inventing one.
 #
+# A manual run (`gh workflow run ci.yml -f tag=v1.2.3`) republishes one tag
+# without bumping anything: the lever for repairing a release that came out
+# wrong, since such a tag would otherwise never be picked again.
+#
 # A merge with no label gets a patch bump; the merged PR's labels decide
 # otherwise:
 #
@@ -24,6 +28,11 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to (re)publish, e.g. v0.2.1. Empty derives the next version."
+        required: false
 
 permissions:
   contents: write
@@ -83,8 +92,17 @@ jobs:
           REF: ${{ github.ref }}
           SHA: ${{ github.sha }}
           REPO: ${{ github.repository }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
+
+          # A manual run names the tag to republish, so repairing a release
+          # does not cost a version number.
+          if [ -n "$INPUT_TAG" ]; then
+            echo "tag=${INPUT_TAG}" >>"$GITHUB_OUTPUT"
+            echo "manual run for ${INPUT_TAG}"
+            exit 0
+          fi
 
           # A tag pushed by hand names the version itself.
           if [[ "$REF" == refs/tags/v* ]]; then
@@ -166,21 +184,56 @@ jobs:
         run: |
           set -euo pipefail
 
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "release ${TAG} already exists; nothing to do"
-            exit 0
-          fi
+          assets=(dist/*.tar.gz dist/checksums.txt install.sh)
+          expected=()
+          for f in "${assets[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "no ${f} to publish"
+              exit 1
+            fi
+            expected+=("$(basename "$f")")
+          done
 
-          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
-            echo "tag ${TAG} already exists; publishing it"
-          else
+          if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag -a "${TAG}" -m "${TAG}" "$SHA"
             git push origin "${TAG}"
           fi
 
-          gh release create "${TAG}" \
-            --title "${TAG}" \
-            --generate-notes \
-            dist/*.tar.gz dist/checksums.txt install.sh
+          # The release and its assets are two calls on purpose. `gh release
+          # create <tag> <assets>` uploads the files in its own requests and can
+          # report success having attached none of them - that is how v0.2.1 was
+          # published empty - so the upload is its own call here, and the assets
+          # are counted before this step is allowed to pass.
+          draft=false
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --title "$TAG" --generate-notes
+            draft=true
+          elif [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
+            draft=true
+            echo "release ${TAG} is still a draft from an earlier run; finishing it"
+          else
+            echo "release ${TAG} is already published; checking its assets"
+          fi
+
+          gh release upload "$TAG" --clobber "${assets[@]}"
+
+          have="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+          missing=()
+          for name in "${expected[@]}"; do
+            grep -qxF "$name" <<<"$have" || missing+=("$name")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "these assets did not attach to ${TAG}:"
+            printf '  %s\n' "${missing[@]}"
+            exit 1
+          fi
+
+          # A draft is invisible to /releases/latest, the endpoint cpa upgrade
+          # reads, so anything that goes wrong before this line leaves the
+          # previous release as the one people get.
+          if [ "$draft" = true ]; then
+            gh release edit "$TAG" --draft=false
+          fi
+          echo "published ${TAG} with ${#expected[@]} assets"
