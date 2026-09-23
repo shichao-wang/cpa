@@ -66,6 +66,30 @@ ok                      # ← 用的是 settings.json 里的端点，不是你�
 ## 安装
 
 ```console
+$ curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpa/main/install.sh | bash
+```
+
+脚本会识别操作系统与 CPU 架构，下载对应的 release 包，用该 release 的
+`checksums.txt` 校验 SHA-256，然后安装到 `~/.local/bin`。不需要 root，也不会读写
+`~/.claude/` 下的任何东西。可用环境变量调整：
+
+| 变量 | 作用 |
+|---|---|
+| `CPA_VERSION` | 安装指定 tag，而不是最新 release，如 `CPA_VERSION=v0.1.0` |
+| `CPA_INSTALL_DIR` | 安装到 `~/.local/bin` 以外的目录 |
+| `CPA_SKIP_VERIFY=1` | 跳过校验和验证（不建议） |
+
+建议先读再执行——脚本很短，就在仓库根目录：[`install.sh`](install.sh)。
+若想让安装脚本本身也固定在某个 release（而不是跟随 `main`），用该 release
+附带的副本：
+
+```console
+$ curl -fsSL https://github.com/shichao-wang/cpa/releases/latest/download/install.sh | bash
+```
+
+或者从源码安装：
+
+```console
 # 有 Go 工具链
 $ go install github.com/shichao-wang/cpa/cmd/cpa@latest
 

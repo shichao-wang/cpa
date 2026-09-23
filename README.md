@@ -77,6 +77,31 @@ back into plain env injection.
 ## Install
 
 ```console
+$ curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpa/main/install.sh | bash
+```
+
+The script detects your OS and CPU, downloads the matching release archive,
+verifies its SHA-256 against the release's `checksums.txt`, and installs the
+binary to `~/.local/bin`. No root required, and nothing under `~/.claude/` is
+read or written. It can be steered with environment variables:
+
+| Variable | Effect |
+|---|---|
+| `CPA_VERSION` | install a specific tag instead of the latest release, e.g. `CPA_VERSION=v0.1.0` |
+| `CPA_INSTALL_DIR` | install somewhere other than `~/.local/bin` |
+| `CPA_SKIP_VERIFY=1` | skip checksum verification (not advised) |
+
+Read it before piping — it is short and lives in the repo root as
+[`install.sh`](install.sh). To pin the installer itself to a release rather
+than tracking `main`, fetch the copy attached to that release:
+
+```console
+$ curl -fsSL https://github.com/shichao-wang/cpa/releases/latest/download/install.sh | bash
+```
+
+Or install from source:
+
+```console
 # with a Go toolchain
 $ go install github.com/shichao-wang/cpa/cmd/cpa@latest
 
