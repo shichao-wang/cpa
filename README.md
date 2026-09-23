@@ -112,6 +112,34 @@ $ git clone https://github.com/shichao-wang/cpa && cd cpa
 $ make install
 ```
 
+### Updating
+
+There is no self-update command; you update the way you installed.
+
+```console
+# release install: re-run the installer — it resolves the newest release,
+# verifies its checksum, and replaces the binary
+$ curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpa/main/install.sh | bash
+
+# source install: fast-forward your clone, then rebuild and reinstall
+$ git pull --ff-only && make install
+```
+
+Every merge to `main` runs the tests in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) and, when they pass,
+tags a release — so re-running the installer always gets you the newest code.
+The version for a merge comes from the merged PR's labels (`release:major`,
+`release:minor`, `release:patch`, or `skip-release`), defaulting to a patch
+bump.
+
+Both routes write the same file, `~/.local/bin/cpa`: `make install` defaults
+to `PREFIX=$(HOME)/.local`, which is the path `install.sh` calls
+`CPA_INSTALL_DIR`:
+
+```console
+$ make install PREFIX=/usr/local
+```
+
 ## Quick start
 
 ```console

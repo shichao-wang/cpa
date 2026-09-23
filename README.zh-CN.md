@@ -100,6 +100,31 @@ $ git clone https://github.com/shichao-wang/cpa && cd cpa
 $ make install
 ```
 
+### 更新
+
+`cpa` 没有自更新命令，按当初的装法更新。
+
+```console
+# release 安装：重跑安装脚本——它解析最新 release、校验和，然后替换二进制
+$ curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpa/main/install.sh | bash
+
+# 源码安装：快进 clone，再重建、重装
+$ git pull --ff-only && make install
+```
+
+每次合并到 `main` 都会由
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 跑测试，通过后自动打
+tag 发 release——所以重跑安装脚本总能拿到最新的代码。版本号由被合并 PR 的标签
+决定（`release:major`、`release:minor`、`release:patch`、`skip-release`），
+默认是 patch。
+
+两条路写的是同一个文件 `~/.local/bin/cpa`：`make install` 默认
+`PREFIX=$(HOME)/.local`，也就是 install.sh 口中的 `CPA_INSTALL_DIR`：
+
+```console
+$ make install PREFIX=/usr/local
+```
+
 ## 快速开始
 
 ```console

@@ -2,14 +2,25 @@ BIN     := cpa
 PKG     := github.com/shichao-wang/cpa
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
+PREFIX  ?= $(HOME)/.local
+BINDIR  := $(PREFIX)/bin
 
 .PHONY: build install test fmt vet check dist clean
 
 build:
 	go build -ldflags '$(LDFLAGS)' -o bin/$(BIN) ./cmd/$(BIN)
 
-install:
-	go install -ldflags '$(LDFLAGS)' ./cmd/$(BIN)
+# Build this checkout and put it at $(BINDIR)/$(BIN) — the same path
+# install.sh installs to, so both routes update one binary. The copy is
+# staged beside the target and renamed into place, so a running cpa is
+# never replaced by a half-written file.
+install: build
+	@mkdir -p '$(BINDIR)'
+	@stage='$(BINDIR)/.$(BIN).tmp.$$$$'; \
+		cp bin/$(BIN) "$$stage" && chmod 0755 "$$stage" && mv -f "$$stage" '$(BINDIR)/$(BIN)'
+	@echo "installed $(BINDIR)/$(BIN) ($(VERSION))"
+	@case ":$$PATH:" in *":$(BINDIR):"*) ;; *) \
+		echo "note: $(BINDIR) is not on your PATH; add it to run $(BIN)";; esac
 
 test:
 	go test ./...
