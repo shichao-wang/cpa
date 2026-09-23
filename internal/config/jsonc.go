@@ -1,5 +1,7 @@
 package config
 
+import "bytes"
+
 // Settings files are read as JSONC: comments and trailing commas are
 // allowed, because a file whose whole job is to explain upstream routing is
 // painful to maintain without them.
@@ -101,4 +103,11 @@ func stripTrailingCommas(b []byte) []byte {
 
 func isSpace(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+// HasComments reports whether data carries JSONC comments outside its
+// strings. Callers that rewrite a settings file use this to warn that the
+// comments will not survive the round trip.
+func HasComments(data []byte) bool {
+	return !bytes.Equal(stripComments(data), data)
 }

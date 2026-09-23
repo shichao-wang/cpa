@@ -109,6 +109,32 @@ $ cpa doctor                   # 确认每个 profile 的端点可达
 $ cpa claude --profile deepseek
 ```
 
+`cpa profile create` 会逐项问你——名字、网关地址、key，以及可选的 family 或
+model——然后把结果合并进配置文件，并先打印它算出的槽位映射。每个提示符留空即
+取默认值，stdin 可以直接管道输入，所以也能写进脚本。key 那一项接受
+`env:NAME` 与 `cmd:...` 简写，它们在启动时才解析，密钥因此不必落进文件。
+
+```console
+$ cpa profile create
+Profile name: devbox
+Gateway base URL [http://127.0.0.1:8317]: http://127.0.0.1:18317
+API key (or "env:NAME" / "cmd:..." to resolve at launch): env:CPA_KEY
+Description (optional): devbox gateway
+Upstream family, e.g. deepseek (optional):
+Model for every slot, e.g. deepseek-flash[1m] (optional):
+
+  gateway advertises 4 model(s); slots would resolve as (claude aliases):
+    opus    -> claude-opus-5
+    sonnet  -> claude-sonnet-5
+    haiku   -> claude-haiku-4-5
+    fable   -> claude-fable-5
+
+wrote profile "devbox" to ~/.config/cpa/settings.json
+```
+
+写入目标是 `$CPA_SETTINGS` 钉住的文件，否则是用户级配置；`--file` 可覆盖两者。
+若某个配置文件里带 JSONC 注释，重写会丢掉它们，`cpa profile create` 会事先说明。
+
 也可以不从头写，而是把现有配置直接转成 profile——它会读取你的 Claude Code
 配置并提取其中的 `ANTHROPIC_*` 环境变量（不会修改那个文件）：
 
@@ -217,14 +243,15 @@ mapping source: claude aliases
 |---|---|
 | `cpa <agent> [flags] [-- args]` | 用某个 profile 启动 agent。 |
 | `cpa models --profile X` | 列出网关模型与槽位映射。 |
-| `cpa profiles` | 列出已配置的 profile。 |
+| `cpa profile list [--json]` | 列出已配置的 profile。 |
+| `cpa profile create` | 交互式新增一个 profile。 |
 | `cpa doctor` | 检查每个 profile 的端点与 key。 |
 | `cpa init [--force]` | 写入起始配置文件。 |
 | `cpa import-claude` | 把 `~/.claude/settings.json` 的环境变量转成 profile。 |
 | `cpa version` | 打印版本。 |
 
-参数：`--profile`、`--dry-run`、`--no-discover`、`--json`、
-`--allow-settings-conflict`。未识别的参数一律透传给 agent，所以
+参数：`--profile`、`--dry-run`、`--no-discover`、`--json`、`--name`、
+`--file`、`--allow-settings-conflict`。未识别的参数一律透传给 agent，所以
 `cpa claude --profile deepseek --resume` 就是你想的那样。
 
 ## 排错

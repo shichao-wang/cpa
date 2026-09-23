@@ -27,7 +27,8 @@ const usage = `cpa - launch coding agents against a CLIProxyAPI (CPA) gateway
 USAGE
   cpa <agent> [flags] [-- <agent args>]    launch an agent with a profile
   cpa models  [--profile <name>]           list models the gateway advertises
-  cpa profiles                             list configured profiles
+  cpa profile list                         list configured profiles
+  cpa profile create                       create one interactively
   cpa doctor                               check every profile's endpoint
   cpa init [--force]                       write a starter settings file
   cpa import-claude [--name <name>]        turn ~/.claude/settings.json into a profile
@@ -38,16 +39,18 @@ EXAMPLES
   cpa claude --profile gpt -p "explain this repo"
   cpa claude --profile deepseek --dry-run
   cpa models --profile deepseek
+  cpa profile create
 
 FLAGS
   --profile <name>   profile to launch (default: "defaultProfile")
   --dry-run          print the command and environment changes, launch nothing
   --no-discover      skip querying the gateway for its model catalogue
-  --json             machine-readable output for "models" and "profiles"
+  --json             machine-readable output for "models" and "profile list"
   --force            overwrite an existing settings file ("init")
   --allow-settings-conflict
                      proceed even if you passed your own --settings
-  --name <name>      profile name to create ("import-claude")
+  --name <name>      profile name to create ("import-claude", "profile create")
+  --file <path>      settings file to write ("profile create")
 
 Unrecognized arguments are passed straight through to the agent, so
 ` + "`cpa claude --profile deepseek --resume`" + ` works as you would expect.
@@ -80,8 +83,12 @@ func main() {
 	switch args[0] {
 	case "models":
 		err = cmdModels(ctx, args[1:])
+	case "profile":
+		err = cmdProfile(ctx, args[1:])
 	case "profiles":
-		err = cmdProfiles(args[1:])
+		// Renamed in v0.3.0. Without this the old spelling would be read as
+		// an agent name and fail with a confusing "unknown agent" error.
+		err = fmt.Errorf("`cpa profiles` is now `cpa profile list`")
 	case "doctor":
 		err = cmdDoctor(ctx, args[1:])
 	case "init":

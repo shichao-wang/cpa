@@ -189,24 +189,34 @@ func cmdImportClaude(args []string) error {
 	return nil
 }
 
-// upsertProfile merges one profile into the user's settings file, creating
-// the file if needed. It only ever touches cpa's own config.
+// upsertProfile merges one profile into the user's settings file.
 func upsertProfile(name string, profile *config.Profile) error {
-	path := config.UserConfigPath()
+	return upsertProfileAt(config.UserConfigPath(), name, profile)
+}
+
+// upsertProfileAt merges one profile into the settings file at path,
+// creating the file if needed. It reads and rewrites only that document, so
+// profiles defined in a nearer override file are never pulled in, and it
+// only ever touches cpa's own config.
+func upsertProfileAt(path, name string, profile *config.Profile) error {
 	raw := map[string]interface{}{}
 
-	if data, err := os.ReadFile(path); err == nil {
-		if err := json.Unmarshal(data, &raw); err != nil {
-			// The file may be JSONC; round-trip through the real loader so
-			// comments are lost but nothing else is.
-			if cfg, loadErr := config.Load(); loadErr == nil && cfg.Path == path {
-				blob, _ := json.Marshal(cfg)
-				_ = json.Unmarshal(blob, &raw)
-			} else {
-				return fmt.Errorf("%s: %w", path, err)
-			}
+	switch data, err := os.ReadFile(path); {
+	case err == nil:
+		if config.HasComments(data) {
+			fmt.Fprintf(os.Stderr, "note: rewriting %s as plain JSON; comments are not preserved\n", path)
 		}
-	} else if !os.IsNotExist(err) {
+		// A document that is literally null decodes to a nil map, which
+		// cannot be assigned into below.
+		if raw, err = config.ParseRaw(data); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		if raw == nil {
+			raw = map[string]interface{}{}
+		}
+	case os.IsNotExist(err):
+		// Nothing to merge into; start from an empty document.
+	default:
 		return err
 	}
 

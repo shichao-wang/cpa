@@ -23,6 +23,7 @@ type flags struct {
 	force                 bool
 	allowSettingsConflict bool
 	name                  string
+	file                  string
 	rest                  []string
 }
 
@@ -51,6 +52,10 @@ func parseFlags(args []string) (*flags, error) {
 			f.name, err = takeValue()
 		case strings.HasPrefix(a, "--name="):
 			f.name = strings.TrimPrefix(a, "--name=")
+		case a == "--file":
+			f.file, err = takeValue()
+		case strings.HasPrefix(a, "--file="):
+			f.file = strings.TrimPrefix(a, "--file=")
 		case a == "--dry-run":
 			f.dryRun = true
 		case a == "--no-discover":
@@ -245,43 +250,6 @@ func cmdModels(ctx context.Context, args []string) error {
 		fmt.Printf("  %s\n", label)
 	}
 	fmt.Printf("\nmapping source: %s\n", source)
-	return nil
-}
-
-func cmdProfiles(args []string) error {
-	f, err := parseFlags(args)
-	if err != nil {
-		return err
-	}
-	cfg, err := loadConfig()
-	if err != nil {
-		return err
-	}
-	names := cfg.ProfileNames()
-
-	if f.jsonOut {
-		blob, _ := json.MarshalIndent(cfg.Profiles, "", "  ")
-		fmt.Println(string(blob))
-		return nil
-	}
-
-	fmt.Printf("settings: %s\n", cfg.Path)
-	if cfg.DefaultProfile != "" {
-		fmt.Printf("default profile: %s\n", cfg.DefaultProfile)
-	}
-	fmt.Println()
-	for _, n := range names {
-		p := cfg.Profiles[n]
-		marker := "  "
-		if n == cfg.DefaultProfile {
-			marker = "* "
-		}
-		desc := p.Description
-		if desc == "" {
-			desc = p.Family
-		}
-		fmt.Printf("%s%-14s %-34s %s\n", marker, n, p.BaseURL, desc)
-	}
 	return nil
 }
 

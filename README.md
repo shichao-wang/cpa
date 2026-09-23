@@ -121,6 +121,35 @@ $ cpa doctor                   # confirm each profile's endpoint answers
 $ cpa claude --profile deepseek
 ```
 
+`cpa profile create` walks you through a new profile — name, gateway URL, key,
+and optionally a family or a model — then shows the slot mapping it would
+produce and merges the result into your settings file. Every prompt takes an
+empty line for its default and stdin may be piped, so it works in a script.
+The key prompt accepts `env:NAME` and `cmd:...`, which resolve at launch and
+keep the secret out of the file.
+
+```console
+$ cpa profile create
+Profile name: devbox
+Gateway base URL [http://127.0.0.1:8317]: http://127.0.0.1:18317
+API key (or "env:NAME" / "cmd:..." to resolve at launch): env:CPA_KEY
+Description (optional): devbox gateway
+Upstream family, e.g. deepseek (optional):
+Model for every slot, e.g. deepseek-flash[1m] (optional):
+
+  gateway advertises 4 model(s); slots would resolve as (claude aliases):
+    opus    -> claude-opus-5
+    sonnet  -> claude-sonnet-5
+    haiku   -> claude-haiku-4-5
+    fable   -> claude-fable-5
+
+wrote profile "devbox" to ~/.config/cpa/settings.json
+```
+
+It writes to the file `$CPA_SETTINGS` pins, else the user config; `--file`
+overrides both. Rewriting a settings file that carries JSONC comments drops
+them, and `cpa profile create` says so before it does.
+
 Point a profile at an existing setup instead of starting from scratch — this
 reads your Claude Code settings and turns its `ANTHROPIC_*` environment into a
 profile (it does not modify that file):
@@ -234,15 +263,16 @@ mapping source: claude aliases
 |---|---|
 | `cpa <agent> [flags] [-- args]` | Launch an agent with a profile. |
 | `cpa models --profile X` | List the gateway's models and the slot mapping. |
-| `cpa profiles` | List configured profiles. |
+| `cpa profile list [--json]` | List configured profiles. |
+| `cpa profile create` | Add one, prompting for each field. |
 | `cpa doctor` | Check every profile's endpoint and key. |
 | `cpa init [--force]` | Write a starter settings file. |
 | `cpa import-claude` | Turn `~/.claude/settings.json`'s env into a profile. |
 | `cpa version` | Print the version. |
 
-Flags: `--profile`, `--dry-run`, `--no-discover`, `--json`,
-`--allow-settings-conflict`. Anything unrecognized is forwarded to the agent,
-so `cpa claude --profile deepseek --resume` does what you expect.
+Flags: `--profile`, `--dry-run`, `--no-discover`, `--json`, `--name`,
+`--file`, `--allow-settings-conflict`. Anything unrecognized is forwarded to
+the agent, so `cpa claude --profile deepseek --resume` does what you expect.
 
 ## Troubleshooting
 

@@ -130,6 +130,18 @@ func LegacyConfigPath() string {
 	return filepath.Join(home, ".cpa", "settings.json")
 }
 
+// WritePath is the file a command should edit when the caller named no
+// explicit target: $CPA_SETTINGS when pinned, else the user config. It
+// mirrors the precedence Load uses, so an edit lands in the same file the
+// rest of the session is already reading rather than in a global the user
+// thought they had redirected away from.
+func WritePath() string {
+	if pinned := os.Getenv("CPA_SETTINGS"); pinned != "" {
+		return pinned
+	}
+	return UserConfigPath()
+}
+
 // Candidates lists the files consulted, in increasing order of precedence.
 func Candidates() []string {
 	var out []string
@@ -179,12 +191,34 @@ func loadFile(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	var cfg Config
-	if err := json.Unmarshal(stripJSONC(data), &cfg); err != nil {
+	cfg, err := Parse(data)
+	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	cfg.Path = path
+	return cfg, nil
+}
+
+// Parse decodes one settings document in memory, JSONC comments and all.
+// It consults no other file, so the result is exactly what this document
+// says. Load is the merging counterpart.
+func Parse(data []byte) (*Config, error) {
+	var cfg Config
+	if err := json.Unmarshal(stripJSONC(data), &cfg); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
+}
+
+// ParseRaw decodes one settings document into a generic map. Unlike Load it
+// reads only this document, so a caller that edits one key and writes the
+// map back cannot import profiles or defaults from a nearby file.
+func ParseRaw(data []byte) (map[string]interface{}, error) {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(stripJSONC(data), &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
 }
 
 // Merge layers other on top of c. Profiles replace by name; it keeps the
