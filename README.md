@@ -137,7 +137,9 @@ $ cpa profile create
 ❯ (every advertised model — 4)
   deepseek — deepseek-chat, deepseek-flash[1m] +1 more
   (type a family…)
-? opus ❯ (follow the family — choose automatically)
+# choosing one collapses the list onto the answer, and the four slots follow:
+? opus
+❯ (follow the family — choose automatically)
 ? sonnet (follow the family — choose automatically)
 ? haiku (follow the family — choose automatically)
 ? fable (follow the family — choose automatically)
@@ -147,7 +149,10 @@ wrote profile "devbox" to ~/.config/cpa/settings.json
 
 The prompts are line edited: left/right move the cursor, home/end and
 ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase, ctrl-c abandons the
-profile without writing anything. The key prompt accepts `env:NAME` and
+profile without writing anything. A value too long for one line scrolls
+sideways rather than wrapping. A list with more options than fit scrolls too,
+and says how many are off screen (`↑ 8 more`, `↓ 3 more`), so a long
+catalogue never looks like a short one. The key prompt accepts `env:NAME` and
 `cmd:...`, which resolve at launch and keep the secret out of the file.
 
 Without a terminal — a pipe, a script, CI — there are no prompts at all:

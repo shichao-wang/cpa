@@ -318,6 +318,14 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 		}
 	}
 
+	// Every answer the prompt needed is in hand. Hand the terminal back
+	// before writing and reporting: raw mode drops the carriage return from a
+	// newline, so anything printed from here on would stair-step down the
+	// screen. Close is idempotent, so the caller's defer still holds.
+	if pr != nil {
+		pr.Close()
+	}
+
 	replacing := ""
 	if exists {
 		replacing = fmt.Sprintf(" (was: %s)", describeProfile(old))

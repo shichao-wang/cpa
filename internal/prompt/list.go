@@ -51,6 +51,18 @@ func (l *List) Visible() []Item {
 	return out
 }
 
+// Hidden reports how many options sit off screen above and below the window.
+// The renderer draws a scroll indicator from it, so a short window over a long
+// list does not read as the whole list.
+func (l *List) Hidden() (above, below int) {
+	above = l.offset
+	below = len(l.items) - (l.offset + l.height)
+	if below < 0 {
+		below = 0
+	}
+	return above, below
+}
+
 // Item is one visible option.
 type Item struct {
 	Index    int

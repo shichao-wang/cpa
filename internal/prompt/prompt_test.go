@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -265,5 +266,128 @@ func TestListWithFewerItemsThanRows(t *testing.T) {
 	l.Bottom()
 	if l.Offset() != 0 {
 		t.Errorf("offset = %d, want 0", l.Offset())
+	}
+}
+
+func TestListReportsOptionsHiddenByTheWindow(t *testing.T) {
+	l := NewList([]string{"a", "b", "c", "d", "e", "f"}, 3)
+
+	if above, below := l.Hidden(); above != 0 || below != 3 {
+		t.Errorf("at the top: %d above, %d below; want 0, 3", above, below)
+	}
+	l.SetIndex(4)
+	if above, below := l.Hidden(); above != 2 || below != 1 {
+		t.Errorf("mid-list: %d above, %d below; want 2, 1", above, below)
+	}
+	l.Bottom()
+	if above, below := l.Hidden(); above != 3 || below != 0 {
+		t.Errorf("at the bottom: %d above, %d below; want 3, 0", above, below)
+	}
+}
+
+func TestListHidesNothingWhenItAllFits(t *testing.T) {
+	l := NewList([]string{"a", "b", "c"}, 3)
+	l.Bottom()
+	if above, below := l.Hidden(); above != 0 || below != 0 {
+		t.Errorf("hidden = %d above, %d below; want none", above, below)
+	}
+}
+
+func TestClipShortensOptionsWiderThanTheLine(t *testing.T) {
+	if got := clip("abcdef", 4); got != "abc…" {
+		t.Errorf("clip = %q, want %q", got, "abc…")
+	}
+	if got := clip("abc", 4); got != "abc" {
+		t.Errorf("clip shortened a line that fits: %q", got)
+	}
+	if got := clip("abcdef", 6); got != "abcdef" {
+		t.Errorf("clip shortened an exact fit: %q", got)
+	}
+	if got := clip("abcdef", 0); got != "abcdef" {
+		t.Errorf("clip with no room = %q, want it left alone", got)
+	}
+}
+
+func TestLineWindowKeepsTheCursorVisible(t *testing.T) {
+	text := []rune("http://127.0.0.1:18999/v1")
+	cur := len(text) // typing at the end
+	start, end := lineWindow(text, cur, 10)
+	if end != len(text) {
+		t.Errorf("end = %d, want the whole line %d", end, len(text))
+	}
+	if got := end - cur; got != 0 {
+		t.Errorf("cursor lands %d columns past the end", got)
+	}
+	if start != len(text)-10 {
+		t.Errorf("start = %d, want %d so the tail shows", start, len(text)-10)
+	}
+}
+
+func TestLineWindowShowsAWholeShortLine(t *testing.T) {
+	text := []rune("ab")
+	if start, end := lineWindow(text, 1, 10); start != 0 || end != 2 {
+		t.Errorf("window = [%d,%d), want the whole line", start, end)
+	}
+}
+
+func TestLineWindowClampsAtTheEnds(t *testing.T) {
+	text := []rune("abcdefghij")
+	// cursor at the far left of a long line: the window must not go negative
+	if start, end := lineWindow(text, 0, 4); start != 0 || end != 4 {
+		t.Errorf("cursor at 0: window = [%d,%d), want [0,4)", start, end)
+	}
+	// empty line, and no room at all
+	if start, end := lineWindow(nil, 0, 0); start != 0 || end != 0 {
+		t.Errorf("empty: window = [%d,%d), want [0,0)", start, end)
+	}
+}
+
+// draw renders a list the way the prompter would, for tests that need to see
+// what actually reaches the terminal.
+func draw(l *List) string {
+	var buf bytes.Buffer
+	p := &Prompter{out: &buf}
+	p.drawList("opus", l)
+	return buf.String()
+}
+
+func TestDrawListAnnouncesHiddenOptions(t *testing.T) {
+	items := []string{"a", "b", "c", "d", "e", "f"}
+
+	top := draw(NewList(items, 3))
+	if !strings.Contains(top, "↓ 3 more") {
+		t.Errorf("the top of the list does not say what is below it: %q", top)
+	}
+	if strings.Contains(top, "↑") {
+		t.Errorf("the top of the list claims something is above it: %q", top)
+	}
+
+	l := NewList(items, 3)
+	l.Bottom()
+	bottom := draw(l)
+	if !strings.Contains(bottom, "↑ 3 more") {
+		t.Errorf("the bottom of the list does not say what is above it: %q", bottom)
+	}
+	if strings.Contains(bottom, "↓") {
+		t.Errorf("the bottom of the list claims something is below it: %q", bottom)
+	}
+}
+
+func TestDrawListErasesRowsAShorterRepaintDoesNotCover(t *testing.T) {
+	// Scrolling to the end drops the "↓ more" row, so the paint is one row
+	// shorter than the last one and has to erase the leftover.
+	if out := draw(NewList([]string{"a", "b", "c"}, 3)); !strings.HasSuffix(out, "\x1b[J") {
+		t.Errorf("the list does not erase below itself, so a surplus row would be left on screen: %q", out)
+	}
+}
+
+func TestDrawListClipsRowsTooWideForTheTerminal(t *testing.T) {
+	long := strings.Repeat("x", 200)
+	out := draw(NewList([]string{long}, 1))
+	if strings.Contains(out, long) {
+		t.Errorf("a %d-column option was drawn whole; it would wrap and put the redraw out", len(long))
+	}
+	if !strings.Contains(out, "…") {
+		t.Errorf("the clipped option is not marked as clipped: %q", out)
 	}
 }

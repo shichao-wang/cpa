@@ -149,8 +149,10 @@ func (p *Prompter) Confirm(label, affirmative, negative string) (bool, error) {
 
 // listHeight keeps the list inside a short terminal.
 func (p *Prompter) listHeight() int {
+	// Rows held back: one for the label above the list, one for whatever
+	// follows it, and two for the scroll indicators.
 	if _, rows, err := term.GetSize(p.fd); err == nil {
-		if h := rows - 4; h < listHeight {
+		if h := rows - 6; h < listHeight {
 			return max(h, 1)
 		}
 	}
@@ -159,12 +161,21 @@ func (p *Prompter) listHeight() int {
 
 func (p *Prompter) drawInput(label string, e *Editor, errText string) {
 	p.rewind()
-	fmt.Fprintf(p.out, "\r\x1b[K\x1b[1m?\x1b[0m %s %s", label, e.String())
-	// The cursor is at the end of the text; walk it back to the editing
-	// position. Runes are counted, not display cells, so a line of wide
-	// characters lands a little off — acceptable for the ids and URLs typed
-	// at these prompts.
-	if back := e.Len() - e.Cursor(); back > 0 {
+	label = clip(label, max(p.width()/2, 8))
+	// Text wider than the terminal would wrap onto a second row, which the
+	// next redraw cannot erase and the cursor arithmetic cannot follow. Show a
+	// window that keeps the editing position on screen instead: it scrolls
+	// sideways as the line grows. Runes are counted, not display cells, so a
+	// line of wide characters lands a little off — acceptable for the ids and
+	// URLs typed at these prompts.
+	avail := p.width() - 3 - len([]rune(label))
+	if avail < 1 {
+		avail = 1
+	}
+	text := []rune(e.String())
+	start, end := lineWindow(text, e.Cursor(), avail)
+	fmt.Fprintf(p.out, "\r\x1b[K\x1b[1m?\x1b[0m %s %s", label, string(text[start:end]))
+	if back := end - e.Cursor(); back > 0 {
 		fmt.Fprintf(p.out, "\x1b[%dD", back)
 	}
 	if errText == "" {
@@ -182,28 +193,81 @@ func (p *Prompter) drawInput(label string, e *Editor, errText string) {
 
 func (p *Prompter) endInput(label, value string) {
 	p.rewind()
-	fmt.Fprintf(p.out, "\r\x1b[K\x1b[1m?\x1b[0m %s %s\x1b[J\n", label, value)
+	fmt.Fprintf(p.out, "\r\x1b[K\x1b[1m?\x1b[0m %s %s\x1b[J\r\n", label, value)
 	p.drawn = 0
 }
 
 func (p *Prompter) drawList(label string, l *List) {
 	p.rewind()
-	fmt.Fprintf(p.out, "\r\x1b[K\x1b[1m?\x1b[0m %s", label)
+	width := p.width()
+	fmt.Fprintf(p.out, "\r\x1b[K\x1b[1m?\x1b[0m %s", clip(label, width-2))
 	n := 0
+	// A window shorter than the list says so on its own first and last rows,
+	// dimmed; otherwise the list looks complete at the bottom edge.
+	if above, _ := l.Hidden(); above > 0 {
+		fmt.Fprintf(p.out, "\n\r\x1b[K\x1b[2m  ↑ %d more\x1b[0m", above)
+		n++
+	}
 	for _, it := range l.Visible() {
 		mark := "  "
 		if it.Selected {
 			mark = marker
 		}
-		fmt.Fprintf(p.out, "\n\r\x1b[K%s%s", mark, it.Text)
+		fmt.Fprintf(p.out, "\n\r\x1b[K%s%s", mark, clip(it.Text, width-2))
 		n++
 	}
+	if _, below := l.Hidden(); below > 0 {
+		fmt.Fprintf(p.out, "\n\r\x1b[K\x1b[2m  ↓ %d more\x1b[0m", below)
+		n++
+	}
+	// Scrolling can drop an indicator and so paint fewer rows than last time;
+	// erase whatever is below the list, or the surplus row stays on screen.
+	fmt.Fprint(p.out, "\x1b[J")
 	p.drawn = n
+}
+
+// width is the usable column count. Long options are clipped to it so a
+// wrapped row cannot put the redraw a line out.
+func (p *Prompter) width() int {
+	if cols, _, err := term.GetSize(p.fd); err == nil && cols > 8 {
+		return cols
+	}
+	return 80
+}
+
+// lineWindow picks the runes of an input line to draw in avail columns, so
+// the whole line is shown when it fits and otherwise a window that keeps the
+// cursor in view. The cursor sits at end when it was past the window.
+func lineWindow(text []rune, cur, avail int) (start, end int) {
+	if avail < 1 {
+		avail = 1
+	}
+	if cur >= avail {
+		start = cur - avail + 1
+	}
+	if start > len(text)-avail {
+		start = len(text) - avail
+	}
+	if start < 0 {
+		start = 0
+	}
+	return start, min(start+avail, len(text))
+}
+
+// clip shortens s to at most n columns, marking the cut with an ellipsis. It
+// counts runes rather than display cells, so a line of wide characters lands a
+// little short of n; the ids shown at these prompts are ASCII in practice.
+func clip(s string, n int) string {
+	r := []rune(s)
+	if n < 1 || len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }
 
 func (p *Prompter) endChoose(label, value string) {
 	p.rewind()
-	fmt.Fprintf(p.out, "\r\x1b[K\x1b[1m?\x1b[0m %s %s\x1b[J\n", label, value)
+	fmt.Fprintf(p.out, "\r\x1b[K\x1b[1m?\x1b[0m %s %s\x1b[J\r\n", label, value)
 	p.drawn = 0
 }
 
@@ -211,7 +275,7 @@ func (p *Prompter) endChoose(label, value string) {
 // transcript reads as a cancelled question rather than a broken one.
 func (p *Prompter) abort() {
 	p.rewind()
-	fmt.Fprint(p.out, "\r\x1b[K^C\x1b[J\n")
+	fmt.Fprint(p.out, "\r\x1b[K^C\x1b[J\r\n")
 	p.drawn = 0
 }
 

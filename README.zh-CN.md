@@ -124,7 +124,9 @@ $ cpa profile create
 ❯ (every advertised model — 4)
   deepseek — deepseek-chat, deepseek-flash[1m] +1 more
   (type a family…)
-? opus ❯ (follow the family — choose automatically)
+# 选定后列表收成一行答案，随后依次问四个槽位：
+? opus
+❯ (follow the family — choose automatically)
 ? sonnet (follow the family — choose automatically)
 ? haiku (follow the family — choose automatically)
 ? fable (follow the family — choose automatically)
@@ -133,7 +135,9 @@ wrote profile "devbox" to ~/.config/cpa/settings.json
 ```
 
 输入行支持编辑：左右方向键移动光标，home/end 与 ctrl-a/ctrl-e 跳到行首行尾，
-ctrl-w 与 ctrl-u 删除，ctrl-c 放弃且不写任何文件。key 那一项接受 `env:NAME`
+ctrl-w 与 ctrl-u 删除，ctrl-c 放弃且不写任何文件。一行放不下的输入会横向滚动
+而不换行。选项多到一屏放不下时列表同样会滚动，并标出屏外还有多少项
+（`↑ 8 more`、`↓ 3 more`），因此再长的模型表也不会看起来像是只有这么多。key 那一项接受 `env:NAME`
 与 `cmd:...` 简写，它们在启动时才解析，密钥因此不必落进文件。
 
 没有终端时（管道、脚本、CI）完全不提问：所有字段都从命令行参数取
