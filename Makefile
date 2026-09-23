@@ -30,13 +30,13 @@ dist:
 	for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do \
 		os=$${target%/*}; arch=$${target#*/}; \
 		name="$(BIN)_$${ver}_$${os}_$${arch}"; \
-		mkdir -p "dist/$${name}"; \
+		mkdir -p "dist/stage/$${name}"; \
 		CGO_ENABLED=0 GOOS=$${os} GOARCH=$${arch} \
-			go build -trimpath -ldflags '$(LDFLAGS)' -o "dist/$${name}/$(BIN)" ./cmd/$(BIN) || exit 1; \
-		cp README.md README.zh-CN.md LICENSE "dist/$${name}/"; \
-		tar -C dist -czf "dist/$${name}.tar.gz" "$${name}" || exit 1; \
+			go build -trimpath -ldflags '$(LDFLAGS)' -o "dist/stage/$${name}/$(BIN)" ./cmd/$(BIN) || exit 1; \
+		cp README.md README.zh-CN.md LICENSE "dist/stage/$${name}/"; \
+		tar -C dist/stage -czf "dist/$${name}.tar.gz" "$${name}" || exit 1; \
 	done
-	rm -rf dist/$(BIN)_*/
+	rm -rf dist/stage
 	cd dist && shasum -a 256 *.tar.gz > checksums.txt
 	@cat dist/checksums.txt
 
