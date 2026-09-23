@@ -114,6 +114,24 @@ func TestMapModelsPrecedence(t *testing.T) {
 		}
 	})
 
+	t.Run("pins that leave slots open are still the whole mapping", func(t *testing.T) {
+		// What `profile create` writes when a slot is mapped by hand and the
+		// rest are left to resolve: nothing else fires, so the mapping is the
+		// pins, and calling that "unset" would contradict what is printed
+		// right above it.
+		p := &config.Profile{Models: map[string]string{"sonnet": "gpt-6-sol"}}
+		got, source, notices := MapModels(p, models("gpt-6-sol", "unrelated"))
+		if source != SourceExplicit {
+			t.Fatalf("source = %q, want %q", source, SourceExplicit)
+		}
+		if got["sonnet"] != "gpt-6-sol" {
+			t.Errorf("sonnet = %q, want the pin", got["sonnet"])
+		}
+		if len(notices) == 0 {
+			t.Error("expected a notice for the slots left unset")
+		}
+	})
+
 	t.Run("a lone advertised model is used", func(t *testing.T) {
 		p := &config.Profile{}
 		got, source, _ := MapModels(p, models("solo"))

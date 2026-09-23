@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/shichao-wang/cpa/internal/config"
@@ -27,7 +26,7 @@ CREATE FLAGS
   --agent <name>         ditto for the agent the profile is for (default: claude)
   --base-url <url>       ditto for the gateway address
   --api-key <key>        ditto for the key ("env:NAME" / "cmd:..." also work)
-  --family <family>      ditto for the upstream family
+  --family <family>      narrow the listed models to this family
   --model <model>        pin one model onto every slot
   --file <path>          write somewhere other than the user config
   --force                overwrite an existing profile without asking
@@ -40,8 +39,9 @@ an error, since a profile's model slots and settings mean nothing to another.
 
 With a terminal attached the fields are asked for interactively: first the
 name, description, agent, gateway address and key, then — once the gateway has
-been queried — the upstream family and the model behind each Claude Code slot,
-both chosen from the models the gateway actually advertises. A profile for
+been queried — which of its models serves each of the agent's own. Claude Code
+is asked one row per slot, named by the model Claude Code itself resolves for
+it and answered from the models the gateway actually advertises. A profile for
 another agent is asked for a single model instead, since only Claude Code has
 slots. Without a terminal (a pipe, a script, CI) there are no prompts at all:
 every field comes from the flags above, and a missing required one is an
@@ -253,10 +253,9 @@ func promptBasics(pr *prompt.Prompter, name *string, p *config.Profile) error {
 	return nil
 }
 
-// promptModels asks which upstream the profile talks to, then which of the
-// gateway's advertised models fills each Claude Code slot. Everything offered
-// is something the server actually serves, so a slot cannot be typo'd into a
-// model that does not exist.
+// promptModels asks which model on the gateway serves each model the agent
+// itself resolves. Everything offered is something the server actually
+// serves, so an answer cannot be typo'd into a model that does not exist.
 func promptModels(ctx context.Context, pr *prompt.Prompter, p *config.Profile) error {
 	available, note := discover(ctx, p)
 	if note != "" {
@@ -276,24 +275,9 @@ func promptModels(ctx context.Context, pr *prompt.Prompter, p *config.Profile) e
 		return nil
 	}
 
-	labels, values := familyChoices(available, p.Family)
-	picked, err := pr.Choose("Upstream family (which models fill Claude Code's slots)", labels)
-	if err != nil {
-		return aborted(err)
-	}
-	switch family := values[picked]; family {
-	case familyAll:
-		p.Family = ""
-	case familyCustom:
-		custom, err := pr.Input("Family (matched against model ids)", "", nil)
-		if err != nil {
-			return aborted(err)
-		}
-		p.Family = custom
-	default:
-		p.Family = family
-	}
-
+	// A family passed on the command line still narrows the catalogue. The
+	// form asks no family question of its own: naming the model behind each
+	// slot is what says which upstream the profile talks to.
 	candidates := matching(available, p.Family)
 	if len(candidates) == 0 {
 		fmt.Fprintf(os.Stderr, "note: no advertised model matches family %q; leaving the slots unset\n", p.Family)
@@ -302,30 +286,24 @@ func promptModels(ctx context.Context, pr *prompt.Prompter, p *config.Profile) e
 	return promptSlots(pr, p, candidates)
 }
 
-// promptSlots fills the four Claude Code slots from the models the chosen
-// family matched. Following the family is the default for every slot: the
-// gateway classifies the matched models onto the slots itself, and pinning is
-// only worth doing when that guess is wrong.
+// promptSlots asks for the mapping one row at a time: the model the agent
+// itself resolves on the left, the gateway model that should serve it on the
+// right. Each row starts on the gateway's model for that same slot — the
+// answer that needs no thought — so a profile that maps everything onto
+// itself is four enters. A slot the gateway does not serve starts unset rather
+// than starting wrong.
 func promptSlots(pr *prompt.Prompter, p *config.Profile, candidates []proxy.Model) error {
 	pinned := map[string]string{}
 	for _, slot := range config.Slots {
-		labels := []string{followFamily}
+		labels := []string{leaveUnset}
 		values := []string{""}
 		for _, m := range candidates {
-			labels = append(labels, m.Label())
+			labels = append(labels, candidateLabel(m, slot))
 			values = append(values, m.ID)
 		}
-		// An existing pin stays selected, so re-running create on a profile
-		// does not silently reset choices that were made deliberately.
-		def := 0
-		for i, v := range values {
-			if v != "" && v == p.Models[slot] {
-				def = i
-				break
-			}
-		}
+		def := defaultSlotChoice(slot, candidates, p.Models[slot])
 
-		picked, err := pr.ChooseDefault(slot, labels, def)
+		picked, err := pr.ChooseDefault(slotLabel(slot), labels, def)
 		if err != nil {
 			return aborted(err)
 		}
@@ -340,6 +318,57 @@ func promptSlots(pr *prompt.Prompter, p *config.Profile, candidates []proxy.Mode
 		p.Models = pinned
 	}
 	return nil
+}
+
+// slotLabel names a row the way the model is known to whoever is answering: by
+// the agent's own name for it, with the id that name resolves to.
+func slotLabel(slot string) string {
+	if id := config.ClaudeCodeDefaults[slot]; id != "" {
+		return fmt.Sprintf("%s (Claude Code default: %s)", slot, id)
+	}
+	return slot
+}
+
+// candidateLabel marks a candidate the gateway itself files under another
+// slot, so a catalogue of two dozen models does not have to be read in full to
+// find the one that belongs here.
+func candidateLabel(m proxy.Model, slot string) string {
+	label := m.Label()
+	if other := launch.Classify(m.ID); other != "" && other != slot {
+		return label + " → " + other
+	}
+	return label
+}
+
+// defaultSlotChoice is a row's starting answer, as an index into the options
+// promptSlots builds: 0 is the unset option, then the candidates in order. A
+// pin already in the profile stays selected, so re-running create does not
+// silently reset a choice that was made deliberately. Otherwise the gateway's
+// own model for that slot is offered — by exact id, or failing that by the
+// claude-<slot> prefix the launcher itself matches. A gateway serving no such
+// model leaves the row unset.
+func defaultSlotChoice(slot string, candidates []proxy.Model, current string) int {
+	if current != "" {
+		for i, m := range candidates {
+			if m.ID == current {
+				return i + 1
+			}
+		}
+	}
+	if id := config.ClaudeCodeDefaults[slot]; id != "" {
+		for i, m := range candidates {
+			if m.ID == id {
+				return i + 1
+			}
+		}
+	}
+	want := "claude-" + strings.ToLower(slot)
+	for i, m := range candidates {
+		if strings.HasPrefix(strings.ToLower(m.ID), want) {
+			return i + 1
+		}
+	}
+	return 0
 }
 
 // commitProfile validates the collected profile, optionally confirms that an
@@ -428,30 +457,11 @@ func previewMapping(ctx context.Context, p *config.Profile) {
 }
 
 const (
-	// familyAll and familyCustom are the two entries in the family picker
-	// that are not families. Real families are read out of model ids, so
-	// neither sentinel can collide with one.
-	familyAll    = "\x00all"
-	familyCustom = "\x00custom"
-	// followFamily is the first option of every slot, and what most profiles
-	// should keep.
-	followFamily = "(follow the family — choose automatically)"
+	// leaveUnset is the first option of every slot row: pin nothing, and let
+	// the launcher resolve that slot on its own — the gateway's Claude-shaped
+	// model, then the profile's catch-all one.
+	leaveUnset = "(leave unset — resolve automatically)"
 )
-
-// familyChoices builds the family picker. Each family is labelled with the
-// models it would select, since a family is a substring match and the name
-// alone does not say what it catches.
-func familyChoices(available []proxy.Model, current string) (labels, values []string) {
-	labels = append(labels, fmt.Sprintf("(every advertised model — %d)", len(available)))
-	values = append(values, familyAll)
-	for _, fam := range familiesOf(available) {
-		labels = append(labels, fmt.Sprintf("%s — %s", fam, summarise(matching(available, fam))))
-		values = append(values, fam)
-	}
-	labels = append(labels, "(type a family…)")
-	values = append(values, familyCustom)
-	return labels, values
-}
 
 // aborted turns the prompter's cancel key into the message the CLI reports.
 // Nothing has been written when it fires.
@@ -485,27 +495,6 @@ func validBaseURL(s string) error {
 	return nil
 }
 
-// familiesOf derives the family handles worth offering. A family is a
-// substring match, so the useful handle for "deepseek-chat" is "deepseek";
-// an id with no separator stands for itself.
-func familiesOf(models []proxy.Model) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, m := range models {
-		fam := m.ID
-		if i := strings.IndexAny(fam, "-_."); i > 0 {
-			fam = fam[:i]
-		}
-		if fam == "" || seen[fam] {
-			continue
-		}
-		seen[fam] = true
-		out = append(out, fam)
-	}
-	sort.Strings(out)
-	return out
-}
-
 // matching applies the same substring rule the launcher uses, so the options
 // shown at the prompt are exactly the models that will be used.
 func matching(models []proxy.Model, family string) []proxy.Model {
@@ -520,23 +509,6 @@ func matching(models []proxy.Model, family string) []proxy.Model {
 		}
 	}
 	return out
-}
-
-// summarise names a few of the models a family matches, for an option label.
-func summarise(models []proxy.Model) string {
-	if len(models) == 0 {
-		return "no models"
-	}
-	ids := make([]string, 0, len(models))
-	for _, m := range models {
-		ids = append(ids, m.ID)
-	}
-	sort.Strings(ids)
-	const shown = 2
-	if len(ids) > shown {
-		return fmt.Sprintf("%s +%d more", strings.Join(ids[:shown], ", "), len(ids)-shown)
-	}
-	return strings.Join(ids, ", ")
 }
 
 // existingProfile reports whether the settings file at path already defines

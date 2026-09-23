@@ -220,17 +220,36 @@ func TestProfileRejectsUnknownSubcommand(t *testing.T) {
 	}
 }
 
-// familiesOf offers the handle a person would type, which for a family (a
-// substring match) is the part of the id before its first separator.
-func TestFamiliesOf(t *testing.T) {
-	models := []proxy.Model{
-		{ID: "deepseek-chat"}, {ID: "deepseek-reasoner"},
-		{ID: "gpt-4o"}, {ID: "o1"}, {ID: "deepseek-chat"},
+// A row is named by the model the agent itself means, so the answer reads as
+// "Claude Code's opus becomes this" instead of as a bare slot name.
+func TestSlotLabelNamesTheAgentsOwnModel(t *testing.T) {
+	for _, slot := range config.Slots {
+		want := config.ClaudeCodeDefaults[slot]
+		if want == "" {
+			t.Fatalf("slot %q has no Claude Code default to name it by", slot)
+		}
+		got := slotLabel(slot)
+		if !strings.Contains(got, slot) || !strings.Contains(got, want) {
+			t.Errorf("slotLabel(%q) = %q, want it to name %q", slot, got, want)
+		}
 	}
-	got := familiesOf(models)
-	want := []string{"deepseek", "gpt", "o1"}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("familiesOf = %v, want %v", got, want)
+	if got := slotLabel("not-a-slot"); got != "not-a-slot" {
+		t.Errorf("slotLabel of a slot Claude Code does not have = %q, want it unchanged", got)
+	}
+}
+
+// A candidate the gateway files under another slot says so: that hint is the
+// difference between reading one row and reading the whole catalogue.
+func TestCandidateLabelHintsAtAnotherSlot(t *testing.T) {
+	flash := proxy.Model{ID: "deepseek-v4-flash"}
+	if got := candidateLabel(flash, "opus"); !strings.HasSuffix(got, " → haiku") {
+		t.Errorf("candidateLabel(flash, opus) = %q, want the haiku hint", got)
+	}
+	if got := candidateLabel(flash, "haiku"); got != "deepseek-v4-flash" {
+		t.Errorf("candidateLabel(flash, haiku) = %q, want no hint on its own row", got)
+	}
+	if got := candidateLabel(proxy.Model{ID: "gpt-6-sol"}, "opus"); got != "gpt-6-sol" {
+		t.Errorf("candidateLabel(a name with no size in it) = %q, want the plain label", got)
 	}
 }
 
@@ -249,16 +268,38 @@ func TestMatchingAgreesWithTheLauncher(t *testing.T) {
 	}
 }
 
-func TestSummariseCapsTheList(t *testing.T) {
-	models := []proxy.Model{{ID: "c"}, {ID: "a"}, {ID: "b"}, {ID: "d"}}
-	got := summarise(models)
-	if !strings.Contains(got, "a, b") || !strings.Contains(got, "+2 more") {
-		t.Errorf("summarise = %q, want the first two ids and a count", got)
+// Each row starts on the gateway's model for that same slot, since mapping a
+// slot onto itself is the answer that needs no thought. The two sides do not
+// always agree on the version — a gateway's claude-opus-5 against an alias's
+// claude-opus-5-5 — so the claude-<slot> prefix the launcher matches is the
+// fallback, and a slot the gateway does not serve starts unset rather than
+// starting wrong.
+func TestDefaultSlotChoice(t *testing.T) {
+	available := []proxy.Model{
+		{ID: "gpt-6-sol"},
+		{ID: "claude-opus-5"},
+		{ID: "claude-sonnet-5"},
 	}
-	if got := summarise(nil); got != "no models" {
-		t.Errorf("summarise(nil) = %q", got)
+	cases := []struct {
+		name    string
+		slot    string
+		current string
+		want    int
+	}{
+		{"gpt-6-sol is not an opus, so the exact id is not there to pick", "opus", "", 2},
+		{"an exact match on the agent's own id wins", "sonnet", "", 3},
+		{"a slot the gateway does not serve starts unset", "haiku", "", 0},
+		{"a pin already in the profile stays selected", "haiku", "gpt-6-sol", 1},
+		{"a pin the gateway no longer serves falls back", "haiku", "long-gone", 0},
+	}
+	for _, tc := range cases {
+		if got := defaultSlotChoice(tc.slot, available, tc.current); got != tc.want {
+			t.Errorf("%s: defaultSlotChoice(%q, 3 models, %q) = %d, want %d",
+				tc.name, tc.slot, tc.current, got, tc.want)
+		}
 	}
 }
+
 func TestUpsertProfileAtRefusesACommentedFile(t *testing.T) {
 	// Settings are plain JSON now, and a rewrite must never silently drop a
 	// file's comments. Refusing is the safe half of that: the error explains

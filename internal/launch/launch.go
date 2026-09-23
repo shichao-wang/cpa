@@ -406,6 +406,13 @@ func MapModels(p *config.Profile, available []proxy.Model) (map[string]string, M
 		notices = append(notices, "no model resolved for slot(s) "+strings.Join(missing, ", ")+
 			"; Claude Code will use its own defaults for those")
 	}
+	// No fallback filled anything, so whatever the mapping holds is the pins
+	// themselves. Reporting "unset" over a mapping that is half decided would
+	// misdescribe it, and partial pins are ordinary now that `profile create`
+	// asks slot by slot and offers to leave a row unset.
+	if len(models) > 0 {
+		return models, SourceExplicit, notices
+	}
 	return models, SourceNone, notices
 }
 
@@ -445,6 +452,12 @@ var (
 	largeHints = []string{"opus", "pro", "max", "ultra", "large", "heavy", "70b", "72b", "235b", "405b", "671b"}
 	midHints   = []string{"sonnet", "medium", "balanced", "32b", "34b"}
 )
+
+// Classify reports which Claude Code slot a model id naturally fills, by the
+// size hint in its name, or "" when the name carries none. `cpa profile
+// create` marks each candidate with it, so a catalogue of two dozen models can
+// be read for the row in hand rather than in full.
+func Classify(id string) string { return classify(id) }
 
 // classify guesses which slot a model belongs in from its name. It is a
 // heuristic on purpose: an explicit `models` map always beats it.

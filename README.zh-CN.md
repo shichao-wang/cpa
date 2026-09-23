@@ -110,10 +110,13 @@ $ cpa claude --profile deepseek
 ```
 
 `cpa profile create` 会逐项问你：名字、描述、这个 profile 服务哪个 agent、网关
-地址与 key；随后先问网关它提供哪些模型，再让你从这些模型里选 upstream family，
-以及每个 Claude Code 槽位用哪个模型。family 与槽位都是方向键选择的列表，选项来自
-网关真实返回的模型，因此不可能因为手误填进一个不存在的模型。给别的 agent 建的
-profile 只问一个模型：槽位是 Claude Code 独有的。
+地址与 key；随后先问网关它提供哪些模型，再为 agent 自己认的每个模型指定网关侧
+由谁服务。对 Claude Code 来说这就是一张映射表，一个槽位一行，且是从 agent 这一侧
+读的：行名是 Claude Code 自己会给该槽位解析出的模型，答案是网关上应该服务它的那个
+模型。每个选项都来自网关真实返回的模型列表，因此不可能因为手误填进一个不存在的
+模型；每行的初始答案就是网关同槽位的那个模型，所以「全部原样映射」就是连按四次
+回车。网关会归到别的槽位的候选会标出来（`→ haiku`），一张二十多个模型的表因此
+仍然读得下去。给别的 agent 建的 profile 只问一个模型：槽位是 Claude Code 独有的。
 
 ```console
 $ cpa profile create
@@ -122,19 +125,26 @@ $ cpa profile create
 ? Agent this profile is for (claude, codex, or a name from "agents") claude
 ? Gateway base URL http://127.0.0.1:18317
 ? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
-? Upstream family (which models fill Claude Code's slots)
-❯ (every advertised model — 4)
-  deepseek — deepseek-chat, deepseek-flash[1m] +1 more
-  (type a family…)
-# 选定后列表收成一行答案，随后依次问四个槽位：
-? opus
-❯ (follow the family — choose automatically)
-? sonnet (follow the family — choose automatically)
-? haiku (follow the family — choose automatically)
-? fable (follow the family — choose automatically)
+? opus (Claude Code default: claude-opus-5-5)
+  (leave unset — resolve automatically)
+  claude-haiku-4-5 (Haiku 4.5) → haiku
+❯ claude-opus-5 (Opus 5)
+  claude-sonnet-5 (Sonnet 5) → sonnet
+  deepseek-v4-flash → haiku
+  deepseek-v4-pro
+  gpt-6-sol
+? sonnet (Claude Code default: claude-sonnet-5) gpt-6-sol
+? haiku (Claude Code default: claude-haiku-4-5) claude-haiku-4-5 (Haiku 4.5)
+? fable (Claude Code default: claude-fable-5-1) (leave unset — resolve automatically)
 
 wrote profile "devbox" to ~/.config/cpa/settings.json
 ```
+
+行名用的 id 来自 Claude Code 自己的别名表，内置在 cpa 里（2.1.280：`opus` →
+`claude-opus-5-5`、`sonnet` → `claude-sonnet-5`、`haiku` → `claude-haiku-4-5`、
+`fable` → `claude-fable-5-1`）。网关不必真的提供这些模型——行名表达的是 Claude
+Code *想要*什么，所以这一问读起来是「Claude Code 的 opus 换成这个」。某行留空即
+不 pin，让启动器自己解析该槽位。
 
 输入行支持编辑：左右方向键移动光标，home/end 与 ctrl-a/ctrl-e 跳到行首行尾，
 ctrl-w 与 ctrl-u 删除，ctrl-c 放弃且不写任何文件。一行放不下的输入会横向滚动
@@ -259,7 +269,7 @@ Claude Code 通过槽位（opus / sonnet / haiku / fable）寻址上游模型。
 
 | # | 规则 | 说明 |
 |---|---|---|
-| 1 | `models` 手工钉死 | 显式指定永远优先。 |
+| 1 | `models` 手工钉死 | 显式指定永远优先。pin 只填自己那个槽位，其余槽位仍由后面的规则补上；只 pin 了一部分槽位的 profile，source 照样报 `explicit`——因为它的映射除了这些 pin 没有别的来源。 |
 | 2 | `family` 恰好命中一个已公布模型 | 即「全部流量走 DeepSeek」的情形——一个模型填满所有槽位。 |
 | 3 | `family` 命中多个 | 按名字分桶：`flash`/`mini`/`nano` → haiku，`pro`/`max`/`ultra` → opus，`sonnet`/`medium` → sonnet；剩余槽位取其中最强的一个。 |
 | 4 | 存在四个 `claude-<槽位>-*` 条目 | 网关把上游别名成了 Claude 形状的名字。 |
@@ -298,7 +308,8 @@ mapping source: claude aliases
 `--agent`、`--file`、`--allow-settings-conflict`。未识别的参数一律透传给
 agent，所以 `cpa claude --profile deepseek --resume` 就是你想的那样。`cpa
 profile create` 另有 `--description`、`--base-url`、`--api-key`、`--family`、
-`--model`、`--force`，用来在没有终端时回答它的提问。
+`--model`、`--force`，用来在没有终端时回答它的提问。`--family` 会把交互列表收窄到
+id 含该子串的模型，并记录进 profile，供启动器给未 pin 的槽位兜底。
 
 ## 排错
 

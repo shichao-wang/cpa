@@ -123,11 +123,16 @@ $ cpa claude --profile deepseek
 
 `cpa profile create` walks you through a new profile: name, description, the
 agent it is for, gateway URL and key, then — having asked the gateway what it
-serves — the upstream family and the model behind each Claude Code slot. The
-family and the slots are picked from an arrow-key list of the models the
-gateway actually advertises, so a slot cannot be typo'd into a model that does
-not exist. A profile for another agent is asked for a single model instead:
-only Claude Code has slots.
+serves — the mapping from what the agent itself asks for onto what the gateway
+has. For Claude Code that is one row per slot, read from the agent's side: the
+row is named by the model Claude Code resolves for that slot, and the answer is
+the model on your gateway that should serve it. Every answer is picked from an
+arrow-key list of the models the gateway actually advertises, so it cannot be
+typo'd into a model that does not exist, and each row starts on the gateway's
+model for that same slot — mapping everything onto itself is four enters. A
+candidate the gateway would file under another slot says so (`→ haiku`), which
+is what keeps a two-dozen-model catalogue readable. A profile for another agent
+is asked for a single model instead: only Claude Code has slots.
 
 ```console
 $ cpa profile create
@@ -136,19 +141,27 @@ $ cpa profile create
 ? Agent this profile is for (claude, codex, or a name from "agents") claude
 ? Gateway base URL http://127.0.0.1:18317
 ? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
-? Upstream family (which models fill Claude Code's slots)
-❯ (every advertised model — 4)
-  deepseek — deepseek-chat, deepseek-flash[1m] +1 more
-  (type a family…)
-# choosing one collapses the list onto the answer, and the four slots follow:
-? opus
-❯ (follow the family — choose automatically)
-? sonnet (follow the family — choose automatically)
-? haiku (follow the family — choose automatically)
-? fable (follow the family — choose automatically)
+? opus (Claude Code default: claude-opus-5-5)
+  (leave unset — resolve automatically)
+  claude-haiku-4-5 (Haiku 4.5) → haiku
+❯ claude-opus-5 (Opus 5)
+  claude-sonnet-5 (Sonnet 5) → sonnet
+  deepseek-v4-flash → haiku
+  deepseek-v4-pro
+  gpt-6-sol
+? sonnet (Claude Code default: claude-sonnet-5) gpt-6-sol
+? haiku (Claude Code default: claude-haiku-4-5) claude-haiku-4-5 (Haiku 4.5)
+? fable (Claude Code default: claude-fable-5-1) (leave unset — resolve automatically)
 
 wrote profile "devbox" to ~/.config/cpa/settings.json
 ```
+
+The ids the rows are named by are Claude Code's own alias table, built into cpa
+(2.1.280: `opus` → `claude-opus-5-5`, `sonnet` → `claude-sonnet-5`, `haiku` →
+`claude-haiku-4-5`, `fable` → `claude-fable-5-1`). The gateway need not serve
+them: the row is labelled by what Claude Code *means*, so the choice reads as
+"Claude Code's opus becomes this". A row left unset pins nothing and lets the
+launcher resolve that slot on its own.
 
 The prompts are line edited: left/right move the cursor, home/end and
 ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase, ctrl-c abandons the
@@ -285,7 +298,7 @@ produces something:
 
 | # | Rule | Notes |
 |---|---|---|
-| 1 | `models` pins | Explicit always wins. |
+| 1 | `models` pins | Explicit always wins. A pin fills its own slot and the rules below fill the rest; a profile that pins only some slots still reports `explicit`, because nothing but the pins decided its mapping. |
 | 2 | `family` matches exactly one advertised model | The "*all* traffic goes to DeepSeek" case — one model fills every slot. |
 | 3 | `family` matches several | Bucketed by name: `flash`/`mini`/`nano` → haiku, `pro`/`max`/`ultra` → opus, `sonnet`/`medium` → sonnet. Unmatched slots get the strongest match. |
 | 4 | Four `claude-<slot>-*` entries exist | Gateways that alias the upstream onto Claude-shaped names. |
@@ -326,7 +339,9 @@ Flags: `--profile`, `--dry-run`, `--no-discover`, `--json`, `--name`,
 forwarded to the agent, so `cpa claude --profile deepseek --resume` does what
 you expect. `cpa profile create` additionally takes `--description`,
 `--base-url`, `--api-key`, `--family`, `--model` and `--force`, which answer
-its prompts without a terminal.
+its prompts without a terminal. `--family` narrows the interactive list to the
+models whose id contains that substring and records it on the profile, where
+the launcher falls back to it for any slot left unpinned.
 
 ## Troubleshooting
 

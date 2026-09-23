@@ -110,6 +110,32 @@ const SchemaURL = "https://raw.githubusercontent.com/shichao-wang/cpa/main/examp
 // Slots are the model slots Claude Code resolves through ANTHROPIC_DEFAULT_*.
 var Slots = []string{"opus", "sonnet", "haiku", "fable"}
 
+// ClaudeCodeDefaults is what each slot means: the model Claude Code's own
+// alias resolves to when nothing overrides it. Read from Claude Code 2.1.280,
+// whose alias table is
+//
+//	aliases:{opus:{default:"claude-opus-5-5"},sonnet:{default:"claude-sonnet-5"},
+//	         haiku:{default:"claude-haiku-4-5"},fable:{default:"claude-fable-5-1"}}
+//
+// `cpa profile create` shows these beside each slot, so the mapping it asks
+// for reads as "Claude Code's Opus becomes this model on my gateway". They are
+// labels and nothing else: cpa hands the slot over through
+// ANTHROPIC_DEFAULT_<SLOT>_MODEL, so the id Claude Code would otherwise have
+// picked never reaches the gateway. Refresh the table when Claude Code's
+// aliases move — it is only as current as the release it was read from, and a
+// stale id is a stale label rather than a broken launch.
+//
+// Claude Code carries a per-provider variant of the same aliases: pointed at a
+// gateway, 2.1.280 resolves opus to claude-opus-4-7 and sonnet to
+// claude-sonnet-4-6. The default is shown because it is what the alias means;
+// the slot is intercepted whichever id it would have resolved to.
+var ClaudeCodeDefaults = map[string]string{
+	"opus":   "claude-opus-5-5",
+	"sonnet": "claude-sonnet-5",
+	"haiku":  "claude-haiku-4-5",
+	"fable":  "claude-fable-5-1",
+}
+
 // userConfigDir returns the user-level configuration directory, per the XDG
 // Base Directory spec: $XDG_CONFIG_HOME when set, else ~/.config.
 func userConfigDir() string {
