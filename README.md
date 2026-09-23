@@ -121,30 +121,40 @@ $ cpa doctor                   # confirm each profile's endpoint answers
 $ cpa claude --profile deepseek
 ```
 
-`cpa profile create` walks you through a new profile — name, gateway URL, key,
-and optionally a family or a model — then shows the slot mapping it would
-produce and merges the result into your settings file. Every prompt takes an
-empty line for its default and stdin may be piped, so it works in a script.
-The key prompt accepts `env:NAME` and `cmd:...`, which resolve at launch and
-keep the secret out of the file.
+`cpa profile create` walks you through a new profile: name, description,
+gateway URL and key, then — having asked the gateway what it serves — the
+upstream family and the model behind each Claude Code slot. Both are picked
+from an arrow-key list of the models the gateway actually advertises, so a
+slot cannot be typo'd into a model that does not exist.
 
 ```console
 $ cpa profile create
-Profile name: devbox
-Gateway base URL [http://127.0.0.1:8317]: http://127.0.0.1:18317
-API key (or "env:NAME" / "cmd:..." to resolve at launch): env:CPA_KEY
-Description (optional): devbox gateway
-Upstream family, e.g. deepseek (optional):
-Model for every slot, e.g. deepseek-flash[1m] (optional):
-
-  gateway advertises 4 model(s); slots would resolve as (claude aliases):
-    opus    -> claude-opus-5
-    sonnet  -> claude-sonnet-5
-    haiku   -> claude-haiku-4-5
-    fable   -> claude-fable-5
+? Profile name devbox
+? Description (optional) devbox gateway
+? Gateway base URL http://127.0.0.1:18317
+? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
+? Upstream family
+❯ (every advertised model — 4)
+  deepseek — deepseek-chat, deepseek-flash[1m] +1 more
+  (type a family…)
+? opus ❯ (follow the family — choose automatically)
+? sonnet (follow the family — choose automatically)
+? haiku (follow the family — choose automatically)
+? fable (follow the family — choose automatically)
 
 wrote profile "devbox" to ~/.config/cpa/settings.json
 ```
+
+The prompts are line edited: left/right move the cursor, home/end and
+ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase, ctrl-c abandons the
+profile without writing anything. The key prompt accepts `env:NAME` and
+`cmd:...`, which resolve at launch and keep the secret out of the file.
+
+Without a terminal — a pipe, a script, CI — there are no prompts at all:
+every field comes from a flag (`--name`, `--base-url`, `--api-key`,
+`--family`, `--model`, …) and a missing required one is an error rather than
+a hang. Passing `--name` and `--base-url` is enough to create a profile
+non-interactively.
 
 It writes to `$XDG_CONFIG_HOME/cpa/settings.json`; `--file` writes somewhere
 else instead.
@@ -271,7 +281,7 @@ mapping source: claude aliases
 | `cpa <agent> [flags] [-- args]` | Launch an agent with a profile. |
 | `cpa models --profile X` | List the gateway's models and the slot mapping. |
 | `cpa profile list [--json]` | List configured profiles. |
-| `cpa profile create` | Add one, prompting for each field. |
+| `cpa profile create` | Add one: prompts on a terminal, flags otherwise. |
 | `cpa doctor` | Check every profile's endpoint and key. |
 | `cpa init [--force]` | Write a starter settings file. |
 | `cpa import-claude` | Turn `~/.claude/settings.json`'s env into a profile. |
@@ -280,6 +290,9 @@ mapping source: claude aliases
 Flags: `--profile`, `--dry-run`, `--no-discover`, `--json`, `--name`,
 `--file`, `--allow-settings-conflict`. Anything unrecognized is forwarded to
 the agent, so `cpa claude --profile deepseek --resume` does what you expect.
+`cpa profile create` additionally takes `--description`, `--base-url`,
+`--api-key`, `--family`, `--model` and `--force`, which answer its prompts
+without a terminal.
 
 ## Troubleshooting
 

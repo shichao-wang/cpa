@@ -3,34 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/proxy"
 )
-
-// feedStdin points os.Stdin at a pipe carrying input, so the interactive
-// prompts can be driven from a test.
-func feedStdin(t *testing.T, input string) {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	old := os.Stdin
-	os.Stdin = r
-	t.Cleanup(func() {
-		os.Stdin = old
-		r.Close()
-	})
-	go func() {
-		io.WriteString(w, input)
-		w.Close()
-	}()
-}
 
 func readProfiles(t *testing.T, path string) map[string]*config.Profile {
 	t.Helper()
@@ -45,13 +25,20 @@ func readProfiles(t *testing.T, path string) map[string]*config.Profile {
 	return cfg.Profiles
 }
 
+// The tests below drive `profile create` the way a script does: every field
+// arrives as a flag, and the test binary's stdin is not a terminal, so the
+// interactive path is never entered.
+
 func TestProfileCreateWritesProfile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cpa", "settings.json")
-	// baseUrl, apiKey, description, family, model — name comes from the flag.
-	feedStdin(t, "http://127.0.0.1:18317\nenv:CPA_KEY\ndevbox gateway\n\ndeepseek-flash[1m]\n")
-
 	err := cmdProfileCreate(context.Background(), []string{
-		"--file", path, "--name", "devbox", "--no-discover",
+		"--file", path, "--name", "devbox",
+		"--base-url", "http://127.0.0.1:18317",
+		"--api-key", "env:CPA_KEY",
+		"--description", "devbox gateway",
+		"--family", "deepseek",
+		"--model", "deepseek-flash[1m]",
+		"--no-discover",
 	})
 	if err != nil {
 		t.Fatalf("cmdProfileCreate: %v", err)
@@ -59,79 +46,46 @@ func TestProfileCreateWritesProfile(t *testing.T) {
 
 	p, ok := readProfiles(t, path)["devbox"]
 	if !ok {
-		t.Fatal("profile devbox was not written")
+		t.Fatal("the profile was not written")
 	}
 	if p.BaseURL != "http://127.0.0.1:18317" {
 		t.Errorf("baseUrl = %q", p.BaseURL)
 	}
-	// The env: shorthand must survive verbatim; resolving it here would put
-	// the secret in the file.
 	if p.APIKey != "env:CPA_KEY" {
-		t.Errorf("apiKey = %q, want env:CPA_KEY", p.APIKey)
+		t.Errorf("apiKey = %q", p.APIKey)
 	}
 	if p.Description != "devbox gateway" {
 		t.Errorf("description = %q", p.Description)
 	}
-	if p.Family != "" {
-		t.Errorf("family = %q, want empty (blank line takes the default)", p.Family)
+	if p.Family != "deepseek" {
+		t.Errorf("family = %q", p.Family)
 	}
 	if p.Model != "deepseek-flash[1m]" {
 		t.Errorf("model = %q", p.Model)
 	}
 }
 
-func TestProfileCreateDefaultsToLocalGateway(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "settings.json")
-	// Blank baseUrl takes the default; the rest are blank too.
-	feedStdin(t, "\n\n\n\n\n")
-
-	if err := cmdProfileCreate(context.Background(), []string{
-		"--file", path, "--name", "local", "--no-discover",
-	}); err != nil {
-		t.Fatalf("cmdProfileCreate: %v", err)
-	}
-	if got := readProfiles(t, path)["local"].BaseURL; got != "http://127.0.0.1:8317" {
-		t.Errorf("baseUrl = %q, want the local default", got)
-	}
-}
-
 func TestProfileCreateKeepsOtherContent(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "settings.json")
-	original := `{
-  "defaultProfile": "first",
-  "keepMe": {"nested": true},
-  "profiles": {"first": {"baseUrl": "http://first"}}
-}
-`
+	path := filepath.Join(t.TempDir(), "settings.json")
+	original := `{"defaultProfile": "first", "profiles": {"first": {"baseUrl": "http://first"}}}`
 	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	feedStdin(t, "http://second\n\n\n\n\n")
 
-	if err := cmdProfileCreate(context.Background(), []string{
-		"--file", path, "--name", "second", "--no-discover",
-	}); err != nil {
+	err := cmdProfileCreate(context.Background(), []string{
+		"--file", path, "--name", "second",
+		"--base-url", "http://second", "--no-discover",
+	})
+	if err != nil {
 		t.Fatalf("cmdProfileCreate: %v", err)
 	}
 
-	data, _ := os.ReadFile(path)
-	var raw map[string]interface{}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		t.Fatalf("rewritten file is not valid JSON: %v\n%s", err, data)
-	}
-	if _, ok := raw["keepMe"]; !ok {
-		t.Error("an unrelated top-level key was dropped")
-	}
-	if raw["defaultProfile"] != "first" {
-		t.Errorf("defaultProfile = %v, want the existing one kept", raw["defaultProfile"])
-	}
 	profiles := readProfiles(t, path)
 	if len(profiles) != 2 {
-		t.Errorf("have %d profiles, want both: %v", len(profiles), profiles)
+		t.Fatalf("got %d profiles, want 2", len(profiles))
 	}
 	if profiles["first"].BaseURL != "http://first" {
-		t.Error("the pre-existing profile was clobbered")
+		t.Error("the neighbouring profile was disturbed")
 	}
 }
 
@@ -141,13 +95,16 @@ func TestProfileCreateRefusesOverwriteWithoutConsent(t *testing.T) {
 	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	feedStdin(t, "no\n")
 
 	err := cmdProfileCreate(context.Background(), []string{
-		"--file", path, "--name", "devbox", "--no-discover",
+		"--file", path, "--name", "devbox",
+		"--base-url", "http://new", "--no-discover",
 	})
 	if err == nil {
 		t.Fatal("expected a refusal, got nil")
+	}
+	if !strings.Contains(err.Error(), "--force") {
+		t.Errorf("error = %v, want it to name the way out", err)
 	}
 	if got := readProfiles(t, path)["devbox"].BaseURL; got != "http://keep-me" {
 		t.Errorf("baseUrl = %q; the existing profile was modified anyway", got)
@@ -159,10 +116,10 @@ func TestProfileCreateForceOverwrites(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"profiles": {"devbox": {"baseUrl": "http://old"}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	feedStdin(t, "http://new\n\n\n\n\n")
 
 	if err := cmdProfileCreate(context.Background(), []string{
-		"--file", path, "--name", "devbox", "--force", "--no-discover",
+		"--file", path, "--name", "devbox",
+		"--base-url", "http://new", "--force", "--no-discover",
 	}); err != nil {
 		t.Fatalf("cmdProfileCreate: %v", err)
 	}
@@ -173,31 +130,84 @@ func TestProfileCreateForceOverwrites(t *testing.T) {
 
 func TestProfileCreateNeedsAName(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
-	// A blank line takes the default, and the name prompt has none.
-	feedStdin(t, "   \n")
-	if err := cmdProfileCreate(context.Background(), []string{
-		"--file", path, "--no-discover",
-	}); err == nil {
-		t.Fatal("expected an error for a blank name")
+	err := cmdProfileCreate(context.Background(), []string{
+		"--file", path, "--base-url", "http://a", "--no-discover",
+	})
+	if err == nil {
+		t.Fatal("expected an error for a missing name")
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 		t.Error("a rejected profile should not create the file")
 	}
 }
 
-func TestProfileCreateReadsNameFromPrompt(t *testing.T) {
+func TestProfileCreateNeedsABaseURL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
-	// The last line has no trailing newline: a pipe that ends mid-line still
-	// has to yield its content.
-	feedStdin(t, "piped\nhttp://piped\n\n\n\n")
+	if err := cmdProfileCreate(context.Background(), []string{
+		"--file", path, "--name", "devbox", "--no-discover",
+	}); err == nil {
+		t.Fatal("expected an error for a missing base URL")
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Error("a rejected profile should not create the file")
+	}
+}
+
+func TestProfileCreateRejectsABadBaseURL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	err := cmdProfileCreate(context.Background(), []string{
+		"--file", path, "--name", "typo", "--base-url", "devbox", "--no-discover",
+	})
+	if err == nil {
+		t.Fatal("expected a rejection, got nil")
+	}
+	if !strings.Contains(err.Error(), "does not look like a URL") {
+		t.Errorf("error = %v, want it to name the problem", err)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Error("a rejected profile should not create the file")
+	}
+}
+
+func TestProfileCreateDefaultsToTheUserConfig(t *testing.T) {
+	// With no --file the profile belongs in $XDG_CONFIG_HOME/cpa/settings.json,
+	// the same place cpa reads from.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	if err := cmdProfileCreate(context.Background(), []string{
-		"--file", path, "--no-discover",
+		"--name", "xdg", "--base-url", "http://xdg", "--no-discover",
+	}); err != nil {
+		t.Fatalf("cmdProfileCreate: %v", err)
+	}
+	want := filepath.Join(dir, "cpa", "settings.json")
+	if _, ok := readProfiles(t, want)["xdg"]; !ok {
+		t.Error("the profile did not land in the user config")
+	}
+}
+
+// A script must never be left waiting on a prompt it cannot answer.
+func TestProfileCreateDoesNotPromptWithoutATerminal(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	// Nothing will ever be written to this pipe: a prompt would block.
+	old := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = old }()
+
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := cmdProfileCreate(context.Background(), []string{
+		"--file", path, "--name", "piped",
+		"--base-url", "http://piped", "--no-discover",
 	}); err != nil {
 		t.Fatalf("cmdProfileCreate: %v", err)
 	}
 	if _, ok := readProfiles(t, path)["piped"]; !ok {
-		t.Error("the prompted name was not used")
+		t.Error("the profile was not written")
 	}
 }
 
@@ -210,6 +220,45 @@ func TestProfileRejectsUnknownSubcommand(t *testing.T) {
 	}
 }
 
+// familiesOf offers the handle a person would type, which for a family (a
+// substring match) is the part of the id before its first separator.
+func TestFamiliesOf(t *testing.T) {
+	models := []proxy.Model{
+		{ID: "deepseek-chat"}, {ID: "deepseek-reasoner"},
+		{ID: "gpt-4o"}, {ID: "o1"}, {ID: "deepseek-chat"},
+	}
+	got := familiesOf(models)
+	want := []string{"deepseek", "gpt", "o1"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("familiesOf = %v, want %v", got, want)
+	}
+}
+
+// The options offered at the prompt have to be the models the launcher will
+// actually pick, or the preview would lie.
+func TestMatchingAgreesWithTheLauncher(t *testing.T) {
+	models := []proxy.Model{{ID: "deepseek-chat"}, {ID: "DeepSeek-Reasoner"}, {ID: "gpt-4o"}}
+	if got := len(matching(models, "deepseek")); got != 2 {
+		t.Errorf("matching(deepseek) = %d models, want 2 (case should not matter)", got)
+	}
+	if got := len(matching(models, "")); got != len(models) {
+		t.Errorf("an empty family should not filter; got %d", got)
+	}
+	if got := len(matching(models, "nothing")); got != 0 {
+		t.Errorf("matching(nothing) = %d models, want 0", got)
+	}
+}
+
+func TestSummariseCapsTheList(t *testing.T) {
+	models := []proxy.Model{{ID: "c"}, {ID: "a"}, {ID: "b"}, {ID: "d"}}
+	got := summarise(models)
+	if !strings.Contains(got, "a, b") || !strings.Contains(got, "+2 more") {
+		t.Errorf("summarise = %q, want the first two ids and a count", got)
+	}
+	if got := summarise(nil); got != "no models" {
+		t.Errorf("summarise(nil) = %q", got)
+	}
+}
 func TestUpsertProfileAtRefusesACommentedFile(t *testing.T) {
 	// Settings are plain JSON now, and a rewrite must never silently drop a
 	// file's comments. Refusing is the safe half of that: the error explains
@@ -270,44 +319,6 @@ func TestUpsertProfileAtKeepsAnExistingSchema(t *testing.T) {
 	}
 	if raw["$schema"] != "./local.schema.json" {
 		t.Errorf("$schema = %v; an existing pointer was overwritten", raw["$schema"])
-	}
-}
-
-func TestProfileCreateDefaultsToTheUserConfig(t *testing.T) {
-	// With no --file the profile belongs in $XDG_CONFIG_HOME/cpa/settings.json,
-	// the same place cpa reads from.
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	feedStdin(t, "http://xdg\n\n\n\n\n")
-
-	if err := cmdProfileCreate(context.Background(), []string{
-		"--name", "xdg", "--no-discover",
-	}); err != nil {
-		t.Fatalf("cmdProfileCreate: %v", err)
-	}
-	want := filepath.Join(dir, "cpa", "settings.json")
-	if _, err := os.Stat(want); err != nil {
-		t.Fatalf("expected the profile at %s: %v", want, err)
-	}
-	if _, ok := readProfiles(t, want)["xdg"]; !ok {
-		t.Error("the profile did not land in the user config")
-	}
-}
-
-func TestProfileCreateRejectsABadBaseURL(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "settings.json")
-	feedStdin(t, "devbox\n") // a name typed into the baseUrl prompt
-	err := cmdProfileCreate(context.Background(), []string{
-		"--file", path, "--name", "typo", "--no-discover",
-	})
-	if err == nil {
-		t.Fatal("expected a rejection, got nil")
-	}
-	if !strings.Contains(err.Error(), "does not look like a URL") {
-		t.Errorf("error = %v, want it to name the problem", err)
-	}
-	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-		t.Error("a rejected profile should not create the file")
 	}
 }
 

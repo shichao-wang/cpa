@@ -1,0 +1,187 @@
+// Package prompt drives a small interactive form on a terminal: single-line
+// input with real line editing, and single-choice lists. It exists because
+// reading a terminal in canonical mode hands the program arrow keys as literal
+// escape bytes, and because the standard library has no raw-mode line editor.
+//
+// The package is deliberately split in two. key.go decodes bytes into keys,
+// editor.go and list.go are pure state machines over those keys, and prompt.go
+// owns the terminal: raw mode, drawing, and restoring the terminal on the way
+// out. Only the last part needs a terminal, so the editing rules are tested by
+// feeding them keys directly.
+//
+// The only dependency is golang.org/x/term, which the Go team maintains.
+// Prompt libraries built on lipgloss/termenv were rejected: linking them makes
+// every invocation of the binary — including the ones that never prompt —
+// query the terminal for its background colour, which costs seconds on a
+// terminal that does not answer.
+package prompt
+
+import (
+	"bufio"
+	"io"
+	"unicode/utf8"
+)
+
+// Key is one decoded keypress.
+type Key int
+
+const (
+	KeyUnknown Key = iota
+	KeyRune        // a printable character, returned alongside Key
+	KeyEnter
+	KeyBackspace
+	KeyDelete
+	KeyLeft
+	KeyRight
+	KeyWordLeft
+	KeyWordRight
+	KeyHome
+	KeyEnd
+	KeyUp
+	KeyDown
+	KeyTab
+	KeyKillLine // ctrl-u / ctrl-k: erase back to the start of the line
+	KeyKillWord // ctrl-w: erase the word behind the cursor
+	KeyInterrupt
+	KeyEOF
+)
+
+// decoder turns a byte stream into keys. A terminal in raw mode delivers an
+// escape sequence as separate bytes, so the decoder needs a buffered reader
+// rather than a byte-at-a-time one.
+type decoder struct {
+	in *bufio.Reader
+}
+
+func newDecoder(r io.Reader) *decoder {
+	return &decoder{in: bufio.NewReader(r)}
+}
+
+// Next returns the next key. The second result carries the character for
+// KeyRune. Sequences that mean nothing here come back as KeyUnknown rather
+// than as an error, so an unrecognised key is ignored instead of aborting
+// the prompt.
+func (d *decoder) Next() (Key, rune, error) {
+	b, err := d.in.ReadByte()
+	if err != nil {
+		return KeyEOF, 0, err
+	}
+
+	switch b {
+	case 0x1b:
+		return d.escape()
+	case '\r', '\n':
+		return KeyEnter, 0, nil
+	case 0x7f, 0x08:
+		// 0x7f is what a modern terminal sends for backspace; 0x08 is what
+		// the tty layer produces when it is left in cooked mode.
+		return KeyBackspace, 0, nil
+	case 0x03:
+		return KeyInterrupt, 0, nil
+	case 0x04:
+		// ctrl-d: the usual "I am done with this input" key.
+		return KeyInterrupt, 0, nil
+	case 0x01:
+		return KeyHome, 0, nil
+	case 0x05:
+		return KeyEnd, 0, nil
+	case 0x02:
+		return KeyLeft, 0, nil
+	case 0x06:
+		return KeyRight, 0, nil
+	case 0x0b, 0x15:
+		return KeyKillLine, 0, nil
+	case 0x17:
+		return KeyKillWord, 0, nil
+	case 0x09:
+		return KeyTab, 0, nil
+	}
+
+	if b < 0x20 {
+		return KeyUnknown, 0, nil // any other control character
+	}
+	if b < utf8.RuneSelf {
+		return KeyRune, rune(b), nil
+	}
+	// A multi-byte character: put the lead byte back and let the reader
+	// assemble the whole rune.
+	if err := d.in.UnreadByte(); err != nil {
+		return KeyUnknown, 0, nil
+	}
+	r, _, err := d.in.ReadRune()
+	if err != nil {
+		return KeyUnknown, 0, nil
+	}
+	return KeyRune, r, nil
+}
+
+// escape decodes what follows an ESC. A bare ESC is not a key here: it is
+// dropped and the byte after it is left for the next call, so pressing escape
+// does nothing rather than swallowing the next keystroke. That costs nothing
+// in practice — the decoder is waiting for a keypress either way — and it
+// avoids the read timeout that telling a lone ESC from a sequence would
+// otherwise need.
+func (d *decoder) escape() (Key, rune, error) {
+	b, err := d.in.ReadByte()
+	if err != nil {
+		return KeyUnknown, 0, nil
+	}
+	// SS3 ('O') sequences share the final-byte letters below, so both
+	// introducers lead into the same switch. Anything else was a lone ESC.
+	if b != '[' && b != 'O' {
+		_ = d.in.UnreadByte()
+		return KeyUnknown, 0, nil
+	}
+
+	n, err := d.in.ReadByte()
+	if err != nil {
+		return KeyUnknown, 0, nil
+	}
+	switch n {
+	case 'A':
+		return KeyUp, 0, nil
+	case 'B':
+		return KeyDown, 0, nil
+	case 'C':
+		return KeyRight, 0, nil
+	case 'D':
+		return KeyLeft, 0, nil
+	case 'H':
+		return KeyHome, 0, nil
+	case 'F':
+		return KeyEnd, 0, nil
+	}
+	if n < '0' || n > '9' {
+		return KeyUnknown, 0, nil
+	}
+
+	// A parameterised sequence: ESC [ <digits and ;> <final>. xterm sends
+	// ctrl-arrow as ESC [ 1;5 C and Delete as ESC [ 3 ~.
+	params := []byte{n}
+	for {
+		c, err := d.in.ReadByte()
+		if err != nil {
+			return KeyUnknown, 0, nil
+		}
+		if (c >= '0' && c <= '9') || c == ';' {
+			params = append(params, c)
+			continue
+		}
+		switch c {
+		case '~':
+			switch string(params) {
+			case "3":
+				return KeyDelete, 0, nil
+			case "1", "7":
+				return KeyHome, 0, nil
+			case "4", "8":
+				return KeyEnd, 0, nil
+			}
+		case 'C':
+			return KeyWordRight, 0, nil
+		case 'D':
+			return KeyWordLeft, 0, nil
+		}
+		return KeyUnknown, 0, nil
+	}
+}

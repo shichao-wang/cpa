@@ -24,6 +24,11 @@ type flags struct {
 	allowSettingsConflict bool
 	name                  string
 	file                  string
+	baseURL               string
+	apiKey                string
+	description           string
+	family                string
+	model                 string
 	rest                  []string
 }
 
@@ -56,6 +61,26 @@ func parseFlags(args []string) (*flags, error) {
 			f.file, err = takeValue()
 		case strings.HasPrefix(a, "--file="):
 			f.file = strings.TrimPrefix(a, "--file=")
+		case a == "--base-url":
+			f.baseURL, err = takeValue()
+		case strings.HasPrefix(a, "--base-url="):
+			f.baseURL = strings.TrimPrefix(a, "--base-url=")
+		case a == "--api-key":
+			f.apiKey, err = takeValue()
+		case strings.HasPrefix(a, "--api-key="):
+			f.apiKey = strings.TrimPrefix(a, "--api-key=")
+		case a == "--description":
+			f.description, err = takeValue()
+		case strings.HasPrefix(a, "--description="):
+			f.description = strings.TrimPrefix(a, "--description=")
+		case a == "--family":
+			f.family, err = takeValue()
+		case strings.HasPrefix(a, "--family="):
+			f.family = strings.TrimPrefix(a, "--family=")
+		case a == "--model":
+			f.model, err = takeValue()
+		case strings.HasPrefix(a, "--model="):
+			f.model = strings.TrimPrefix(a, "--model=")
 		case a == "--dry-run":
 			f.dryRun = true
 		case a == "--no-discover":

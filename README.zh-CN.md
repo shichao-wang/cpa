@@ -109,28 +109,37 @@ $ cpa doctor                   # 确认每个 profile 的端点可达
 $ cpa claude --profile deepseek
 ```
 
-`cpa profile create` 会逐项问你——名字、网关地址、key，以及可选的 family 或
-model——然后把结果合并进配置文件，并先打印它算出的槽位映射。每个提示符留空即
-取默认值，stdin 可以直接管道输入，所以也能写进脚本。key 那一项接受
-`env:NAME` 与 `cmd:...` 简写，它们在启动时才解析，密钥因此不必落进文件。
+`cpa profile create` 会逐项问你：名字、描述、网关地址与 key；随后先问网关
+它提供哪些模型，再让你从这些模型里选 upstream family，以及每个 Claude Code
+槽位用哪个模型。两项都是方向键选择的列表，选项来自网关真实返回的模型，因此
+不可能因为手误填进一个不存在的模型。
 
 ```console
 $ cpa profile create
-Profile name: devbox
-Gateway base URL [http://127.0.0.1:8317]: http://127.0.0.1:18317
-API key (or "env:NAME" / "cmd:..." to resolve at launch): env:CPA_KEY
-Description (optional): devbox gateway
-Upstream family, e.g. deepseek (optional):
-Model for every slot, e.g. deepseek-flash[1m] (optional):
-
-  gateway advertises 4 model(s); slots would resolve as (claude aliases):
-    opus    -> claude-opus-5
-    sonnet  -> claude-sonnet-5
-    haiku   -> claude-haiku-4-5
-    fable   -> claude-fable-5
+? Profile name devbox
+? Description (optional) devbox gateway
+? Gateway base URL http://127.0.0.1:18317
+? API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
+? Upstream family
+❯ (every advertised model — 4)
+  deepseek — deepseek-chat, deepseek-flash[1m] +1 more
+  (type a family…)
+? opus ❯ (follow the family — choose automatically)
+? sonnet (follow the family — choose automatically)
+? haiku (follow the family — choose automatically)
+? fable (follow the family — choose automatically)
 
 wrote profile "devbox" to ~/.config/cpa/settings.json
 ```
+
+输入行支持编辑：左右方向键移动光标，home/end 与 ctrl-a/ctrl-e 跳到行首行尾，
+ctrl-w 与 ctrl-u 删除，ctrl-c 放弃且不写任何文件。key 那一项接受 `env:NAME`
+与 `cmd:...` 简写，它们在启动时才解析，密钥因此不必落进文件。
+
+没有终端时（管道、脚本、CI）完全不提问：所有字段都从命令行参数取
+（`--name`、`--base-url`、`--api-key`、`--family`、`--model` 等），缺少
+必填项会直接报错而不是卡住。脚本里只给 `--name` 与 `--base-url` 就能建出
+一个 profile。
 
 写入目标是 `$XDG_CONFIG_HOME/cpa/settings.json`；`--file` 可改为写到别处。
 
@@ -249,7 +258,7 @@ mapping source: claude aliases
 | `cpa <agent> [flags] [-- args]` | 用某个 profile 启动 agent。 |
 | `cpa models --profile X` | 列出网关模型与槽位映射。 |
 | `cpa profile list [--json]` | 列出已配置的 profile。 |
-| `cpa profile create` | 交互式新增一个 profile。 |
+| `cpa profile create` | 新增一个：有终端时交互，否则走参数。 |
 | `cpa doctor` | 检查每个 profile 的端点与 key。 |
 | `cpa init [--force]` | 写入起始配置文件。 |
 | `cpa import-claude` | 把 `~/.claude/settings.json` 的环境变量转成 profile。 |
@@ -257,7 +266,9 @@ mapping source: claude aliases
 
 参数：`--profile`、`--dry-run`、`--no-discover`、`--json`、`--name`、
 `--file`、`--allow-settings-conflict`。未识别的参数一律透传给 agent，所以
-`cpa claude --profile deepseek --resume` 就是你想的那样。
+`cpa claude --profile deepseek --resume` 就是你想的那样。`cpa profile
+create` 另有 `--description`、`--base-url`、`--api-key`、`--family`、
+`--model`、`--force`，用来在没有终端时回答它的提问。
 
 ## 排错
 
