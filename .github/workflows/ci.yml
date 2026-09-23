@@ -153,7 +153,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           SHA: ${{ github.sha }}
-          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -176,30 +175,14 @@ jobs:
             --generate-notes \
             dist/*.tar.gz dist/checksums.txt install.sh
 
-          # A fresh release takes a moment to serve: seconds after
-          # v2026.09.23-ed88bb was published this very URL answered 200 with an
-          # empty body, and the releases API answered with no assets at all -
-          # both while the six assets were attached and downloading fine. So
-          # give it two minutes, and read a body that is empty or different as
-          # "not yet" rather than as a verdict. This is the URL cpa upgrade
-          # itself fetches; a release with nothing behind it breaks that
-          # silently, which is the only thing the check is here to catch.
-          got=false
-          for _ in $(seq 1 24); do
-            if curl -fsS -o "${RUNNER_TEMP}/checksums.txt" \
-                "https://github.com/${REPO}/releases/download/${TAG}/checksums.txt" &&
-              [ -s "${RUNNER_TEMP}/checksums.txt" ] &&
-              diff -q dist/checksums.txt "${RUNNER_TEMP}/checksums.txt" >/dev/null; then
-              got=true
-              break
-            fi
-            echo "checksums.txt behind ${TAG} is not readable yet"
-            sleep 5
-          done
-          if [ "$got" != true ]; then
-            echo "release ${TAG} has nothing usable behind it; cpa upgrade would fail"
-            echo "repair it with: gh release upload ${TAG} --clobber dist/*.tar.gz dist/checksums.txt install.sh"
-            diff -u dist/checksums.txt "${RUNNER_TEMP}/checksums.txt" || true
-            exit 1
-          fi
-          echo "checksums.txt behind ${TAG} matches what was built"
+          # Nothing here reads the release back. A fresh release is simply not
+          # downloadable for the first couple of minutes - seconds after
+          # v2026.09.23-ed88bb and v2026.09.23-022592 were published, both the
+          # download URL and the releases API answered as if the release were
+          # empty, while all six assets were attached and downloading fine a
+          # few minutes later - so any check that reads one back right here can
+          # only ever false-alarm, which it did twice before this was removed.
+          # A failed upload already fails this step: gh release create exits
+          # non-zero on one. If a release ever does come out with nothing behind
+          # it, the lever is a re-upload, not a re-run:
+          #   gh release upload <tag> --clobber dist/*.tar.gz dist/checksums.txt install.sh
