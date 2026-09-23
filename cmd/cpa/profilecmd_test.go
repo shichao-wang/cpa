@@ -99,7 +99,6 @@ func TestProfileCreateKeepsOtherContent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings.json")
 	original := `{
-  // a file the user hand-edited
   "defaultProfile": "first",
   "keepMe": {"nested": true},
   "profiles": {"first": {"baseUrl": "http://first"}}
@@ -211,16 +210,66 @@ func TestProfileRejectsUnknownSubcommand(t *testing.T) {
 	}
 }
 
-func TestUpsertProfileAtWarnsOnComments(t *testing.T) {
+func TestUpsertProfileAtRefusesACommentedFile(t *testing.T) {
+	// Settings are plain JSON now, and a rewrite must never silently drop a
+	// file's comments. Refusing is the safe half of that: the error explains
+	// the format change and the file keeps its contents.
 	path := filepath.Join(t.TempDir(), "settings.json")
-	if err := os.WriteFile(path, []byte("{\n  // keep the gateway honest\n  \"profiles\": {}\n}\n"), 0o600); err != nil {
+	original := "{\n  // keep the gateway honest\n  \"profiles\": {}\n}\n"
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := upsertProfileAt(path, "a", &config.Profile{BaseURL: "http://a"})
+	if err == nil {
+		t.Fatal("expected a refusal, got nil")
+	}
+	if !strings.Contains(err.Error(), "plain JSON") {
+		t.Errorf("error does not explain the format change: %v", err)
+	}
+	data, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(data) != original {
+		t.Error("the file was modified despite the parse failure")
+	}
+}
+
+func TestUpsertProfileAtStampsTheSchema(t *testing.T) {
+	// A generated file should describe itself, since that is where the field
+	// semantics live now.
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := upsertProfileAt(path, "a", &config.Profile{BaseURL: "http://a"}); err != nil {
+		t.Fatalf("upsertProfileAt: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw["$schema"] != config.SchemaURL {
+		t.Errorf("$schema = %v, want %s", raw["$schema"], config.SchemaURL)
+	}
+}
+
+func TestUpsertProfileAtKeepsAnExistingSchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"$schema": "./local.schema.json", "profiles": {}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := upsertProfileAt(path, "a", &config.Profile{BaseURL: "http://a"}); err != nil {
 		t.Fatalf("upsertProfileAt: %v", err)
 	}
-	if _, ok := readProfiles(t, path)["a"]; !ok {
-		t.Error("the profile was not written into the JSONC file")
+	data, _ := os.ReadFile(path)
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw["$schema"] != "./local.schema.json" {
+		t.Errorf("$schema = %v; an existing pointer was overwritten", raw["$schema"])
 	}
 }
 

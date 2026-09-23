@@ -1,29 +1,16 @@
-// cpa 的完整示例配置。文件按 JSONC 解析：允许注释和尾逗号。
-//
-// 放到 $XDG_CONFIG_HOME/cpa/settings.json（默认 ~/.config/cpa/settings.json），
-// 或 ./.cpa/settings.json（项目内，优先级更高）。
 {
   "$schema": "./settings.schema.json",
-
-  // 不传 --profile 时用哪个。
   "defaultProfile": "deepseek",
-
-  // 所有 profile 共享的环境变量，优先级低于 profile 自己的 env。
   "defaults": {
     "env": {
       "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "90"
     }
   },
-
-  // agent 是可扩展的：kind 决定注入哪类变量。
   "agents": {
     "claude": { "bin": "claude", "kind": "claude" },
     "codex": { "bin": "codex", "kind": "openai" }
   },
-
   "profiles": {
-    // ---- 全部流量走 DeepSeek ----
-    // 网关只公布一个 deepseek-* 模型时，它会填满所有槽位。
     "deepseek": {
       "description": "上游全 DeepSeek 系列",
       "baseUrl": "http://127.0.0.1:8317",
@@ -31,19 +18,14 @@
       "family": "deepseek",
       "subagentModel": "deepseek-flash"
     },
-
-    // ---- 全部流量走 GPT ----
     "gpt": {
       "description": "上游全 GPT 系列",
       "baseUrl": "http://127.0.0.1:8317",
       "apiKeyEnv": "CPA_API_KEY",
       "family": "gpt"
     },
-
-    // ---- 手工钉死槽位，完全跳过模型发现 ----
-    // 离线或网关不公布模型列表时用这个。
     "pinned": {
-      "description": "手工指定槽位映射",
+      "description": "手工指定槽位映射，完全跳过模型发现",
       "baseUrl": "http://127.0.0.1:8317",
       "apiKey": "env:CPA_API_KEY",
       "contextWindow": 1000000,
@@ -58,17 +40,12 @@
         "haiku": "deepseek-flash (快速)"
       }
     },
-
-    // ---- key 不落盘：从命令取 ----
     "vault": {
-      "description": "key 由外部命令提供",
+      "description": "key 由外部命令提供，不落盘",
       "baseUrl": "http://127.0.0.1:8317",
       "apiKeyCmd": "security find-generic-password -s cpa -w",
       "model": "deepseek-flash"
     },
-
-    // ---- 额外 Claude Code 设置 ----
-    // 会合并进 --settings 文档，不会写进 ~/.claude/settings.json。
     "tuned": {
       "description": "带额外 Claude Code 设置",
       "baseUrl": "http://127.0.0.1:8317",

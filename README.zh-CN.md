@@ -133,7 +133,6 @@ wrote profile "devbox" to ~/.config/cpa/settings.json
 ```
 
 写入目标是 `$XDG_CONFIG_HOME/cpa/settings.json`；`--file` 可改为写到别处。
-若某个配置文件里带 JSONC 注释，重写会丢掉它们，`cpa profile create` 会事先说明。
 
 也可以不从头写，而是把现有配置直接转成 profile——它会读取你的 Claude Code
 配置并提取其中的 `ANTHROPIC_*` 环境变量（不会修改那个文件）：
@@ -152,9 +151,12 @@ $ cpa import-claude --name mygateway
 
 早期版本用的是 `~/.cpa/settings.json`，该路径**已不再读取**，把文件移至上表位置即可。
 
-文件按 JSONC 解析，允许注释与尾逗号。
+配置文件是**纯 JSON**，不允许注释与尾逗号。每个字段的含义写在
+[`examples/settings.schema.json`](examples/settings.schema.json) 里，生成的文件都会通过
+`$schema` 指向它，编辑器因此能实时校验与补全。（早期版本按 JSONC 解析；带注释的旧文件
+现在会被拒绝，并明确告诉你原因。）
 
-```jsonc
+```json
 {
   "defaultProfile": "deepseek",
   "defaults": {
@@ -174,6 +176,9 @@ $ cpa import-claude --name mygateway
 
 ### Profile 字段
 
+下表只是摘要。每个字段（含下表未列出的）的权威说明在
+[`examples/settings.schema.json`](examples/settings.schema.json)——那才是编辑器读的东西。
+
 | 字段 | 含义 |
 |---|---|
 | `baseUrl` | 网关端点，作为 `ANTHROPIC_BASE_URL` 传给 Claude Code。 |
@@ -182,7 +187,7 @@ $ cpa import-claude --name mygateway
 | `apiKeyCmd` | 从该命令的标准输出读取 key。 |
 | `family` | 对网关 `/v1/models` 列表做子串匹配。 |
 | `model` | 兜底模型，用于所有未显式指定的槽位。 |
-| `models` | 手工钉死槽位：`{"opus": …, "sonnet": …, "haiku": …, "fable": …}`。 |
+| `models` | 手工钉死槽位：`{"opus": …, "sonnet": …, "haiku": …, "fable": …}`。钉死后完全跳过模型发现。 |
 | `modelNames` | 按槽位覆盖模型选择器里显示的标签。 |
 | `subagentModel` | 子 agent 使用的模型（`CLAUDE_CODE_SUBAGENT_MODEL`）。 |
 | `contextWindow` | `CLAUDE_CODE_MAX_CONTEXT_TOKENS`；模型名带 `[1m]` 后缀时隐含 `1000000`。 |
@@ -196,7 +201,7 @@ $ cpa import-claude --name mygateway
 
 也可以定义其他 agent：
 
-```jsonc
+```json
 {
   "agents": {
     "claude": { "bin": "claude", "kind": "claude" },

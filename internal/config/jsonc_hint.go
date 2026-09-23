@@ -1,18 +1,31 @@
 package config
 
-import "bytes"
+import (
+	"bytes"
+	"encoding/json"
+)
 
-// Settings files are read as JSONC: comments and trailing commas are
-// allowed, because a file whose whole job is to explain upstream routing is
-// painful to maintain without them.
+// Settings files are strict JSON. Field semantics live in the JSON Schema at
+// examples/settings.schema.json, not in prose inside the file, so nothing
+// here is used to parse.
 //
-// Both passes below are string-aware. That matters more than it sounds:
-// "http://127.0.0.1:8317" contains a // that is not a comment.
+// Earlier versions accepted JSONC (comments and trailing commas). These
+// scanners survive only to recognise a file written in that older style, so
+// the error can say what is actually wrong instead of reporting a stray "/".
+// They are a migration aid and can go once such files are rare.
+//
+// Both passes are string-aware. That matters: "http://127.0.0.1:8317"
+// contains a // that is not a comment.
 
-// stripJSONC removes // line comments, /* block */ comments and trailing
-// commas from a JSON document.
-func stripJSONC(data []byte) []byte {
-	return stripTrailingCommas(stripComments(data))
+// looksLikeJSONC reports whether data would parse once comments and trailing
+// commas were removed, i.e. whether the failure is the format change rather
+// than a genuine syntax error.
+func looksLikeJSONC(data []byte) bool {
+	stripped := stripTrailingCommas(stripComments(data))
+	if bytes.Equal(stripped, data) {
+		return false // nothing to strip; the error is something else
+	}
+	return json.Valid(stripped)
 }
 
 func stripComments(b []byte) []byte {
@@ -103,11 +116,4 @@ func stripTrailingCommas(b []byte) []byte {
 
 func isSpace(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
-}
-
-// HasComments reports whether data carries JSONC comments outside its
-// strings. Callers that rewrite a settings file use this to warn that the
-// comments will not survive the round trip.
-func HasComments(data []byte) bool {
-	return !bytes.Equal(stripComments(data), data)
 }

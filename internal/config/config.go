@@ -93,6 +93,11 @@ type Config struct {
 	Path string `json:"-"`
 }
 
+// SchemaURL is the published JSON Schema for a settings file. Generated
+// configs point at it so editors can validate and autocomplete, and so the
+// file itself stays free of prose.
+const SchemaURL = "https://raw.githubusercontent.com/shichao-wang/cpa/main/examples/settings.schema.json"
+
 // Slots are the model slots Claude Code resolves through ANTHROPIC_DEFAULT_*.
 var Slots = []string{"opus", "sonnet", "haiku", "fable"}
 
@@ -179,13 +184,14 @@ func loadFile(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// Parse decodes one settings document in memory, JSONC comments and all.
-// It consults no other file, so the result is exactly what this document
-// says. Load is the merging counterpart.
+// Parse decodes one settings document in memory. The format is strict JSON:
+// no comments, no trailing commas. What each field means lives in the schema
+// at examples/settings.schema.json. Parse consults no other file, so the
+// result is exactly what this document says; Load is the merging counterpart.
 func Parse(data []byte) (*Config, error) {
 	var cfg Config
-	if err := json.Unmarshal(stripJSONC(data), &cfg); err != nil {
-		return nil, err
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, explainJSONError(data, err)
 	}
 	return &cfg, nil
 }
@@ -195,10 +201,21 @@ func Parse(data []byte) (*Config, error) {
 // map back cannot import profiles or defaults from a nearby file.
 func ParseRaw(data []byte) (map[string]interface{}, error) {
 	var raw map[string]interface{}
-	if err := json.Unmarshal(stripJSONC(data), &raw); err != nil {
-		return nil, err
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, explainJSONError(data, err)
 	}
 	return raw, nil
+}
+
+// explainJSONError names the likely cause when a hand-edited file fails to
+// parse. Settings used to be JSONC, so the most common failure by far is a
+// file that still carries comments — which otherwise reports as a bare
+// `invalid character '/' looking for beginning of object key string`.
+func explainJSONError(data []byte, err error) error {
+	if looksLikeJSONC(data) {
+		return fmt.Errorf("%w\nthis file is valid JSONC, but settings are now plain JSON: remove the comments and trailing commas. Field meanings are documented in examples/settings.schema.json", err)
+	}
+	return err
 }
 
 // Merge layers other on top of c. Profiles replace by name; it keeps the

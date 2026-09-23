@@ -34,6 +34,7 @@ dist:
 		CGO_ENABLED=0 GOOS=$${os} GOARCH=$${arch} \
 			go build -trimpath -ldflags '$(LDFLAGS)' -o "dist/stage/$${name}/$(BIN)" ./cmd/$(BIN) || exit 1; \
 		cp README.md README.zh-CN.md LICENSE "dist/stage/$${name}/"; \
+		cp -R examples "dist/stage/$${name}/"; \
 		tar -C dist/stage -czf "dist/$${name}.tar.gz" "$${name}" || exit 1; \
 	done
 	rm -rf dist/stage

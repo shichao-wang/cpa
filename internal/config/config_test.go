@@ -1,38 +1,33 @@
 package config
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestStripJSONCLeavesURLsAlone(t *testing.T) {
-	in := `{
-  // a line comment
-  "baseUrl": "http://127.0.0.1:8317", // trailing comment
-  /* block
-     comment */
-  "a": "has // inside a string",
-  "b": "escaped \" // not a comment",
-  "list": [1, 2, 3,],
-}`
-	var got map[string]interface{}
-	if err := json.Unmarshal(stripJSONC([]byte(in)), &got); err != nil {
-		t.Fatalf("result is not valid JSON: %v", err)
+// TestLooksLikeJSONCDistinguishesTheOldFormat guards the migration hint: it
+// must fire for a file that would parse as JSONC, and stay quiet for every
+// other failure so a real syntax error is not blamed on comments.
+func TestLooksLikeJSONCDistinguishesTheOldFormat(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"plain json", `{"a": 1}`, false},
+		{"url is not a comment", `{"baseUrl": "http://127.0.0.1:8317"}`, false},
+		{"line comment", "{\n  // note\n  \"a\": 1\n}", true},
+		{"block comment", `{/* why */ "a": 1}`, true},
+		{"trailing comma", `{"a": 1,}`, true},
+		{"genuinely broken", `{"a": 1`, false},
+		{"not json at all", `hello`, false},
 	}
-	if got["baseUrl"] != "http://127.0.0.1:8317" {
-		t.Errorf("baseUrl mangled: %v", got["baseUrl"])
-	}
-	if got["a"] != "has // inside a string" {
-		t.Errorf("string content mangled: %v", got["a"])
-	}
-	if got["b"] != `escaped " // not a comment` {
-		t.Errorf("escape handling mangled: %v", got["b"])
-	}
-	if n := len(got["list"].([]interface{})); n != 3 {
-		t.Errorf("trailing comma broke the array: %d elements", n)
+	for _, tc := range cases {
+		if got := looksLikeJSONC([]byte(tc.in)); got != tc.want {
+			t.Errorf("%s: looksLikeJSONC = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 

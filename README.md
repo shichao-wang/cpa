@@ -147,8 +147,7 @@ wrote profile "devbox" to ~/.config/cpa/settings.json
 ```
 
 It writes to `$XDG_CONFIG_HOME/cpa/settings.json`; `--file` writes somewhere
-else instead. Rewriting a settings file that carries JSONC comments drops
-them, and `cpa profile create` says so before it does.
+else instead.
 
 Point a profile at an existing setup instead of starting from scratch — this
 reads your Claude Code settings and turns its `ANTHROPIC_*` environment into a
@@ -169,9 +168,13 @@ $ cpa import-claude --name mygateway
 Earlier versions used `~/.cpa/settings.json`. That path is **no longer read**;
 move the file to the location above.
 
-Files are JSONC — comments and trailing commas are allowed.
+Files are **plain JSON** — no comments, no trailing commas. What each field
+means lives in [`examples/settings.schema.json`](examples/settings.schema.json),
+which every generated file points at through `$schema`, so editors validate
+and autocomplete as you type. (Earlier versions accepted JSONC; a file that
+still has comments is rejected with an error saying so.)
 
-```jsonc
+```json
 {
   "defaultProfile": "deepseek",
   "defaults": {
@@ -191,6 +194,11 @@ Files are JSONC — comments and trailing commas are allowed.
 
 ### Profile fields
 
+The table below is a summary. The authoritative description of every field —
+including the ones not listed here — is
+[`examples/settings.schema.json`](examples/settings.schema.json), which is what
+your editor reads.
+
 | Field | Meaning |
 |---|---|
 | `baseUrl` | The gateway endpoint. Claude Code gets it as `ANTHROPIC_BASE_URL`. |
@@ -199,7 +207,7 @@ Files are JSONC — comments and trailing commas are allowed.
 | `apiKeyCmd` | Read the key from this command's stdout. |
 | `family` | Substring match against the gateway's `/v1/models` listing. |
 | `model` | Catch-all model for every slot not otherwise set. |
-| `models` | Pin slots by hand: `{"opus": …, "sonnet": …, "haiku": …, "fable": …}`. |
+| `models` | Pin slots by hand: `{"opus": …, "sonnet": …, "haiku": …, "fable": …}`. Pinning skips discovery entirely. |
 | `modelNames` | Override the label shown in Claude Code's model picker, per slot. |
 | `subagentModel` | Model for subagents (`CLAUDE_CODE_SUBAGENT_MODEL`). |
 | `contextWindow` | `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. A `[1m]` model suffix implies `1000000`. |
@@ -213,7 +221,7 @@ a settings file stays safe to sync or commit.
 
 You can also define other agents:
 
-```jsonc
+```json
 {
   "agents": {
     "claude": { "bin": "claude", "kind": "claude" },

@@ -44,6 +44,7 @@ jobs:
               go build -trimpath -ldflags "-s -w -X main.version=${tag}" \
               -o "dist/stage/${name}/cpa" ./cmd/cpa
             cp README.md README.zh-CN.md LICENSE "dist/stage/${name}/"
+          cp -R examples "dist/stage/${name}/"
             tar -C dist/stage -czf "dist/${name}.tar.gz" "${name}"
           done
           rm -rf dist/stage

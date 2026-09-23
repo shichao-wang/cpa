@@ -1,91 +1,109 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/shichao-wang/cpa/main/examples/settings.schema.json",
   "title": "cpa settings",
-  "description": "Profiles for launching coding agents against a CLIProxyAPI gateway.",
+  "description": "Profiles for launching coding agents against a CLIProxyAPI gateway. This schema is where field semantics live: settings files are plain JSON and carry no comments.",
   "type": "object",
+  "additionalProperties": false,
   "properties": {
-    "$schema": { "type": "string" },
+    "$schema": {
+      "type": "string",
+      "description": "Path or URL of this schema, so editors can validate and autocomplete the file."
+    },
     "defaultProfile": {
       "type": "string",
       "description": "Profile used when --profile is omitted."
     },
-    "defaultAgent": { "type": "string" },
+    "defaultAgent": {
+      "type": "string",
+      "description": "Agent used when the command line names none, e.g. \"claude\"."
+    },
     "agents": {
       "type": "object",
-      "description": "Launchable CLI tools, keyed by the name used on the command line.",
+      "description": "Launchable CLI tools, keyed by the name typed on the command line. A name not listed here is treated as an executable on PATH.",
       "additionalProperties": {
         "type": "object",
+        "additionalProperties": false,
         "properties": {
           "bin": { "type": "string", "description": "Executable name or path. Defaults to the agent key." },
           "kind": {
             "enum": ["claude", "openai", "generic"],
-            "description": "Which variables get injected: ANTHROPIC_*, OPENAI_*, or none."
+            "description": "Which variables get injected: ANTHROPIC_*, OPENAI_*, or none beyond the profile's own env."
           },
-          "args": { "type": "array", "items": { "type": "string" } }
-        },
-        "additionalProperties": false
+          "args": { "type": "array", "items": { "type": "string" }, "description": "Arguments prepended to every launch of this agent." }
+        }
       }
     },
     "defaults": {
       "type": "object",
+      "additionalProperties": false,
+      "description": "Applied to every profile. A profile's own env wins on a name clash.",
       "properties": {
         "env": {
           "type": "object",
           "additionalProperties": { "type": "string" },
           "description": "Environment variables applied to every profile."
         },
-        "claudeSettings": { "type": "object" }
-      },
-      "additionalProperties": false
+        "claudeSettings": {
+          "type": "object",
+          "description": "Merged into the settings document handed to Claude Code via --settings. Never written to ~/.claude/settings.json."
+        }
+      }
     },
     "profiles": {
       "type": "object",
+      "description": "Named upstream configurations. `cpa profile list` shows them; `cpa profile create` adds one.",
       "additionalProperties": { "$ref": "#/definitions/profile" }
     }
   },
-  "additionalProperties": false,
   "definitions": {
     "profile": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "description": { "type": "string" },
+        "description": { "type": "string", "description": "Free text shown by `cpa profile list`." },
         "baseUrl": { "type": "string", "description": "Gateway endpoint, e.g. http://127.0.0.1:8317" },
         "apiKey": {
           "type": "string",
-          "description": "Client key, or \"env:VAR\" / \"cmd:shell command\"."
+          "description": "Client key sent upstream. Prefer apiKeyEnv or apiKeyCmd so the secret stays out of the file. The shorthands \"env:VAR\" and \"cmd:shell command\" also work here."
         },
-        "apiKeyEnv": { "type": "string" },
-        "apiKeyCmd": { "type": "string" },
+        "apiKeyEnv": { "type": "string", "description": "Name of the environment variable holding the key. Read at launch." },
+        "apiKeyCmd": { "type": "string", "description": "Shell command whose stdout is the key, e.g. a password manager lookup. Run at launch." },
         "family": {
           "type": "string",
-          "description": "Substring matched against the gateway's /v1/models listing."
+          "description": "Substring matched against the gateway's /v1/models listing. When exactly one model matches, that model fills every slot."
         },
-        "model": { "type": "string", "description": "Catch-all model for unfilled slots." },
+        "model": { "type": "string", "description": "Catch-all model for any slot not set explicitly." },
         "models": {
           "type": "object",
+          "additionalProperties": false,
+          "description": "Pin slots explicitly. Set, this skips model discovery entirely, so the profile works with the gateway down.",
           "properties": {
             "opus": { "type": "string" },
             "sonnet": { "type": "string" },
             "haiku": { "type": "string" },
             "fable": { "type": "string" }
-          },
-          "additionalProperties": false
+          }
         },
         "modelNames": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": { "type": "string" },
+          "description": "Human-readable labels for slots in Claude Code's model picker, by slot name."
         },
-        "subagentModel": { "type": "string" },
-        "contextWindow": { "type": "integer", "minimum": 1 },
-        "customModelOption": { "type": "string" },
+        "subagentModel": { "type": "string", "description": "Model Claude Code uses for subagents." },
+        "contextWindow": { "type": "integer", "minimum": 1, "description": "Sets CLAUDE_CODE_MAX_CONTEXT_TOKENS for every model in this profile." },
+        "customModelOption": { "type": "string", "description": "Surface one model as a hand-picked entry in Claude Code's model picker." },
         "env": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": { "type": "string" },
+          "description": "Extra environment variables for this profile. Overrides defaults.env."
         },
-        "claudeSettings": { "type": "object" },
-        "args": { "type": "array", "items": { "type": "string" } }
-      },
-      "additionalProperties": false
+        "claudeSettings": {
+          "type": "object",
+          "description": "Extra Claude Code settings merged into this profile's --settings document. Never written to ~/.claude/settings.json."
+        },
+        "args": { "type": "array", "items": { "type": "string" }, "description": "Extra arguments appended to this profile's launches." }
+      }
     }
   }
 }
