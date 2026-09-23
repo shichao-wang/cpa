@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "cpa settings",
+  "description": "Profiles for launching coding agents against a CLIProxyAPI gateway.",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "defaultProfile": {
+      "type": "string",
+      "description": "Profile used when --profile is omitted."
+    },
+    "defaultAgent": { "type": "string" },
+    "agents": {
+      "type": "object",
+      "description": "Launchable CLI tools, keyed by the name used on the command line.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "bin": { "type": "string", "description": "Executable name or path. Defaults to the agent key." },
+          "kind": {
+            "enum": ["claude", "openai", "generic"],
+            "description": "Which variables get injected: ANTHROPIC_*, OPENAI_*, or none."
+          },
+          "args": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Environment variables applied to every profile."
+        },
+        "claudeSettings": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/profile" }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "profile": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "baseUrl": { "type": "string", "description": "Gateway endpoint, e.g. http://127.0.0.1:8317" },
+        "apiKey": {
+          "type": "string",
+          "description": "Client key, or \"env:VAR\" / \"cmd:shell command\"."
+        },
+        "apiKeyEnv": { "type": "string" },
+        "apiKeyCmd": { "type": "string" },
+        "family": {
+          "type": "string",
+          "description": "Substring matched against the gateway's /v1/models listing."
+        },
+        "model": { "type": "string", "description": "Catch-all model for unfilled slots." },
+        "models": {
+          "type": "object",
+          "properties": {
+            "opus": { "type": "string" },
+            "sonnet": { "type": "string" },
+            "haiku": { "type": "string" },
+            "fable": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "modelNames": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "subagentModel": { "type": "string" },
+        "contextWindow": { "type": "integer", "minimum": 1 },
+        "customModelOption": { "type": "string" },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "claudeSettings": { "type": "object" },
+        "args": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
+  }
+}

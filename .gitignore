@@ -1,0 +1,11 @@
+# 构建产物
+/bin/
+/dist/
+/cpa
+*.test
+
+# 本地私有配置：绝不入库（可能含 api key）
+/cpa.settings.json
+/.cpa/
+
+.DS_Store
