@@ -3,6 +3,7 @@ package launch
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -111,6 +112,24 @@ func TestMapModelsPrecedence(t *testing.T) {
 		}
 		if got["opus"] != "only-this" || got["haiku"] != "only-this" {
 			t.Errorf("catch-all not applied: %v", got)
+		}
+	})
+
+	t.Run("pins that leave slots open are still the whole mapping", func(t *testing.T) {
+		// What `profile create` writes when a slot is mapped by hand and the
+		// rest are left to resolve: nothing else fires, so the mapping is the
+		// pins, and calling that "unset" would contradict what is printed
+		// right above it.
+		p := &config.Profile{Models: map[string]string{"sonnet": "gpt-6-sol"}}
+		got, source, notices := MapModels(p, models("gpt-6-sol", "unrelated"))
+		if source != SourceExplicit {
+			t.Fatalf("source = %q, want %q", source, SourceExplicit)
+		}
+		if got["sonnet"] != "gpt-6-sol" {
+			t.Errorf("sonnet = %q, want the pin", got["sonnet"])
+		}
+		if len(notices) == 0 {
+			t.Error("expected a notice for the slots left unset")
 		}
 	})
 
@@ -303,6 +322,55 @@ func TestBuildCarriesExtraClaudeSettings(t *testing.T) {
 	}
 }
 
+// behavesAs outranks CLAUDE_CODE_MAX_CONTEXT_TOKENS, so a profile carrying
+// both is told that its contextWindow will not be the one used, rather than
+// finding out from a session that compacts at 200k.
+func TestBuildWarnsWhenBehavesAsOverridesTheContextWindow(t *testing.T) {
+	cfg := testConfig()
+	p := cfg.Profiles["deepseek"]
+	p.ContextWindow = 1000000
+	p.ClaudeSettings = map[string]interface{}{
+		"modelPicker": map[string]interface{}{
+			"options": []interface{}{
+				map[string]interface{}{"model": "deepseek-flash", "behavesAs": "claude-opus-5-5"},
+			},
+		},
+	}
+	plan, err := Build(cfg, "claude", "", nil, Options{Available: models("deepseek-flash")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.Env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"]; got != "1000000" {
+		t.Errorf("CLAUDE_CODE_MAX_CONTEXT_TOKENS = %q; the profile's own window should still be set", got)
+	}
+	if !hasNotice(plan, "instead of the one asked for") {
+		t.Errorf("expected a notice about the overridden window, got %v", plan.Notices)
+	}
+}
+
+func TestBuildKeepsQuietAboutAWindowWithNoBehavesAs(t *testing.T) {
+	cfg := testConfig()
+	p := cfg.Profiles["deepseek"]
+	p.ContextWindow = 1000000
+	plan, err := Build(cfg, "claude", "", nil, Options{Available: models("deepseek-flash")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasNotice(plan, "instead of the one asked for") {
+		t.Errorf("nothing overrides the window here: %v", plan.Notices)
+	}
+}
+
+// hasNotice reports whether any notice carries the given phrase.
+func hasNotice(plan *Plan, phrase string) bool {
+	for _, n := range plan.Notices {
+		if strings.Contains(n, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
 // Two writers for one flag would silently pick the wrong upstream, so the
 // conflict is reported instead of guessed at.
 func TestBuildRefusesCompetingSettingsFlag(t *testing.T) {
@@ -348,5 +416,100 @@ func TestPlanNeverWritesClaudeConfig(t *testing.T) {
 	}
 	if string(after) != string(original) {
 		t.Fatalf("claude settings.json was modified:\n%s", after)
+	}
+}
+
+func TestBuildDerivesPickerForExistingProfiles(t *testing.T) {
+	cases := []struct {
+		name      string
+		profile   *config.Profile
+		available []proxy.Model
+		want      []PickerRow
+	}{
+		{
+			name: "old pinned profile",
+			profile: &config.Profile{
+				Models: map[string]string{"opus": "claude-opus-5", "haiku": "claude-haiku-4-5"},
+			},
+			want: []PickerRow{{Model: "claude-opus-5"}, {Model: "claude-haiku-4-5"}},
+		},
+		{
+			name:      "family discovered at launch",
+			profile:   &config.Profile{Family: "deepseek"},
+			available: models("deepseek-flash", "gpt-6-sol", "claude-opus-5"),
+			want:      []PickerRow{{Model: "deepseek-flash", BehavesAs: "claude-opus-5-5"}},
+		},
+		{
+			name: "catch-all and custom option remain reachable",
+			profile: &config.Profile{
+				Model:             "deepseek-flash",
+				CustomModelOption: "gpt-6-luna",
+			},
+			want: []PickerRow{{Model: "deepseek-flash"}, {Model: "gpt-6-luna"}},
+		},
+		{
+			name: "context window does not get overridden",
+			profile: &config.Profile{
+				Models:        map[string]string{"opus": "gpt-6-sol"},
+				ContextWindow: 1000000,
+			},
+			want: []PickerRow{{Model: "gpt-6-sol"}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := testConfig()
+			p := cfg.Profiles["deepseek"]
+			p.Models, p.Family, p.Model = tc.profile.Models, tc.profile.Family, tc.profile.Model
+			p.CustomModelOption, p.ContextWindow = tc.profile.CustomModelOption, tc.profile.ContextWindow
+			plan, err := Build(cfg, "claude", "", nil, Options{Available: tc.available})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var doc struct {
+				ModelPicker struct {
+					ReplaceBuiltInOptions bool        `json:"replaceBuiltInOptions"`
+					Options               []PickerRow `json:"options"`
+				} `json:"modelPicker"`
+			}
+			if err := json.Unmarshal(plan.SettingsBlob, &doc); err != nil {
+				t.Fatal(err)
+			}
+			if !doc.ModelPicker.ReplaceBuiltInOptions {
+				t.Errorf("modelPicker does not replace built-ins: %s", plan.SettingsBlob)
+			}
+			if !reflect.DeepEqual(doc.ModelPicker.Options, tc.want) {
+				t.Errorf("picker rows = %v, want %v", doc.ModelPicker.Options, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildRespectsExplicitModelPicker(t *testing.T) {
+	for _, source := range []string{"defaults", "profile"} {
+		t.Run(source, func(t *testing.T) {
+			cfg := testConfig()
+			manual := map[string]interface{}{
+				"modelPicker": map[string]interface{}{
+					"options": []interface{}{map[string]interface{}{"model": "manual-model"}},
+				},
+			}
+			if source == "defaults" {
+				cfg.Defaults.ClaudeSettings = manual
+			} else {
+				cfg.Profiles["deepseek"].ClaudeSettings = manual
+			}
+			plan, err := Build(cfg, "claude", "", nil, Options{Available: models("deepseek-flash")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var doc map[string]interface{}
+			if err := json.Unmarshal(plan.SettingsBlob, &doc); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(doc["modelPicker"], manual["modelPicker"]) {
+				t.Errorf("explicit picker overwritten: %s", plan.SettingsBlob)
+			}
+		})
 	}
 }

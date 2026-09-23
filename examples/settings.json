@@ -12,6 +12,7 @@
   },
   "profiles": {
     "deepseek": {
+      "agent": "claude",
       "description": "上游全 DeepSeek 系列",
       "baseUrl": "http://127.0.0.1:8317",
       "apiKeyEnv": "CPA_API_KEY",
@@ -19,12 +20,14 @@
       "subagentModel": "deepseek-flash"
     },
     "gpt": {
+      "agent": "claude",
       "description": "上游全 GPT 系列",
       "baseUrl": "http://127.0.0.1:8317",
       "apiKeyEnv": "CPA_API_KEY",
       "family": "gpt"
     },
     "pinned": {
+      "agent": "claude",
       "description": "手工指定槽位映射，完全跳过模型发现",
       "baseUrl": "http://127.0.0.1:8317",
       "apiKey": "env:CPA_API_KEY",
@@ -41,12 +44,14 @@
       }
     },
     "vault": {
+      "agent": "claude",
       "description": "key 由外部命令提供，不落盘",
       "baseUrl": "http://127.0.0.1:8317",
       "apiKeyCmd": "security find-generic-password -s cpa -w",
       "model": "deepseek-flash"
     },
     "tuned": {
+      "agent": "claude",
       "description": "带额外 Claude Code 设置",
       "baseUrl": "http://127.0.0.1:8317",
       "apiKeyEnv": "CPA_API_KEY",
@@ -58,6 +63,13 @@
       "env": {
         "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "1000000"
       }
+    },
+    "codex": {
+      "agent": "codex",
+      "description": "同一个上游，给 Codex 用：另一个应用，另一个 profile",
+      "baseUrl": "http://127.0.0.1:8317",
+      "apiKeyEnv": "CPA_API_KEY",
+      "model": "gpt-6-sol"
     }
   }
 }

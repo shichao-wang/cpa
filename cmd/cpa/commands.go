@@ -27,6 +27,7 @@ type flags struct {
 	baseURL               string
 	apiKey                string
 	description           string
+	agent                 string
 	family                string
 	model                 string
 	rest                  []string
@@ -75,6 +76,10 @@ func parseFlags(args []string) (*flags, error) {
 			f.description, err = takeValue()
 		case strings.HasPrefix(a, "--description="):
 			f.description = strings.TrimPrefix(a, "--description=")
+		case a == "--agent":
+			f.agent, err = takeValue()
+		case strings.HasPrefix(a, "--agent="):
+			f.agent = strings.TrimPrefix(a, "--agent=")
 		case a == "--family":
 			f.family, err = takeValue()
 		case strings.HasPrefix(a, "--family="):
@@ -260,16 +265,24 @@ func cmdModels(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	fmt.Printf("profile %s -> %s  (%d models)\n\n", name, profile.BaseURL, len(models))
+	fmt.Printf("profile %s -> %s  (%d models)\n", name, profile.BaseURL, len(models))
+	// The slot mapping is Claude Code's; saying so beats printing arrows that
+	// mean nothing to the agent this profile is actually for.
+	if target := profile.EffectiveAgent(); target != "" {
+		if a, err := cfg.AgentFor(target); err == nil && a.Kind != config.KindClaude {
+			fmt.Printf("note: this profile is for agent %q (kind %s), which has no model slots; "+
+				"the mapping below is Claude Code's and does not apply\n", target, a.Kind)
+		}
+	}
+	fmt.Println()
 	slotOf := map[string][]string{}
 	for slot, model := range mapping {
 		slotOf[model] = append(slotOf[model], slot)
 	}
 	for _, m := range models {
-		label := m.ID
-		if m.OwnedBy != "" {
-			label += fmt.Sprintf("  [%s]", m.OwnedBy)
-		}
+		// The same label the picker uses: the listing and the prompt should
+		// not disagree about what a model is called.
+		label := m.Label()
 		if slots := slotOf[m.ID]; len(slots) > 0 {
 			sort.Strings(slots)
 			label += "  -> " + strings.Join(slots, ",")

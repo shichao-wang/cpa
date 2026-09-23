@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/shichao-wang/cpa/internal/config"
@@ -24,23 +23,33 @@ USAGE
 CREATE FLAGS
   --name <name>          answer the name prompt up front
   --description <text>   ditto for the description
+  --agent <name>         ditto for the agent the profile is for (default: claude)
   --base-url <url>       ditto for the gateway address
   --api-key <key>        ditto for the key ("env:NAME" / "cmd:..." also work)
-  --family <family>      ditto for the upstream family
+  --family <family>      narrow the listed models to this family
   --model <model>        pin one model onto every slot
   --file <path>          write somewhere other than the user config
   --force                overwrite an existing profile without asking
   --no-discover          do not query the gateway
 
 A created profile lands in $XDG_CONFIG_HOME/cpa/settings.json
-(~/.config/cpa/settings.json); --file writes somewhere else instead.
+(~/.config/cpa/settings.json); --file writes somewhere else instead. It
+records the one agent it is for; launching it with an agent of another kind is
+an error, since a profile's model slots and settings mean nothing to another.
 
 With a terminal attached the fields are asked for interactively: first the
-name, description, gateway address and key, then — once the gateway has been
-queried — the upstream family and the model behind each Claude Code slot,
-both chosen from the models the gateway actually advertises. Without a
-terminal (a pipe, a script, CI) there are no prompts at all: every field
-comes from the flags above, and a missing required one is an error.
+name, description, agent, gateway address and key, then — once the gateway has
+been queried — which of its models serves each of the agent's own. Claude Code
+is asked one row per slot, named by the model Claude Code itself resolves for
+it and answered from the models the gateway actually advertises. A profile for
+another agent is asked for a single model instead, since only Claude Code has
+slots. The mapping is then written into the profile as claudeSettings
+modelPicker rows — one per model, with replaceBuiltInOptions, so the /model
+picker lists those and nothing else. A row also carries behavesAs when the id
+is one Claude Code does not know: without it, Claude Code calls the id unknown
+and assumes a 200k window for it. Without a terminal (a pipe, a script, CI) there are no
+prompts at all: every field comes from the flags above, and a missing required
+one is an error.
 
 The prompts are line edited: left/right move the cursor, home/end and
 ctrl-a/ctrl-e jump to the ends, ctrl-w and ctrl-u erase. Esc goes back to
@@ -102,7 +111,13 @@ func cmdProfileList(args []string) error {
 		if desc == "" {
 			desc = p.Family
 		}
-		fmt.Printf("%s%-14s %-34s %s\n", marker, n, p.BaseURL, desc)
+		// The agent column shows what the profile is bound to, and "-" for a
+		// profile that says nothing about its downstream and so fits any.
+		agent := p.EffectiveAgent()
+		if agent == "" {
+			agent = "-"
+		}
+		fmt.Printf("%s%-14s %-9s %-32s %s\n", marker, n, agent, p.BaseURL, desc)
 	}
 	return nil
 }
@@ -134,16 +149,23 @@ func cmdProfileCreate(ctx context.Context, args []string) error {
 
 	name := f.name
 	p := &config.Profile{
+		Agent:       f.agent,
 		Description: f.description,
 		BaseURL:     f.baseURL,
 		APIKey:      f.apiKey,
 		Family:      f.family,
 		Model:       f.model,
 	}
+	// A profile belongs to one agent, so this is never left open. Claude Code
+	// is the agent cpa is exercised against, which makes it the default rather
+	// than a question with no answer.
+	if p.Agent == "" {
+		p.Agent = "claude"
+	}
 
 	pr, err := prompt.New(os.Stdin, os.Stdout)
 	if errors.Is(err, prompt.ErrNotATerminal) {
-		if !f.noDiscover {
+		if !f.noDiscover && resolveKind(p.Agent) == config.KindClaude {
 			previewMapping(ctx, p)
 		}
 		return commitProfile(ctx, path, name, p, f, nil)
@@ -159,6 +181,75 @@ func cmdProfileCreate(ctx context.Context, args []string) error {
 	return commitProfile(ctx, path, name, p, f, pr)
 }
 
+// resolveKind answers what kind of agent a name is, which is what decides the
+// questions `profile create` asks. The settings files come first, since that is
+// what a launch resolves against; the two names cpa knows without any
+// configuration come next. Anything else is generic, and gets asked nothing
+// agent-specific.
+func resolveKind(name string) config.Kind {
+	if cfg, err := config.Load(); err == nil {
+		if a, err := cfg.AgentFor(name); err == nil {
+			return a.Kind
+		}
+	}
+	a, err := (&config.Config{}).AgentFor(name)
+	if err != nil {
+		return config.KindGeneric
+	}
+	return a.Kind
+}
+
+// slotLabel names a row the way the model is known to whoever is answering: by
+// the agent's own name for it, with the id that name resolves to.
+func slotLabel(slot string) string {
+	if id := config.ClaudeCodeDefaults[slot]; id != "" {
+		return fmt.Sprintf("%s (Claude Code default: %s)", slot, id)
+	}
+	return slot
+}
+
+// candidateLabel marks a candidate the gateway itself files under another
+// slot, so a catalogue of two dozen models does not have to be read in full to
+// find the one that belongs here.
+func candidateLabel(m proxy.Model, slot string) string {
+	label := m.Label()
+	if other := launch.Classify(m.ID); other != "" && other != slot {
+		return label + " → " + other
+	}
+	return label
+}
+
+// defaultSlotChoice is a row's starting answer, as an index into the options
+// the form builds: 0 is the unset option, then the candidates in order. A
+// pin already in the profile stays selected, so re-running create does not
+// silently reset a choice that was made deliberately. Otherwise the gateway's
+// own model for that slot is offered — by exact id, or failing that by the
+// claude-<slot> prefix the launcher itself matches. A gateway serving no such
+// model leaves the row unset.
+func defaultSlotChoice(slot string, candidates []proxy.Model, current string) int {
+	if current != "" {
+		for i, m := range candidates {
+			if m.ID == current {
+				return i + 1
+			}
+		}
+	}
+	if id := config.ClaudeCodeDefaults[slot]; id != "" {
+		for i, m := range candidates {
+			if m.ID == id {
+				return i + 1
+			}
+		}
+	}
+	want := "claude-" + strings.ToLower(slot)
+	for i, m := range candidates {
+		if strings.HasPrefix(strings.ToLower(m.ID), want) {
+			return i + 1
+		}
+	}
+	return 0
+}
+
 // commitProfile validates the collected profile, optionally confirms that an
 // existing one may be replaced, and merges it into the settings file. It is
 // the single write path for `cpa profile create`, so the flag-driven and the
@@ -172,6 +263,10 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 	p.BaseURL = strings.TrimSpace(p.BaseURL)
 	if p.BaseURL == "" {
 		return fmt.Errorf("a profile needs a base URL; pass --base-url <url>")
+	}
+	p.Agent = strings.TrimSpace(p.Agent)
+	if p.Agent == "" {
+		return fmt.Errorf("a profile needs the agent it is for; pass --agent <name>")
 	}
 	// The result of the write is only visible afterwards, so a typo would
 	// otherwise land in the file as a "baseUrl" that is not a URL and only
@@ -204,6 +299,39 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 		pr.Close()
 	}
 
+	// What Claude Code's picker should offer is decided here, and the two
+	// halves of it are one decision. The rows say which models this profile
+	// can route to — Claude Code's own lineup is not among them, because the
+	// upstream is the gateway. replaceBuiltInOptions says the picker is
+	// exactly that list: without it the rows are appended to a lineup that
+	// does not apply, beside whatever the gateway advertises through
+	// /v1/models, which is the noise the profile exists to remove.
+	//
+	// A row may also carry behavesAs. A model id only the gateway serves is
+	// one Claude Code does not know: it assumes a 200k window for it and
+	// warns at every launch that the id is not in its catalogue. behavesAs
+	// names the model this one stands in for, which the slot mapping just
+	// collected already says — so the rows are derived rather than asked for.
+	//
+	// But not when the profile carries a contextWindow. behavesAs makes
+	// Claude Code read the window off the model it names, and that reading
+	// wins over CLAUDE_CODE_MAX_CONTEXT_TOKENS: measured, a profile asking
+	// for 1M through contextWindow showed 200k once behavesAs rows were
+	// added. Each knob silences the notice on its own, so the one that also
+	// widens the window is the one that gets to stay. The row is still
+	// written; only the claim about what it behaves as is dropped.
+	//
+	// And only for a Claude Code profile: modelPicker is a settings key that
+	// agent alone reads, so writing it onto a profile for another one would
+	// change which agent the profile is even for.
+	rows := []pickerRow(nil)
+	if resolveKind(p.Agent) == config.KindClaude {
+		rows = pickerRows(p)
+	}
+	if len(rows) > 0 {
+		p.ClaudeSettings = withModelPicker(p.ClaudeSettings, rows)
+	}
+
 	replacing := ""
 	if exists {
 		replacing = fmt.Sprintf(" (was: %s)", describeProfile(old))
@@ -212,8 +340,55 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 		return err
 	}
 	fmt.Printf("\nwrote profile %q to %s%s\n", name, path, replacing)
-	fmt.Printf("  cpa profile list\n  cpa claude --profile %s\n", name)
+	for _, line := range pickerReport(rows) {
+		fmt.Printf("  %s\n", line)
+	}
+	fmt.Printf("  cpa profile list\n  cpa %s --profile %s\n", p.Agent, name)
 	return nil
+}
+
+// The launch package also uses these rows for existing profiles that did not
+// write a modelPicker at creation time.
+type pickerRow = launch.PickerRow
+
+func pickerRows(p *config.Profile) []pickerRow {
+	return launch.PickerRows(p, p.Models)
+}
+
+func withModelPicker(settings map[string]interface{}, rows []pickerRow) map[string]interface{} {
+	if settings == nil {
+		settings = map[string]interface{}{}
+	}
+	settings["modelPicker"] = launch.PickerSettings(rows)
+	return settings
+}
+
+// pickerReport describes what was written, so the list Claude Code's picker
+// will offer is visible at the prompt rather than buried in the settings file.
+func pickerReport(rows []pickerRow) []string {
+	if len(rows) == 0 {
+		return nil
+	}
+	names := make([]string, len(rows))
+	var behaving []string
+	for i, r := range rows {
+		names[i] = r.Model
+		if r.BehavesAs != "" {
+			behaving = append(behaving, fmt.Sprintf("%s behaves as %s", r.Model, r.BehavesAs))
+		}
+	}
+	out := []string{
+		"model picker: " + strings.Join(names, ", "),
+		"(Claude Code's /model will list Default and these rows; its own lineup",
+		" and unrelated gateway models are left out)",
+	}
+	if len(behaving) > 0 {
+		out = append(out,
+			"behavesAs: "+strings.Join(behaving, ", "),
+			"(Claude Code will no longer call those ids unknown; the 200k window it assumes",
+			" is unchanged — set the profile's contextWindow if the upstream offers more)")
+	}
+	return out
 }
 
 // previewMapping asks the gateway what it advertises and prints the slot
@@ -241,30 +416,11 @@ func previewMapping(ctx context.Context, p *config.Profile) {
 }
 
 const (
-	// familyAll and familyCustom are the two entries in the family picker
-	// that are not families. Real families are read out of model ids, so
-	// neither sentinel can collide with one.
-	familyAll    = "\x00all"
-	familyCustom = "\x00custom"
-	// followFamily is the first option of every slot, and what most profiles
-	// should keep.
-	followFamily = "(follow the family — choose automatically)"
+	// leaveUnset is the first option of every slot row: pin nothing, and let
+	// the launcher resolve that slot on its own — the gateway's Claude-shaped
+	// model, then the profile's catch-all one.
+	leaveUnset = "(leave unset — resolve automatically)"
 )
-
-// familyChoices builds the family picker. Each family is labelled with the
-// models it would select, since a family is a substring match and the name
-// alone does not say what it catches.
-func familyChoices(available []proxy.Model, current string) (labels, values []string) {
-	labels = append(labels, fmt.Sprintf("(every advertised model — %d)", len(available)))
-	values = append(values, familyAll)
-	for _, fam := range familiesOf(available) {
-		labels = append(labels, fmt.Sprintf("%s — %s", fam, summarise(matching(available, fam))))
-		values = append(values, fam)
-	}
-	labels = append(labels, "(type a family…)")
-	values = append(values, familyCustom)
-	return labels, values
-}
 
 // aborted turns the prompter's cancel key into the message the CLI reports.
 // Nothing has been written when it fires.
@@ -298,27 +454,6 @@ func validBaseURL(s string) error {
 	return nil
 }
 
-// familiesOf derives the family handles worth offering. A family is a
-// substring match, so the useful handle for "deepseek-chat" is "deepseek";
-// an id with no separator stands for itself.
-func familiesOf(models []proxy.Model) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, m := range models {
-		fam := m.ID
-		if i := strings.IndexAny(fam, "-_."); i > 0 {
-			fam = fam[:i]
-		}
-		if fam == "" || seen[fam] {
-			continue
-		}
-		seen[fam] = true
-		out = append(out, fam)
-	}
-	sort.Strings(out)
-	return out
-}
-
 // matching applies the same substring rule the launcher uses, so the options
 // shown at the prompt are exactly the models that will be used.
 func matching(models []proxy.Model, family string) []proxy.Model {
@@ -333,23 +468,6 @@ func matching(models []proxy.Model, family string) []proxy.Model {
 		}
 	}
 	return out
-}
-
-// summarise names a few of the models a family matches, for an option label.
-func summarise(models []proxy.Model) string {
-	if len(models) == 0 {
-		return "no models"
-	}
-	ids := make([]string, 0, len(models))
-	for _, m := range models {
-		ids = append(ids, m.ID)
-	}
-	sort.Strings(ids)
-	const shown = 2
-	if len(ids) > shown {
-		return fmt.Sprintf("%s +%d more", strings.Join(ids[:shown], ", "), len(ids)-shown)
-	}
-	return strings.Join(ids, ", ")
 }
 
 // existingProfile reports whether the settings file at path already defines

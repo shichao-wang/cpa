@@ -11,18 +11,19 @@ import (
 	"github.com/shichao-wang/cpa/internal/proxy"
 )
 
-// Completed steps form a stack: Escape revisits the last question actually
-// shown, including the optional custom-family question.
+// Completed questions form a stack so Escape returns to the last one shown.
 type profileStep int
 
 const (
 	stepName profileStep = iota
 	stepDescription
+	stepAgent
 	stepBaseURL
 	stepAPIKey
-	stepFamily
-	stepCustomFamily
-	stepModel
+	stepDownstream // transition, not a question
+	stepFamily     // offline Claude fallback only
+	stepModel      // offline Claude fallback only
+	stepOtherModel // OpenAI-compatible agent
 	stepOpus
 	stepSonnet
 	stepHaiku
@@ -49,7 +50,6 @@ type profileForm struct {
 	catalogueLoaded bool
 	discoveredURL   string
 	discoveredKey   string
-	customFamily    bool
 	history         []profileStep
 }
 
@@ -63,17 +63,14 @@ func interactiveProfile(ctx context.Context, pr *prompt.Prompter, name *string, 
 
 func (f *profileForm) run() error {
 	step := stepName
-	showModelSection := false
 	for step != stepDone {
-		if step == stepFamily && f.noDiscover {
-			break
-		}
-		if step == stepFamily {
-			f.discover()
-			if showModelSection {
-				f.pr.Section("Model configuration")
-				showModelSection = false
+		if step == stepDownstream {
+			step = f.downstream()
+			if step == stepDone {
+				break
 			}
+			f.pr.SetIndent(0)
+			f.pr.Section("Model configuration")
 		}
 		indent := 0
 		if step >= stepFamily {
@@ -95,13 +92,39 @@ func (f *profileForm) run() error {
 		if err != nil {
 			return aborted(err)
 		}
-		if step == stepAPIKey {
-			showModelSection = true
-		}
 		f.history = append(f.history, step)
 		step = next
 	}
 	return nil
+}
+
+// Only Claude has four slots. A missing catalogue keeps the existing offline
+// family/model questions; other agents either ask one model or no model at all.
+func (f *profileForm) downstream() profileStep {
+	switch resolveKind(f.profile.Agent) {
+	case config.KindClaude:
+		if f.noDiscover {
+			return stepDone
+		}
+		f.discover()
+		if len(f.available) == 0 {
+			return stepFamily
+		}
+		candidates := matching(f.available, f.profile.Family)
+		if len(candidates) == 0 {
+			f.profile.Models = nil
+			fmt.Fprintf(os.Stderr, "note: no advertised model matches family %q; leaving the slots unset\n", f.profile.Family)
+			return stepDone
+		}
+		f.profile.Models = validPins(f.profile.Models, candidates)
+		return stepOpus
+	case config.KindOpenAI:
+		f.profile.Models = nil
+		return stepOtherModel
+	default:
+		f.profile.Models = nil
+		return stepDone
+	}
 }
 
 func (f *profileForm) discover() {
@@ -115,7 +138,11 @@ func (f *profileForm) discover() {
 		fmt.Fprintf(os.Stderr, "note: %s\n", note)
 	}
 	f.catalogueLoaded, f.discoveredURL, f.discoveredKey = true, p.BaseURL, p.APIKey
-	p.Models = validPins(p.Models, f.available)
+	// A gateway that is temporarily unavailable cannot disprove an explicit pin.
+	// Keep it for the offline fallback rather than dropping it on discovery failure.
+	if len(f.available) > 0 {
+		p.Models = validPins(p.Models, f.available)
+	}
 }
 
 func (f *profileForm) ask(step profileStep) (profileStep, error) {
@@ -131,67 +158,29 @@ func (f *profileForm) ask(step profileStep) (profileStep, error) {
 	case stepName:
 		return input("Profile name", f.name, notBlank("a profile needs a name"), stepDescription)
 	case stepDescription:
-		return input("Description (optional)", &p.Description, nil, stepBaseURL)
+		return input("Description (optional)", &p.Description, nil, stepAgent)
+	case stepAgent:
+		return input("Agent this profile is for (claude, codex, or a name from \"agents\")", &p.Agent, notBlank("a profile needs an agent"), stepBaseURL)
 	case stepBaseURL:
 		return input("Gateway base URL", &p.BaseURL, validBaseURL, stepAPIKey)
 	case stepAPIKey:
-		return input("API key (optional; env:NAME and cmd:... also work)", &p.APIKey, nil, stepFamily)
+		return input("API key (optional; env:NAME and cmd:... also work)", &p.APIKey, nil, stepDownstream)
 	case stepFamily:
-		if len(f.available) == 0 {
-			return input("Upstream family (optional)", &p.Family, nil, stepModel)
-		}
-		labels, values := familyChoices(f.available, p.Family)
-		def := 0
-		if f.customFamily {
-			def = len(values) - 1
-		} else {
-			for i, v := range values {
-				if v == p.Family {
-					def = i
-					break
-				}
-			}
-		}
-		picked, err := f.pr.ChooseDefault("Upstream family", labels, def)
-		if err != nil {
-			return stepFamily, err
-		}
-		f.customFamily = values[picked] == familyCustom
-		if f.customFamily {
-			return stepCustomFamily, nil
-		}
-		if values[picked] == familyAll {
-			p.Family = ""
-		} else {
-			p.Family = values[picked]
-		}
-		p.Models = validPins(p.Models, matching(f.available, p.Family))
-		return f.firstSlot(), nil
-	case stepCustomFamily:
-		next, err := input("Family (matched against model ids)", &p.Family, nil, stepDone)
-		if err == nil {
-			p.Models = validPins(p.Models, matching(f.available, p.Family))
-			next = f.firstSlot()
-		}
-		return next, err
+		return input("Upstream family (optional)", &p.Family, nil, stepModel)
 	case stepModel:
 		return input("Model for every slot (optional)", &p.Model, nil, stepDone)
+	case stepOtherModel:
+		return input("Model (optional)", &p.Model, nil, stepDone)
 	case stepOpus, stepSonnet, stepHaiku, stepFable:
 		slot := config.Slots[int(step-stepOpus)]
-		labels := []string{followFamily}
+		candidates := matching(f.available, p.Family)
+		labels := []string{leaveUnset}
 		values := []string{""}
-		for _, m := range matching(f.available, p.Family) {
-			labels = append(labels, m.Label())
+		for _, m := range candidates {
+			labels = append(labels, candidateLabel(m, slot))
 			values = append(values, m.ID)
 		}
-		def := 0
-		for i, v := range values {
-			if v != "" && v == p.Models[slot] {
-				def = i
-				break
-			}
-		}
-		picked, err := f.pr.ChooseDefault(slot, labels, def)
+		picked, err := f.pr.ChooseDefault(slotLabel(slot), labels, defaultSlotChoice(slot, candidates, p.Models[slot]))
 		if err != nil {
 			return step, err
 		}
@@ -211,15 +200,7 @@ func (f *profileForm) ask(step profileStep) (profileStep, error) {
 	return stepDone, fmt.Errorf("unknown profile step %d", step)
 }
 
-func (f *profileForm) firstSlot() profileStep {
-	if len(matching(f.available, f.profile.Family)) == 0 {
-		fmt.Fprintf(os.Stderr, "note: no advertised model matches family %q; leaving the slots unset\n", f.profile.Family)
-		return stepDone
-	}
-	return stepOpus
-}
-
-// A changed family or gateway cannot keep pins absent from its catalogue.
+// A changed gateway or family cannot keep slot pins it no longer offers.
 func validPins(pins map[string]string, candidates []proxy.Model) map[string]string {
 	valid := make(map[string]bool, len(candidates))
 	for _, m := range candidates {

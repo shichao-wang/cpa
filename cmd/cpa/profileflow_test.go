@@ -72,30 +72,31 @@ func (s *scriptedQuestions) SetIndent(int)  {}
 func (s *scriptedQuestions) Section(string) { s.sections++ }
 func (s *scriptedQuestions) Back()          { s.backs++ }
 
+const agentQuestion = "Agent this profile is for (claude, codex, or a name from \"agents\")"
+const keyQuestion = "API key (optional; env:NAME and cmd:... also work)"
+
 func TestProfileFormBackAndRediscover(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
-		{label: "Profile name", back: true}, // first Esc stays here
+		{label: "Profile name", back: true},
 		{label: "Profile name", text: "devbox"},
 		{label: "Description (optional)"},
+		{label: agentQuestion, text: "claude"},
 		{label: "Gateway base URL", text: "http://first"},
-		{label: "API key (optional; env:NAME and cmd:... also work)"},
-		{label: "Upstream family", index: 1}, // first family
-		{label: "opus", index: 1},
-		{label: "sonnet", back: true},
-		{label: "opus", back: true},
-		{label: "Upstream family", back: true},
-		{label: "API key (optional; env:NAME and cmd:... also work)", back: true},
+		{label: keyQuestion},
+		{label: slotLabel("opus"), index: 1},
+		{label: slotLabel("sonnet"), back: true},
+		{label: slotLabel("opus"), back: true},
+		{label: keyQuestion, back: true},
 		{label: "Gateway base URL", text: "http://second"},
-		{label: "API key (optional; env:NAME and cmd:... also work)"},
-		{label: "Upstream family", index: 1},
-		{label: "opus", index: 0},
-		{label: "sonnet", index: 0},
-		{label: "haiku", index: 0},
-		{label: "fable", index: 0},
+		{label: keyQuestion},
+		{label: slotLabel("opus"), index: 0},
+		{label: slotLabel("sonnet"), index: 0},
+		{label: slotLabel("haiku"), index: 0},
+		{label: slotLabel("fable"), index: 0},
 	}}
 	calls := 0
 	name := ""
-	p := &config.Profile{BaseURL: "http://first"}
+	p := &config.Profile{Agent: "claude", BaseURL: "http://first"}
 	form := &profileForm{ctx: context.Background(), pr: q, name: &name, profile: p,
 		lookup: func(_ context.Context, p *config.Profile) ([]proxy.Model, string) {
 			calls++
@@ -108,37 +109,36 @@ func TestProfileFormBackAndRediscover(t *testing.T) {
 	if err := form.run(); err != nil {
 		t.Fatal(err)
 	}
-	if calls != 2 || q.backs != 4 || q.sections != 2 {
-		t.Errorf("discovery calls = %d, back steps = %d, sections = %d; want 2, 4, 2", calls, q.backs, q.sections)
+	if calls != 2 || q.backs != 3 || q.sections != 2 {
+		t.Errorf("discovery calls = %d, back steps = %d, sections = %d; want 2, 3, 2", calls, q.backs, q.sections)
 	}
-	if name != "devbox" || p.BaseURL != "http://second" || len(p.Models) != 0 {
-		t.Errorf("name=%q, baseURL=%q, pins=%v", name, p.BaseURL, p.Models)
+	if name != "devbox" || p.BaseURL != "http://second" || len(p.Models) != 0 || len(q.answers) != 0 {
+		t.Errorf("name=%q, baseURL=%q, pins=%v, remaining=%v", name, p.BaseURL, p.Models, q.answers)
 	}
 }
 
-func TestProfileFormCustomFamilyBack(t *testing.T) {
+func TestProfileFormOfflineClaudeBack(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
-		{label: "Profile name", text: "custom"},
+		{label: "Profile name", text: "offline"},
 		{label: "Description (optional)"},
+		{label: agentQuestion, text: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
-		{label: "API key (optional; env:NAME and cmd:... also work)"},
-		{label: "Upstream family", index: 2}, // custom after one family
-		{label: "Family (matched against model ids)", back: true},
-		{label: "Upstream family", index: 2},
-		{label: "Family (matched against model ids)", text: "missing"},
+		{label: keyQuestion},
+		{label: "Upstream family (optional)", text: "deepseek"},
+		{label: "Model for every slot (optional)", back: true},
+		{label: "Upstream family (optional)", text: "gpt"},
+		{label: "Model for every slot (optional)", text: "gpt-5"},
 	}}
 	name := ""
-	p := &config.Profile{BaseURL: "http://gateway"}
+	p := &config.Profile{Agent: "claude"}
 	form := &profileForm{ctx: context.Background(), pr: q, name: &name, profile: p,
-		lookup: func(context.Context, *config.Profile) ([]proxy.Model, string) {
-			return []proxy.Model{{ID: "deepseek-chat"}}, ""
-		},
+		lookup: func(context.Context, *config.Profile) ([]proxy.Model, string) { return nil, "offline" },
 	}
 	if err := form.run(); err != nil {
 		t.Fatal(err)
 	}
-	if p.Family != "missing" || q.backs != 1 || !reflect.DeepEqual(q.calls[len(q.calls)-3:], []string{"Family (matched against model ids)", "Upstream family", "Family (matched against model ids)"}) {
-		t.Errorf("family=%q, backs=%d, calls=%v", p.Family, q.backs, q.calls)
+	if p.Family != "gpt" || p.Model != "gpt-5" || q.backs != 1 {
+		t.Errorf("fallback answers: family=%q model=%q backs=%d", p.Family, p.Model, q.backs)
 	}
 }
 
@@ -146,11 +146,12 @@ func TestProfileFormNoDiscoverSkipsModelQuestions(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Profile name", text: "offline"},
 		{label: "Description (optional)"},
+		{label: agentQuestion, text: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
-		{label: "API key (optional; env:NAME and cmd:... also work)"},
+		{label: keyQuestion},
 	}}
 	name := ""
-	p := &config.Profile{}
+	p := &config.Profile{Agent: "claude"}
 	form := &profileForm{ctx: context.Background(), pr: q, name: &name, profile: p, noDiscover: true,
 		lookup: func(context.Context, *config.Profile) ([]proxy.Model, string) {
 			t.Fatal("discovery should be skipped")
@@ -160,32 +161,76 @@ func TestProfileFormNoDiscoverSkipsModelQuestions(t *testing.T) {
 	if err := form.run(); err != nil {
 		t.Fatal(err)
 	}
-	if len(q.answers) != 0 || strings.Join(q.calls, ",") == "" {
-		t.Errorf("unconsumed answers: %v; calls: %v", q.answers, q.calls)
+	if len(q.answers) != 0 || q.sections != 0 {
+		t.Errorf("unconsumed answers: %v; sections: %d", q.answers, q.sections)
 	}
 }
 
-func TestProfileFormUnavailableCatalogueAndCancel(t *testing.T) {
+func TestProfileFormOtherAgents(t *testing.T) {
+	for _, tc := range []struct {
+		agent string
+		model bool
+	}{
+		{"codex", true},
+		{"unknown-agent", false},
+	} {
+		t.Run(tc.agent, func(t *testing.T) {
+			answers := []formAnswer{
+				{label: "Profile name", text: "other"},
+				{label: "Description (optional)"},
+				{label: agentQuestion, text: tc.agent},
+				{label: "Gateway base URL", text: "http://gateway"},
+				{label: keyQuestion},
+			}
+			if tc.model {
+				answers = append(answers, formAnswer{label: "Model (optional)", text: "o3"})
+			}
+			q := &scriptedQuestions{answers: answers}
+			name := ""
+			p := &config.Profile{Agent: tc.agent}
+			form := &profileForm{ctx: context.Background(), pr: q, name: &name, profile: p,
+				lookup: func(context.Context, *config.Profile) ([]proxy.Model, string) {
+					t.Fatal("non-Claude agent must not discover Claude models")
+					return nil, ""
+				},
+			}
+			if err := form.run(); err != nil {
+				t.Fatal(err)
+			}
+			if len(q.answers) != 0 || (p.Model != "") != tc.model {
+				t.Errorf("remaining=%v, model=%q", q.answers, p.Model)
+			}
+		})
+	}
+}
+
+func TestProfileFormChangingAgentAfterBack(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
-		{label: "Profile name", text: "offline"},
+		{label: "Profile name", text: "switch"},
 		{label: "Description (optional)"},
+		{label: agentQuestion, text: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
-		{label: "API key (optional; env:NAME and cmd:... also work)"},
-		{label: "Upstream family (optional)", text: "deepseek"},
-		{label: "Model for every slot (optional)", back: true},
-		{label: "Upstream family (optional)", text: "gpt"},
-		{label: "Model for every slot (optional)", text: "gpt-5"},
+		{label: keyQuestion},
+		{label: slotLabel("opus"), back: true},
+		{label: keyQuestion, back: true},
+		{label: "Gateway base URL", back: true},
+		{label: agentQuestion, text: "codex"},
+		{label: "Gateway base URL", text: "http://gateway"},
+		{label: keyQuestion},
+		{label: "Model (optional)", text: "o3"},
 	}}
 	name := ""
-	p := &config.Profile{}
+	p := &config.Profile{Agent: "claude", Models: map[string]string{"opus": "old"}}
 	form := &profileForm{ctx: context.Background(), pr: q, name: &name, profile: p,
-		lookup: func(context.Context, *config.Profile) ([]proxy.Model, string) { return nil, "offline" },
+		lookup: func(context.Context, *config.Profile) ([]proxy.Model, string) {
+			return []proxy.Model{{ID: "old"}}, ""
+		},
 	}
 	if err := form.run(); err != nil {
 		t.Fatal(err)
 	}
-	if p.Family != "gpt" || p.Model != "gpt-5" || q.backs != 1 {
-		t.Errorf("fallback answers: family=%q model=%q backs=%d", p.Family, p.Model, q.backs)
+	if p.Agent != "codex" || p.Model != "o3" || len(p.Models) != 0 || q.backs != 3 {
+		t.Errorf("agent=%q, model=%q, pins=%v, backs=%d", p.Agent, p.Model, p.Models, q.backs)
 	}
 }
 

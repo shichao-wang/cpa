@@ -85,6 +85,35 @@ func TestListModelsReportsHTTPError(t *testing.T) {
 	}
 }
 
+// The label is read by someone choosing between two dozen ids, so it has to
+// carry the provider: a name like deepseek/deepseek-v4-pro does not say who
+// actually serves it, and a gateway reselling several upstreams is precisely
+// where the choice matters.
+func TestLabelCarriesTheProvider(t *testing.T) {
+	cases := []struct {
+		name  string
+		model Model
+		want  string
+	}{
+		{"bare id", Model{ID: "gpt-6-sol"}, "gpt-6-sol"},
+		{"display name", Model{ID: "gpt-6-sol", DisplayName: "GPT-6 Sol"},
+			"gpt-6-sol (GPT-6 Sol)"},
+		// A gateway that echoes the id back as the display name has not named
+		// anything, and the row should not read as if it had.
+		{"display name equal to the id", Model{ID: "gpt-6-sol", DisplayName: "gpt-6-sol"},
+			"gpt-6-sol"},
+		{"provider", Model{ID: "deepseek/deepseek-v4-pro", OwnedBy: "commandcode"},
+			"deepseek/deepseek-v4-pro  [commandcode]"},
+		{"all three", Model{ID: "claude-opus-5", DisplayName: "Opus 5", OwnedBy: "anthropic"},
+			"claude-opus-5 (Opus 5)  [anthropic]"},
+	}
+	for _, tc := range cases {
+		if got := tc.model.Label(); got != tc.want {
+			t.Errorf("%s: Label = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 func ids(ms []Model) []string {
 	out := make([]string, 0, len(ms))
 	for _, m := range ms {
