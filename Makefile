@@ -28,6 +28,8 @@ install: build
 upgrade:
 	@git rev-parse --git-dir >/dev/null 2>&1 || { \
 		echo "upgrade: not a git checkout — clone the repo, or re-run install.sh" >&2; exit 1; }
+	@git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1 || { \
+		echo "upgrade: no upstream on this branch; set one, or use 'make install' to just rebuild" >&2; exit 1; }
 	@git diff --quiet && git diff --cached --quiet || { \
 		echo "upgrade: uncommitted changes; commit or stash them first" >&2; exit 1; }
 	@before='not installed'; \
