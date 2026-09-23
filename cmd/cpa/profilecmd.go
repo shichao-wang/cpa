@@ -175,10 +175,19 @@ func cmdProfileCreate(ctx context.Context, args []string) error {
 	}
 	defer pr.Close()
 
-	if err := interactiveProfile(ctx, pr, &name, p, f.noDiscover); err != nil {
+	form := newProfileForm(ctx, pr, &name, p, f.noDiscover)
+	if err := form.run(); err != nil {
 		return err
 	}
-	return commitProfile(ctx, path, name, p, f, pr)
+	for {
+		err := commitProfile(ctx, path, name, p, f, pr)
+		if !errors.Is(err, prompt.ErrBack) {
+			return err
+		}
+		if err := form.backFromConfirmation(); err != nil {
+			return err
+		}
+	}
 }
 
 // resolveKind answers what kind of agent a name is, which is what decides the
@@ -283,6 +292,9 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 		ok, err := pr.Confirm(
 			fmt.Sprintf("Profile %q already exists in %s (currently %s). Overwrite it?", name, path, describeProfile(old)),
 			"Overwrite", "Cancel")
+		if errors.Is(err, prompt.ErrBack) {
+			return err
+		}
 		if err != nil {
 			return aborted(err)
 		}

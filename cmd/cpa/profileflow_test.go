@@ -234,6 +234,30 @@ func TestProfileFormChangingAgentAfterBack(t *testing.T) {
 	}
 }
 
+func TestProfileFormBackFromOverwriteConfirmation(t *testing.T) {
+	q := &scriptedQuestions{answers: []formAnswer{
+		{label: "Profile name", text: "existing"},
+		{label: "Description (optional)"},
+		{label: agentQuestion, text: "claude"},
+		{label: "Gateway base URL", text: "http://gateway"},
+		{label: keyQuestion, text: "old-key"},
+		{label: keyQuestion, text: "new-key"},
+	}}
+	name := ""
+	p := &config.Profile{Agent: "claude"}
+	form := newProfileForm(context.Background(), q, &name, p, true)
+	if err := form.run(); err != nil {
+		t.Fatal(err)
+	}
+	// Confirm already erased its unanswered row when it returned ErrBack.
+	if err := form.backFromConfirmation(); err != nil {
+		t.Fatal(err)
+	}
+	if p.APIKey != "new-key" || q.backs != 1 || len(q.answers) != 0 {
+		t.Errorf("key=%q, backs=%d, remaining=%v", p.APIKey, q.backs, q.answers)
+	}
+}
+
 func TestProfileFormInterrupt(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{{label: "Profile name", abort: true}}}
 	name := ""

@@ -53,16 +53,30 @@ type profileForm struct {
 	history         []profileStep
 }
 
-func interactiveProfile(ctx context.Context, pr *prompt.Prompter, name *string, p *config.Profile, noDiscover bool) error {
+func newProfileForm(ctx context.Context, pr profileQuestions, name *string, p *config.Profile, noDiscover bool) *profileForm {
 	if p.BaseURL == "" {
 		p.BaseURL = "http://127.0.0.1:8317"
 	}
-	form := &profileForm{ctx: ctx, pr: pr, lookup: discover, name: name, profile: p, noDiscover: noDiscover}
-	return form.run()
+	return &profileForm{ctx: ctx, pr: pr, lookup: discover, name: name, profile: p, noDiscover: noDiscover}
 }
 
 func (f *profileForm) run() error {
-	step := stepName
+	return f.runFrom(stepName)
+}
+
+// A confirmation is another question after the form. Esc returns to the last
+// question actually shown, keeping the answers and discovery cache intact.
+func (f *profileForm) backFromConfirmation() error {
+	if len(f.history) == 0 {
+		return aborted(prompt.ErrBack)
+	}
+	step := f.history[len(f.history)-1]
+	f.history = f.history[:len(f.history)-1]
+	f.pr.Back()
+	return f.runFrom(step)
+}
+
+func (f *profileForm) runFrom(step profileStep) error {
 	for step != stepDone {
 		if step == stepDownstream {
 			step = f.downstream()
