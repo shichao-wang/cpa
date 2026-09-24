@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -63,6 +64,38 @@ func TestProfileCreateWritesProfile(t *testing.T) {
 	}
 	if p.Model != "deepseek-flash[1m]" {
 		t.Errorf("model = %q", p.Model)
+	}
+}
+
+func TestProfileCreateSuggestsWorkingLaunchCommand(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	stdout := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = stdout }()
+
+	path := filepath.Join(t.TempDir(), "settings.json")
+	createErr := cmdProfileCreate(context.Background(), []string{
+		"--file", path, "--name", "devbox",
+		"--base-url", "http://gateway", "--no-discover",
+	})
+	os.Stdout = stdout
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	output, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if createErr != nil {
+		t.Fatal(createErr)
+	}
+	if !strings.Contains(string(output), "  cpa --profile devbox claude\n") {
+		t.Errorf("suggested command in %q; want profile before agent", output)
 	}
 }
 

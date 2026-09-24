@@ -60,6 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -102,10 +103,10 @@ jobs:
 
           labels=""
           pr="$(gh api "repos/${REPO}/commits/${SHA}/pulls" \
-            --jq '.[0].number // empty' 2>/dev/null || true)"
+            --jq '.[0].number // empty')"
           if [ -n "$pr" ]; then
             labels="$(gh api "repos/${REPO}/pulls/${pr}" \
-              --jq '.labels[].name' 2>/dev/null || true)"
+              --jq '.labels[].name')"
           fi
 
           if grep -qx 'skip-release' <<<"$labels"; then

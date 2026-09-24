@@ -356,7 +356,7 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 	for _, line := range pickerReport(rows) {
 		fmt.Printf("  %s\n", line)
 	}
-	fmt.Printf("  cpa profile list\n  cpa %s --profile %s\n", p.Agent, name)
+	fmt.Printf("  cpa profile list\n  cpa --profile %s %s\n", name, p.Agent)
 	return nil
 }
 
