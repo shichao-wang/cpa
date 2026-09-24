@@ -18,7 +18,8 @@ const starterConfig = `{
   "defaultProfile": "deepseek",
   "defaults": {
     "env": {
-      "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "90"
+      "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "90",
+      "CLAUDE_CODE_AUTO_MODE_SERVER": "0"
     }
   },
   "profiles": {
