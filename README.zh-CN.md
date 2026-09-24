@@ -137,8 +137,9 @@ $ git pull --ff-only && make install
 指向 `main` 的 PR 会先由
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 运行格式检查、vet、测试和
 交叉编译。要阻止失败的 PR 被合并，还需在分支保护中将 `test` 设为必需检查。
-合并后会再次运行检查，通过后才自动打 tag 发 release——所以 `cpa upgrade`
-总能拿到最新的代码。tag 形如 `v<日期>-<commit>`，即 UTC 日期加上合并提交的前
+合并后由 [`.github/workflows/release.yml`](.github/workflows/release.yml)
+再次运行检查，通过后才自动打 tag 发 release——所以 `cpa upgrade` 总能拿到
+最新的代码。tag 形如 `v<日期>-<commit>`，即 UTC 日期加上合并提交的前
 6 位（`v2026.09.23-a1b2c3`），既指明构建自哪棵树，同一天多次合并也不会
 撞名。给 PR 打 `skip-release` 标签则这次合并不发版。
 
