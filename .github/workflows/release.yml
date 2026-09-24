@@ -1,0 +1,185 @@
+name: release
+
+# Run tests before publishing after a merge to main or a manually pushed tag.
+# Pull requests use ci.yml instead, so no release job appears in PR checks.
+# Pushing a tag by hand (`git push origin v2026.09.23-a1b2c3`) uses the version
+# you chose instead of inventing one.
+#
+# A merge is tagged v<UTC date>-<commit>, the date plus the first six
+# characters of the merge commit (v2026.09.23-a1b2c3): the tag names exactly
+# the tree it was built from, and two merges in one day still get distinct
+# tags. One label still applies:
+#
+#   skip-release    publish nothing for this merge
+#
+# The tag is pushed with the workflow's own token, which by design does not
+# start another workflow run — so publishing happens here, not in a
+# tag-triggered job.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Format
+        run: |
+          gofmt -l . | tee /tmp/fmt
+          test ! -s /tmp/fmt
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      # Catch broken release targets before publishing.
+      - name: Cross-compile
+        run: |
+          set -euo pipefail
+          for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
+            CGO_ENABLED=0 GOOS="${target%/*}" GOARCH="${target#*/}" \
+              go build -o /dev/null ./cmd/cpa
+          done
+
+  # Only a merge to main or a manually pushed tag may publish, after tests pass.
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Tags: the already-released check reads them, and --generate-notes
+          # needs the previous one to write its range.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Work out the version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Read once, so a job that straddles midnight UTC does not write a
+          # date into the tag that its own log line disagrees with.
+          stamp="$(date -u +%Y.%m.%d)"
+
+          # A tag pushed by hand names the version itself.
+          if [[ "$REF" == refs/tags/v* ]]; then
+            echo "tag=${REF#refs/tags/}" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Re-running this job must not invent a second version for a commit
+          # that has already been released.
+          already="$(git tag --points-at "$SHA" --list 'v*' | head -n1)"
+          if [ -n "$already" ]; then
+            echo "tag=$already" >>"$GITHUB_OUTPUT"
+            echo "${SHA:0:7} is already ${already}"
+            exit 0
+          fi
+
+          labels=""
+          pr="$(gh api "repos/${REPO}/commits/${SHA}/pulls" \
+            --jq '.[0].number // empty')"
+          if [ -n "$pr" ]; then
+            labels="$(gh api "repos/${REPO}/pulls/${pr}" \
+              --jq '.labels[].name')"
+          fi
+
+          if grep -qx 'skip-release' <<<"$labels"; then
+            echo "skip=1" >>"$GITHUB_OUTPUT"
+            echo "skip-release label: publishing nothing for ${SHA:0:7}"
+            exit 0
+          fi
+
+          echo "tag=v${stamp}-${SHA:0:6}" >>"$GITHUB_OUTPUT"
+          echo "v${stamp}-${SHA:0:6} for ${SHA:0:7}"
+
+      - name: Build archives
+        if: steps.version.outputs.skip != '1'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          mkdir -p dist
+          # Stage each tree contents in their own directory: a bare
+          # `rm -rf dist/cpa_*` would also match the .tar.gz files.
+          for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            name="cpa_${ver}_${os}_${arch}"
+            mkdir -p "dist/stage/${name}"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+              go build -trimpath -ldflags "-s -w -X main.version=${TAG}" \
+              -o "dist/stage/${name}/cpa" ./cmd/cpa
+            cp README.md README.zh-CN.md LICENSE "dist/stage/${name}/"
+            cp -R examples "dist/stage/${name}/"
+            tar -C dist/stage -czf "dist/${name}.tar.gz" "${name}"
+          done
+          rm -rf dist/stage
+          (cd dist && sha256sum *.tar.gz > checksums.txt)
+          cat dist/checksums.txt
+
+      - name: Tag and publish
+        if: steps.version.outputs.skip != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release ${TAG} already exists; nothing to do"
+            exit 0
+          fi
+
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "tag ${TAG} already exists; publishing it"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "${TAG}" -m "${TAG}" "$SHA"
+            git push origin "${TAG}"
+          fi
+
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --generate-notes \
+            dist/*.tar.gz dist/checksums.txt install.sh
+
+          # Nothing here reads the release back. A fresh release is simply not
+          # downloadable for the first couple of minutes - seconds after
+          # v2026.09.23-ed88bb and v2026.09.23-022592 were published, both the
+          # download URL and the releases API answered as if the release were
+          # empty, while all six assets were attached and downloading fine a
+          # few minutes later - so any check that reads one back right here can
+          # only ever false-alarm, which it did twice before this was removed.
+          # A failed upload already fails this step: gh release create exits
+          # non-zero on one. If a release ever does come out with nothing behind
+          # it, the lever is a re-upload, not a re-run:
+          #   gh release upload <tag> --clobber dist/*.tar.gz dist/checksums.txt install.sh
