@@ -285,6 +285,7 @@ func TestProfileFormSearchChoiceKeepsModelIndex(t *testing.T) {
 		{label: slotLabel("sonnet"), index: 0},
 		{label: slotLabel("haiku"), index: 0},
 		{label: slotLabel("fable"), index: 0},
+		{label: "Fallback models (optional; comma-separated, in order, max 3)"},
 	}}
 	name := ""
 	p := &config.Profile{Agent: "claude"}
