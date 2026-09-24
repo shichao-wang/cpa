@@ -1,12 +1,12 @@
 name: ci
 
-# This runs after the merge, not on the pull request. A merge to main runs the
-# tests here, and a merge that passes them is tagged and released in the same
-# run, so a tag only ever comes from a green tree. Nothing gates a PR before
-# it is merged: the merge is what starts this.
+# Pull requests run the tests before merging. To block a failing PR, require
+# the `test` status check in main's branch protection. Merges and manual tags
+# run the tests again before publishing, so a release always comes from a
+# green tree. PR runs never publish.
 #
-# Pushing a tag by hand (`git push origin v2026.09.23-a1b2c3`) takes the same
-# path with the version you chose instead of inventing one.
+# Pushing a tag by hand (`git push origin v2026.09.23-a1b2c3`) uses the version
+# you chose instead of inventing one.
 #
 # A merge is tagged v<UTC date>-<commit>, the date plus the first six
 # characters of the merge commit (v2026.09.23-a1b2c3): the tag names exactly
@@ -20,12 +20,14 @@ name: ci
 # tag-triggered job.
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -48,8 +50,7 @@ jobs:
       - name: Test
         run: go test ./...
 
-      # The release job cross-compiles all four targets; catching a broken
-      # one here keeps it from surfacing only after the merge.
+      # Catch broken release targets before merging and before publishing.
       - name: Cross-compile
         run: |
           set -euo pipefail
@@ -58,12 +59,13 @@ jobs:
               go build -o /dev/null ./cmd/cpa
           done
 
-  # Both triggers are release occasions — a merge to main, or a tag pushed by
-  # hand — so this job carries no ref guard of its own: `needs: test` is the
-  # whole condition.
+  # Only a merge to main or a manually pushed tag may publish, after tests pass.
   release:
     needs: test
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:

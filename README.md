@@ -148,13 +148,15 @@ $ curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpa/main/install.sh 
 $ git pull --ff-only && make install
 ```
 
-Every merge to `main` runs the tests in
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) and, when they pass,
-tags a release — so `cpa upgrade` gets you the newest code. A merge is tagged
-`v<date>-<commit>`, the UTC date plus the first six characters of the merge
-commit (`v2026.09.23-a1b2c3`), so a tag names exactly the tree it was built
-from, and two merges in one day still get distinct tags. Label a PR
-`skip-release` to publish nothing for it.
+Pull requests to `main` run format, vet, tests, and cross-compilation in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) before merging. Set the
+`test` status check as required in branch protection to block failing PRs. A
+merge runs those checks again before tagging and publishing a release — so
+`cpa upgrade` gets you the newest code. A merge is tagged `v<date>-<commit>`,
+the UTC date plus the first six characters of the merge commit
+(`v2026.09.23-a1b2c3`), so a tag names exactly the tree it was built from,
+and two merges in one day still get distinct tags. Label a PR `skip-release`
+to publish nothing for it.
 
 Both routes write the same file, `~/.local/bin/cpa`: `make install` defaults
 to `PREFIX=$(HOME)/.local`, which is the path `install.sh` calls
