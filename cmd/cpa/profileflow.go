@@ -45,7 +45,12 @@ type profileForm struct {
 	ctx             context.Context
 	pr              profileQuestions
 	lookup          func(context.Context, *config.Profile) ([]proxy.Model, string)
+	kind            func(string) config.Kind
 	name            *string
+	path            string
+	force           bool
+	editing         bool
+	start           profileStep
 	profile         *config.Profile
 	noDiscover      bool
 	available       []proxy.Model
@@ -59,11 +64,11 @@ func newProfileForm(ctx context.Context, pr profileQuestions, name *string, p *c
 	if p.BaseURL == "" {
 		p.BaseURL = "http://127.0.0.1:8317"
 	}
-	return &profileForm{ctx: ctx, pr: pr, lookup: discover, name: name, profile: p, noDiscover: noDiscover}
+	return &profileForm{ctx: ctx, pr: pr, lookup: discover, kind: resolveKind, name: name, profile: p, noDiscover: noDiscover, start: stepName}
 }
 
 func (f *profileForm) run() error {
-	return f.runFrom(stepName)
+	return f.runFrom(f.start)
 }
 
 // A confirmation is another question after the form. Esc returns to the last
@@ -100,11 +105,15 @@ func (f *profileForm) runFrom(step profileStep) error {
 		f.pr.SetIndent(indent)
 		next, err := f.ask(step)
 		if errors.Is(err, prompt.ErrBack) {
-			if len(f.history) > 0 {
-				step = f.history[len(f.history)-1]
-				f.history = f.history[:len(f.history)-1]
-				f.pr.Back()
+			if len(f.history) == 0 {
+				if f.editing {
+					return aborted(err)
+				}
+				continue
 			}
+			step = f.history[len(f.history)-1]
+			f.history = f.history[:len(f.history)-1]
+			f.pr.Back()
 			continue
 		}
 		if err != nil {
@@ -119,7 +128,11 @@ func (f *profileForm) runFrom(step profileStep) error {
 // Only Claude has four slots. A missing catalogue keeps the existing offline
 // family/model questions; other agents either ask one model or no model at all.
 func (f *profileForm) downstream() profileStep {
-	switch resolveKind(f.profile.Agent) {
+	kind := f.kind
+	if kind == nil {
+		kind = resolveKind
+	}
+	switch kind(f.profile.Agent) {
 	case config.KindClaude:
 		if f.noDiscover {
 			return stepFallbackModel
@@ -130,19 +143,29 @@ func (f *profileForm) downstream() profileStep {
 		}
 		candidates := matching(f.available, f.profile.Family)
 		if len(candidates) == 0 {
-			f.profile.Models = nil
-			fmt.Fprintf(os.Stderr, "note: no advertised model matches family %q; leaving the slots unset\n", f.profile.Family)
+			if f.editing {
+				fmt.Fprintf(os.Stderr, "note: no advertised model matches family %q; keeping existing slots\n", f.profile.Family)
+			} else {
+				f.profile.Models = nil
+				fmt.Fprintf(os.Stderr, "note: no advertised model matches family %q; leaving the slots unset\n", f.profile.Family)
+			}
 			return stepFallbackModel
 		}
-		f.profile.Models = validPins(f.profile.Models, candidates)
+		if !f.editing {
+			f.profile.Models = validPins(f.profile.Models, candidates)
+		}
 		return stepOpus
 	case config.KindOpenAI:
-		f.profile.FallbackModel = nil
-		f.profile.Models = nil
+		if !f.editing {
+			f.profile.FallbackModel = nil
+			f.profile.Models = nil
+		}
 		return stepOtherModel
 	default:
-		f.profile.FallbackModel = nil
-		f.profile.Models = nil
+		if !f.editing {
+			f.profile.FallbackModel = nil
+			f.profile.Models = nil
+		}
 		return stepDone
 	}
 }
@@ -160,7 +183,7 @@ func (f *profileForm) discover() {
 	f.catalogueLoaded, f.discoveredURL, f.discoveredKey = true, p.BaseURL, p.APIKey
 	// A gateway that is temporarily unavailable cannot disprove an explicit pin.
 	// Keep it for the offline fallback rather than dropping it on discovery failure.
-	if len(f.available) > 0 {
+	if len(f.available) > 0 && !f.editing {
 		p.Models = validPins(p.Models, f.available)
 	}
 }
@@ -176,14 +199,35 @@ func (f *profileForm) ask(step profileStep) (profileStep, error) {
 	}
 	switch step {
 	case stepName:
-		return input("Profile name", f.name, notBlank("a profile needs a name"), stepDescription)
+		return input("Profile name", f.name, func(s string) error {
+			if err := notBlank("a profile needs a name")(s); err != nil {
+				return err
+			}
+			if f.path != "" && !f.force {
+				return ensureNewProfile(f.path, strings.TrimSpace(s))
+			}
+			return nil
+		}, stepDescription)
 	case stepDescription:
 		return input("Description (optional)", &p.Description, nil, stepAgent)
 	case stepAgent:
-		return input("Agent this profile is for (claude, codex, or a name from \"agents\")", &p.Agent, notBlank("a profile needs an agent"), stepBaseURL)
+		validate := notBlank("a profile needs an agent")
+		if f.editing && p.Agent == "" {
+			validate = nil // An existing unbound profile may remain unbound.
+		}
+		return input("Agent this profile is for (claude, codex, or a name from \"agents\")", &p.Agent, validate, stepBaseURL)
 	case stepBaseURL:
 		return input("Gateway base URL", &p.BaseURL, validBaseURL, stepAPIKey)
 	case stepAPIKey:
+		if f.editing {
+			answer, err := f.pr.Input("New API key (blank keeps current; env:NAME and cmd:... also work)", "", nil)
+			if err == nil && answer != "" {
+				p.APIKey = answer
+				p.APIKeyEnv = ""
+				p.APIKeyCmd = ""
+			}
+			return stepDownstream, err
+		}
 		return input("API key (optional; env:NAME and cmd:... also work)", &p.APIKey, nil, stepDownstream)
 	case stepFamily:
 		return input("Upstream family (optional)", &p.Family, nil, stepModel)
@@ -204,6 +248,15 @@ func (f *profileForm) ask(step profileStep) (profileStep, error) {
 	case stepOpus, stepSonnet, stepHaiku, stepFable:
 		slot := config.Slots[int(step-stepOpus)]
 		candidates := matching(f.available, p.Family)
+		if f.editing && p.Models[slot] != "" {
+			found := false
+			for _, m := range candidates {
+				found = found || m.ID == p.Models[slot]
+			}
+			if !found {
+				candidates = append([]proxy.Model{{ID: p.Models[slot]}}, candidates...)
+			}
+		}
 		labels := []string{leaveUnset}
 		values := []string{""}
 		for _, m := range candidates {

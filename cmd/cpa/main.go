@@ -29,6 +29,7 @@ USAGE
   cpa models  [--profile <name>]           list models the gateway advertises
   cpa profile list                         list configured profiles
   cpa profile create                       create one interactively
+  cpa profile edit <name>                  update an existing profile
   cpa doctor                               check every profile's endpoint
   cpa init [--force]                       write a starter settings file
   cpa import-claude [--name <name>]        turn ~/.claude/settings.json into a profile
@@ -51,10 +52,10 @@ FLAGS
   --allow-settings-conflict
                      proceed even if you passed your own --settings
   --name <name>      profile name to create ("import-claude", "profile create")
-  --agent <name>     agent the profile is for ("profile create", default: claude)
-  --file <path>      settings file to write ("profile create")
-  --check, --tag, --force
-                     "cpa upgrade" only; see "cpa upgrade --help"
+  --agent <name>     agent for "profile create/edit" (create default: claude)
+  --file <path>      settings file for "profile create/edit"
+  --force            replace a profile on create; also used by init/upgrade
+  --check, --tag     "cpa upgrade" only; see "cpa upgrade --help"
 
 Launch flags belong before the agent name. Everything after it is passed to
 that agent unchanged, including -p and --profile. For example:

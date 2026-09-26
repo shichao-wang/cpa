@@ -439,7 +439,8 @@ the slots that model serves.
 | `cpa [flags] <agent> [agent args]` | Launch an agent with a profile. |
 | `cpa models --profile X` | List the gateway's models and the slot mapping. |
 | `cpa profile list [--json]` | List configured profiles. |
-| `cpa profile create` | Add one: prompts on a terminal, flags otherwise. |
+| `cpa profile create` | Add one: prompts on a terminal, flags otherwise; detects a duplicate at the name prompt. |
+| `cpa profile edit <name>` | Update an existing profile in the target file; pre-fills values on a terminal and patches only explicit flags otherwise. |
 | `cpa doctor` | Check every profile's endpoint and key. |
 | `cpa init [--force]` | Write a starter settings file. |
 | `cpa import-claude` | Turn `~/.claude/settings.json`'s env into a profile. |
@@ -455,6 +456,19 @@ first `-p` for cpa and the second for Claude Code. Other commands also accept
 `--api-key`, `--family`, `--model` and `--force`, which answer its prompts
 without a terminal. `--family` remains available as a fallback for any slot
 left unpinned; the interactive flow configures Claude Code's slots directly.
+
+Create reports a duplicate at the name prompt (or immediately with `--name`)
+and suggests `cpa profile edit <name>`. Only `create --force` replaces the entire
+existing profile, potentially removing advanced fields. Edit looks in the user
+config by default; pass `--file <path>` for a profile defined in a project
+config. It never copies the merged `profile list` view into the user file.
+Interactive editing pre-fills common values, keeps the existing credential,
+and requires an explicit save choice. In a script, use e.g.
+`cpa profile edit devbox --base-url http://gateway`: omitted flags leave their
+fields untouched, while `--description ""` explicitly clears the description.
+`--api-key ""` clears the current key, including `apiKeyEnv`/`apiKeyCmd` sources.
+Advanced fields and custom settings not shown by the form are preserved; edit
+the target JSON directly to change them. Rename is not supported yet.
 
 ## Troubleshooting
 
