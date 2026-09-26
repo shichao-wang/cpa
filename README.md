@@ -179,7 +179,10 @@ $ cpa --profile deepseek claude
 `cpa profile create` walks you through a new profile: name, description, the
 agent it is for, gateway URL and key, then — having asked the gateway what it
 serves — the mapping from what the agent itself asks for onto what the gateway
-has. For Claude Code that is one row per slot, read from the agent's side: the
+has. The agent is picked from the ones your settings declare, plus `claude` and
+`codex`, with an `(other — type a name)` row that takes one from the keyboard;
+a name nothing declares would not launch, so it is not offered as a row. For
+Claude Code that is one row per slot, read from the agent's side: the
 row is named by the model Claude Code resolves for that slot, and the answer is
 the model on your gateway that should serve it. Every answer is picked from an
 arrow-key list of the models the gateway actually advertises, so it cannot be
@@ -198,7 +201,7 @@ another agent is asked for a single model instead: only Claude Code has slots.
 $ cpa profile create
 ✓ Profile name devbox
 ✓ Description (optional) devbox gateway
-✓ Agent this profile is for (claude, codex, or a name from "agents") claude
+✓ Agent this profile is for claude
 ✓ Gateway base URL http://127.0.0.1:18317
 ✓ API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
 Model configuration

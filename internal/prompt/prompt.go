@@ -38,6 +38,7 @@ type Prompter struct {
 	fd     int
 	dec    *decoder
 	out    io.Writer
+	err    io.Writer
 	state  *term.State
 	closed bool
 	// drawn is how many lines were painted below the current label, so the
@@ -66,6 +67,22 @@ func New(in *os.File, out io.Writer) (*Prompter, error) {
 		return nil, err
 	}
 	return &Prompter{fd: fd, dec: newTerminalDecoder(in, fd), out: out, state: state}, nil
+}
+
+// SetErr points the prompter's notes at a writer other than stderr, which is
+// where they go by default. The interactive form is drawn on the terminal while
+// its notes are not, so a caller that wants to put a note somewhere else — a
+// buffer under test — says so here.
+func (p *Prompter) SetErr(w io.Writer) { p.err = w }
+
+// note writes one of the prompter's own remarks: not part of the question, and
+// never on the question's stream.
+func (p *Prompter) note(format string, args ...interface{}) {
+	w := p.err
+	if w == nil {
+		w = os.Stderr
+	}
+	fmt.Fprintf(w, format, args...)
 }
 
 // Close restores the terminal. It is safe to call more than once.
@@ -509,7 +526,7 @@ func (p *Prompter) drawMultiList(label string, l *List, query string, picked []s
 		n++
 	}
 	if l.Len() == 0 {
-		fmt.Fprintf(p.out, "\n\r\x1b[K%s%s", indent, clip("No matching models", avail))
+		fmt.Fprintf(p.out, "\n\r\x1b[K%s%s", indent, clip("No matching entries", avail))
 		n++
 	}
 	// A window shorter than the list says so on its own first and last rows,
@@ -575,7 +592,7 @@ func (p *Prompter) drawListWithSearch(label string, l *List, query string, searc
 	fmt.Fprintf(p.out, "\r\x1b[K%s\x1b[1m?\x1b[0m %s", p.indent, label)
 	n := 0
 	if searchable && l.Len() == 0 {
-		fmt.Fprintf(p.out, "\n\r\x1b[K%s  %s", p.indent, clip("No matching models", max(width-len(p.indent)-2, 1)))
+		fmt.Fprintf(p.out, "\n\r\x1b[K%s  %s", p.indent, clip("No matching entries", max(width-len(p.indent)-2, 1)))
 		n++
 	}
 	// A window shorter than the list says so on its own first and last rows,

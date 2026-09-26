@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/shichao-wang/cpa/internal/config"
@@ -48,7 +49,10 @@ an error, since a profile's model slots and settings mean nothing to another.
 
 With a terminal attached the fields are asked for interactively: first the
 name, description, agent, gateway address and key, then — once the gateway has
-been queried — which of its models serves each of the agent's own. Claude Code
+been queried — which of its models serves each of the agent's own. The agent is
+picked from the ones the settings declare, plus claude and codex and a "(other
+— type a name)" row that takes a name from the keyboard; a name nothing
+declares would not launch, so it is not offered as a row of its own. Claude Code
 is asked one row per slot, named by the model Claude Code itself resolves for
 it and answered from the models the gateway actually advertises. A profile for
 another agent is asked for a single model instead, since only Claude Code has
@@ -205,6 +209,26 @@ func cmdProfileCreate(ctx context.Context, args []string) error {
 		return err
 	}
 	return commitProfile(ctx, path, name, p, f, pr)
+}
+
+// knownAgents is the agents the agent question offers, sorted: the two names
+// cpa answers for with no configuration at all, then everything a settings
+// file declares. `AgentFor` resolves exactly these — a name outside the list
+// is a launch error, not a PATH lookup — so the list is the whole set of
+// answers that can be written into a profile and still launch.
+func knownAgents() []string {
+	seen := map[string]bool{"claude": true, "codex": true}
+	names := []string{"claude", "codex"}
+	if cfg, err := config.Load(); err == nil {
+		for name := range cfg.Agents {
+			if !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 // resolveKind answers what kind of agent a name is, which is what decides the
@@ -459,6 +483,14 @@ const (
 
 	// maxFallbackModels is how many Claude Code fallbacks a profile may carry.
 	maxFallbackModels = 3
+
+	// The agent question is a pick from the agents the settings declare, with
+	// agentOther opening a text row for a name the file does not carry yet;
+	// agentUnbound is only offered when editing, where a profile has been
+	// fixed by an action and is not obliged to fix its bind.
+	agentOther      = "(other — type a name)"
+	agentInputLabel = "Agent name"
+	agentUnbound    = "(leave unbound — fits any agent of its kind)"
 )
 
 // aborted turns the prompter's cancel key into the message the CLI reports.

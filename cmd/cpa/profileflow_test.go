@@ -16,6 +16,10 @@ type formAnswer struct {
 	label string
 	text  string
 	index int
+	// choice names the row of a list by its option text, which is how the
+	// agent question is answered: the rows around a named agent depend on what
+	// the settings declare, so a name is stabler than a count.
+	choice string
 	// picks is the answer to a pickable list, as positions into it. It is
 	// distinct from index so a test can pick several, and none at all.
 	picks []int
@@ -62,11 +66,21 @@ func (s *scriptedQuestions) Input(label, _ string, validate func(string) error) 
 	}
 	return a.text, nil
 }
-func (s *scriptedQuestions) ChooseSearchDefault(label string, options []string, _ int) (int, error) {
+func (s *scriptedQuestions) ChooseSearchDefault(label string, options []string, def int) (int, error) {
 	s.searches++
 	a, err := s.next(label)
 	if err != nil {
 		return 0, err
+	}
+	// A list answered by label names the row it means, so a test does not have
+	// to count rows whose number depends on what the user's settings declare.
+	if a.choice != "" {
+		for i, opt := range options {
+			if opt == a.choice {
+				return i, nil
+			}
+		}
+		return 0, fmt.Errorf("choice %q missing for %q; options %v", a.choice, label, options)
 	}
 	if a.index >= len(options) {
 		return 0, fmt.Errorf("choice %d missing for %q", a.index, label)
@@ -93,7 +107,7 @@ func (s *scriptedQuestions) SetIndent(int)  {}
 func (s *scriptedQuestions) Section(string) { s.sections++ }
 func (s *scriptedQuestions) Back()          { s.backs++ }
 
-const agentQuestion = "Agent this profile is for (claude, codex, or a name from \"agents\")"
+const agentQuestion = "Agent this profile is for"
 const keyQuestion = "API key (optional; env:NAME and cmd:... also work)"
 
 // fallbackQuestion is what is asked with no catalogue to list; fallbackPick is
@@ -106,7 +120,7 @@ func TestProfileFormBackAndRediscover(t *testing.T) {
 		{label: "Profile name", back: true},
 		{label: "Profile name", text: "devbox"},
 		{label: "Description (optional)"},
-		{label: agentQuestion, text: "claude"},
+		{label: agentQuestion, choice: "claude"},
 		{label: "Gateway base URL", text: "http://first"},
 		{label: keyQuestion},
 		{label: slotLabel("opus"), index: 1},
@@ -148,7 +162,7 @@ func TestProfileFormOfflineClaudeBack(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Profile name", text: "offline"},
 		{label: "Description (optional)"},
-		{label: agentQuestion, text: "claude"},
+		{label: agentQuestion, choice: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: keyQuestion},
 		{label: "Upstream family (optional)", text: "deepseek"},
@@ -174,7 +188,7 @@ func TestProfileFormNoDiscoverSkipsModelQuestions(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Profile name", text: "offline"},
 		{label: "Description (optional)"},
-		{label: agentQuestion, text: "claude"},
+		{label: agentQuestion, choice: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: keyQuestion},
 		{label: fallbackQuestion, text: "opus, haiku"},
@@ -198,25 +212,39 @@ func TestProfileFormNoDiscoverSkipsModelQuestions(t *testing.T) {
 func TestProfileFormOtherAgents(t *testing.T) {
 	for _, tc := range []struct {
 		agent string
-		model bool
+		// known names are rows of the agent list; anything else is typed into
+		// the "(other — type a name)" row, which is the only way the list
+		// admits a name it does not carry.
+		known     bool
+		typedName string
+		model     bool
 	}{
-		{"codex", true},
-		{"unknown-agent", false},
+		{"codex", true, "", true},
+		{"unknown-agent", false, "unknown-agent", false},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {
+			answer := formAnswer{label: agentQuestion, choice: tc.agent}
+			if !tc.known {
+				answer = formAnswer{label: agentQuestion, choice: agentOther}
+			}
 			answers := []formAnswer{
 				{label: "Profile name", text: "other"},
 				{label: "Description (optional)"},
-				{label: agentQuestion, text: tc.agent},
-				{label: "Gateway base URL", text: "http://gateway"},
-				{label: keyQuestion},
+				answer,
 			}
+			if tc.typedName != "" {
+				answers = append(answers, formAnswer{label: agentInputLabel, text: tc.typedName})
+			}
+			answers = append(answers,
+				formAnswer{label: "Gateway base URL", text: "http://gateway"},
+				formAnswer{label: keyQuestion},
+			)
 			if tc.model {
 				answers = append(answers, formAnswer{label: "Model (optional)", text: "o3"})
 			}
 			q := &scriptedQuestions{answers: answers}
 			name := ""
-			p := &config.Profile{Agent: tc.agent}
+			p := &config.Profile{}
 			form := &profileForm{ctx: context.Background(), pr: q, name: &name, profile: p,
 				lookup: func(context.Context, *config.Profile) ([]proxy.Model, string) {
 					t.Fatal("non-Claude agent must not discover Claude models")
@@ -226,8 +254,8 @@ func TestProfileFormOtherAgents(t *testing.T) {
 			if err := form.run(); err != nil {
 				t.Fatal(err)
 			}
-			if len(q.answers) != 0 || (p.Model != "") != tc.model {
-				t.Errorf("remaining=%v, model=%q", q.answers, p.Model)
+			if len(q.answers) != 0 || p.Agent != tc.agent || (p.Model != "") != tc.model {
+				t.Errorf("remaining=%v, agent=%q, model=%q", q.answers, p.Agent, p.Model)
 			}
 		})
 	}
@@ -237,13 +265,13 @@ func TestProfileFormChangingAgentAfterBack(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Profile name", text: "switch"},
 		{label: "Description (optional)"},
-		{label: agentQuestion, text: "claude"},
+		{label: agentQuestion, choice: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: keyQuestion},
 		{label: slotLabel("opus"), back: true},
 		{label: keyQuestion, back: true},
 		{label: "Gateway base URL", back: true},
-		{label: agentQuestion, text: "codex"},
+		{label: agentQuestion, choice: "codex"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: keyQuestion},
 		{label: "Model (optional)", text: "o3"},
@@ -267,7 +295,7 @@ func TestProfileFormBackFromOverwriteConfirmation(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Profile name", text: "existing"},
 		{label: "Description (optional)"},
-		{label: agentQuestion, text: "claude"},
+		{label: agentQuestion, choice: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: keyQuestion, text: "old-key"},
 		{label: fallbackQuestion},
@@ -297,11 +325,101 @@ func TestProfileFormInterrupt(t *testing.T) {
 	}
 }
 
+// The agent question offers the agents the settings declare, and a name the
+// file does not carry is reached through the typed row rather than by typing
+// into the list itself — an undeclared name does not launch, so it is not a
+// row that can be picked directly.
+func TestProfileFormAgentPickOffersDeclaredAgents(t *testing.T) {
+	q := &scriptedQuestions{answers: []formAnswer{
+		{label: "Profile name", text: "picked"},
+		{label: "Description (optional)"},
+		{label: agentQuestion, choice: "my-claude"},
+		{label: "Gateway base URL", text: "http://gateway"},
+		{label: keyQuestion},
+		{label: fallbackPick},
+	}}
+	name := ""
+	p := &config.Profile{}
+	form := &profileForm{ctx: context.Background(), pr: q, name: &name, profile: p,
+		listAgents: func() []string { return []string{"claude", "codex", "my-claude"} },
+		lookup:     func(context.Context, *config.Profile) ([]proxy.Model, string) { return nil, "" },
+	}
+	form.kind = func(string) config.Kind { return config.KindGeneric }
+	if err := form.run(); err != nil {
+		t.Fatal(err)
+	}
+	if p.Agent != "my-claude" {
+		t.Fatalf("agent = %q, want my-claude (remaining %v)", p.Agent, q.answers)
+	}
+}
+
+// The typed row opens empty when the current agent already has a row of its
+// own: reaching for it means wanting a different name, and a prefill would
+// append to the one being replaced. A name with no row — the case the typed
+// row exists for — still shows what the profile says.
+func TestProfileFormAgentTypedRowPrefill(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		current string
+		prefill string
+	}{
+		{"current agent has a row", "claude", ""},
+		{"current agent has no row", "retired-agent", "retired-agent"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q := &scriptedQuestions{answers: []formAnswer{
+				{label: "Profile name", text: "typed"},
+				{label: "Description (optional)"},
+				{label: agentQuestion, choice: agentOther},
+				{label: agentInputLabel, text: "brand-new-agent"},
+				{label: "Gateway base URL", text: "http://gateway"},
+				{label: keyQuestion},
+				{label: fallbackPick},
+			}}
+			// The scripted prompter ignores def, so the prefill is asserted
+			// through a form-level record instead: what Input is handed.
+			rec := &prefillQuestions{scriptedQuestions: q, label: agentInputLabel}
+			name := ""
+			p := &config.Profile{Agent: tc.current}
+			form := &profileForm{ctx: context.Background(), pr: rec, name: &name, profile: p,
+				listAgents: func() []string { return []string{"claude", "codex"} },
+				lookup:     func(context.Context, *config.Profile) ([]proxy.Model, string) { return nil, "" },
+			}
+			form.kind = func(string) config.Kind { return config.KindGeneric }
+			if err := form.run(); err != nil {
+				t.Fatal(err)
+			}
+			if p.Agent != "brand-new-agent" {
+				t.Fatalf("agent = %q, want brand-new-agent", p.Agent)
+			}
+			if rec.defaults[agentInputLabel] != tc.prefill {
+				t.Fatalf("typed row prefilled with %q, want %q", rec.defaults[agentInputLabel], tc.prefill)
+			}
+		})
+	}
+}
+
+// prefillQuestions records the default each Input and list question is given,
+// which is what the agent row's prefill rule is about.
+type prefillQuestions struct {
+	*scriptedQuestions
+	label    string
+	defaults map[string]string
+}
+
+func (p *prefillQuestions) Input(label, def string, validate func(string) error) (string, error) {
+	if p.defaults == nil {
+		p.defaults = map[string]string{}
+	}
+	p.defaults[label] = def
+	return p.scriptedQuestions.Input(label, def, validate)
+}
+
 func TestProfileFormSearchChoiceKeepsModelIndex(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Profile name", text: "searched"},
 		{label: "Description (optional)"},
-		{label: agentQuestion, text: "claude"},
+		{label: agentQuestion, choice: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: keyQuestion},
 		{label: slotLabel("opus"), index: 3},
@@ -320,8 +438,10 @@ func TestProfileFormSearchChoiceKeepsModelIndex(t *testing.T) {
 	if err := form.run(); err != nil {
 		t.Fatal(err)
 	}
-	if q.searches != 5 || p.Models["opus"] != "gamma" || len(p.Models) != 1 {
-		t.Errorf("searches=%d, models=%v; want five searched rows and opus=gamma", q.searches, p.Models)
+	// The agent question is a searched list too, so the four slot rows, the
+	// fallback rows and the agent row make six.
+	if q.searches != 6 || p.Models["opus"] != "gamma" || len(p.Models) != 1 {
+		t.Errorf("searches=%d, models=%v; want six searched rows and opus=gamma", q.searches, p.Models)
 	}
 }
 

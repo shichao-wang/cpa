@@ -32,7 +32,7 @@ func TestProfileFormFallbackBack(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Profile name", text: "test"},
 		{label: "Description (optional)"},
-		{label: agentQuestion, text: "claude"},
+		{label: agentQuestion, choice: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: keyQuestion},
 		{label: fallbackQuestion, back: true},
@@ -62,7 +62,7 @@ func TestProfileFormPicksFallbackModelsInPickOrder(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Profile name", text: "picked"},
 		{label: "Description (optional)"},
-		{label: agentQuestion, text: "claude"},
+		{label: agentQuestion, choice: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: keyQuestion},
 		{label: slotLabel("opus"), index: 0},
@@ -93,7 +93,7 @@ func TestProfileFormFallbackIgnoresTheFamilyFilter(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Profile name", text: "family"},
 		{label: "Description (optional)"},
-		{label: agentQuestion, text: "claude"},
+		{label: agentQuestion, choice: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: keyQuestion},
 		{label: slotLabel("opus"), index: 0},
@@ -151,7 +151,7 @@ func TestProfileFormFallbackKeepsAnUnadvertisedPick(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Profile name", text: "existing"},
 		{label: "Description (optional)"},
-		{label: agentQuestion, text: "claude"},
+		{label: agentQuestion, choice: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: keyQuestion},
 		{label: slotLabel("opus"), index: 0},

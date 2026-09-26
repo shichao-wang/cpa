@@ -545,7 +545,7 @@ func TestChooseSearchDefaultBackspaceAndNoMatches(t *testing.T) {
 	if err != nil || got != 1 {
 		t.Fatalf("chosen index = %d, error = %v; want 1", got, err)
 	}
-	if !strings.Contains(out.String(), "No matching models") || !strings.Contains(out.String(), "[search: 中]") {
+	if !strings.Contains(out.String(), "No matching entries") || !strings.Contains(out.String(), "[search: 中]") {
 		t.Errorf("missing search or empty-state feedback: %q", out.String())
 	}
 	if !strings.Contains(out.String(), "\x1b[J") {
@@ -583,7 +583,7 @@ func TestDrawSearchListClipsLongQuery(t *testing.T) {
 		var out bytes.Buffer
 		p := &Prompter{out: &out}
 		p.drawSearchList(strings.Repeat("slot", 30), NewList(nil, 2), query)
-		if !strings.Contains(out.String(), "No matching models") || !strings.Contains(out.String(), "…") || p.drawn != 1 {
+		if !strings.Contains(out.String(), "No matching entries") || !strings.Contains(out.String(), "…") || p.drawn != 1 {
 			t.Errorf("empty search rendering = %q, drawn = %d", out.String(), p.drawn)
 		}
 		if !strings.HasSuffix(out.String(), "\x1b[J") {
@@ -673,7 +673,7 @@ func TestChooseMultiSearchEnterDuringNoMatchesKeepsPicks(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(got, []int{0}) {
 		t.Fatalf("picks = %v, error = %v; want the pick made before the search", got, err)
 	}
-	if !strings.Contains(out.String(), "No matching models") {
+	if !strings.Contains(out.String(), "No matching entries") {
 		t.Errorf("an empty result is not said out loud: %q", out.String())
 	}
 }

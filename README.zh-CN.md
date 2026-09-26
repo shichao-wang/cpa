@@ -161,7 +161,9 @@ $ cpa --profile deepseek claude
 
 `cpa profile create` 会逐项问你：名字、描述、这个 profile 服务哪个 agent、网关
 地址与 key；随后先问网关它提供哪些模型，再为 agent 自己认的每个模型指定网关侧
-由谁服务。对 Claude Code 来说这就是一张映射表，一个槽位一行，且是从 agent 这一侧
+由谁服务。agent 从你 settings 里声明的那些里选，另加 `claude` 与 `codex`，
+以及一行 `(other — type a name)` 用来手输；没被声明过的名字启动不了，所以不会
+单独列成一行。对 Claude Code 来说这就是一张映射表，一个槽位一行，且是从 agent 这一侧
 读的：行名是 Claude Code 自己会给该槽位解析出的模型，答案是网关上应该服务它的那个
 模型。每个选项都来自网关真实返回的模型列表，因此不可能因为手误填进一个不存在的
 模型；每行的初始答案就是网关同槽位的那个模型，所以「全部原样映射」就是连按四次
@@ -176,7 +178,7 @@ $ cpa --profile deepseek claude
 $ cpa profile create
 ✓ Profile name devbox
 ✓ Description (optional) devbox gateway
-✓ Agent this profile is for (claude, codex, or a name from "agents") claude
+✓ Agent this profile is for claude
 ✓ Gateway base URL http://127.0.0.1:18317
 ✓ API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
 Model configuration

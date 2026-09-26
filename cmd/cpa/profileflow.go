@@ -47,6 +47,7 @@ type profileForm struct {
 	pr              profileQuestions
 	lookup          func(context.Context, *config.Profile) ([]proxy.Model, string)
 	kind            func(string) config.Kind
+	listAgents      func() []string
 	name            *string
 	path            string
 	force           bool
@@ -65,7 +66,7 @@ func newProfileForm(ctx context.Context, pr profileQuestions, name *string, p *c
 	if p.BaseURL == "" {
 		p.BaseURL = "http://127.0.0.1:8317"
 	}
-	return &profileForm{ctx: ctx, pr: pr, lookup: discover, kind: resolveKind, name: name, profile: p, noDiscover: noDiscover, start: stepName}
+	return &profileForm{ctx: ctx, pr: pr, lookup: discover, kind: resolveKind, listAgents: knownAgents, name: name, profile: p, noDiscover: noDiscover, start: stepName}
 }
 
 func (f *profileForm) run() error {
@@ -171,6 +172,16 @@ func (f *profileForm) downstream() profileStep {
 	}
 }
 
+// agents is the agent question's rows. A form built in a test may leave the
+// hook unset, and the question still has to be answerable, so the shipped list
+// is the fallback rather than a nil call.
+func (f *profileForm) agents() []string {
+	if f.listAgents == nil {
+		return knownAgents()
+	}
+	return f.listAgents()
+}
+
 func (f *profileForm) discover() {
 	p := f.profile
 	if f.catalogueLoaded && f.discoveredURL == p.BaseURL && f.discoveredKey == p.APIKey {
@@ -212,11 +223,74 @@ func (f *profileForm) ask(step profileStep) (profileStep, error) {
 	case stepDescription:
 		return input("Description (optional)", &p.Description, nil, stepAgent)
 	case stepAgent:
-		validate := notBlank("a profile needs an agent")
+		// Known agents are offered as a pick, the way every other question the
+		// gateway can answer is. The list is closed rather than searchable
+		// free text: an unlisted name only becomes a launchable agent once
+		// something declares it under "agents", so typing one the file does
+		// not carry would produce a profile that cannot be launched. Nothing
+		// is lost — the list is short, and --agent still takes any name.
+		//
+		// An existing unbound profile keeps a way to stay unbound: edit is not
+		// obliged to bind a profile it did not find bound.
+		label := "Agent this profile is for"
+		known := f.agents()
+		// options and values line up row for row; values is what each row
+		// writes into the profile, which is the agent's name except for the
+		// two synthetic rows.
+		options := []string{agentOther}
+		values := []string{agentOther}
 		if f.editing && p.Agent == "" {
-			validate = nil // An existing unbound profile may remain unbound.
+			options = append(options, agentUnbound)
+			values = append(values, "")
 		}
-		return input("Agent this profile is for (claude, codex, or a name from \"agents\")", &p.Agent, validate, stepBaseURL)
+		for _, name := range known {
+			options = append(options, name)
+			values = append(values, name)
+		}
+		// Start on the row the profile already names. Anything the list does
+		// not carry — including a name it does not know at all — starts on the
+		// typed row, which is where such a name is entered; only editing has a
+		// row ahead of that one, for staying unbound.
+		def := 0
+		for i, v := range values {
+			if v == p.Agent {
+				def = i
+				break
+			}
+		}
+		if f.editing && p.Agent == "" {
+			def = 1
+		}
+		picked, err := f.pr.ChooseSearchDefault(label, options, def)
+		if err != nil {
+			return stepBaseURL, err
+		}
+		switch values[picked] {
+		case "":
+			p.Agent = ""
+		case agentOther:
+			// The row exists for a name the list does not carry, so it opens
+			// empty rather than on the current agent: prefilled, the typed row
+			// would append to whatever the profile already said. An agent that
+			// has no row of its own — one declared somewhere the list does not
+			// read — is the exception, since the text row is the only place
+			// that can show what the profile currently says.
+			prefill := p.Agent
+			for _, name := range known {
+				if name == p.Agent {
+					prefill = ""
+					break
+				}
+			}
+			answer, err := f.pr.Input(agentInputLabel, prefill, notBlank("a profile needs an agent"))
+			if err != nil {
+				return stepBaseURL, err
+			}
+			p.Agent = strings.TrimSpace(answer)
+		default:
+			p.Agent = values[picked]
+		}
+		return stepBaseURL, nil
 	case stepBaseURL:
 		return input("Gateway base URL", &p.BaseURL, validBaseURL, stepAPIKey)
 	case stepAPIKey:

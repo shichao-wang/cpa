@@ -31,7 +31,7 @@ func TestProfileFormDetectsNameConflictAtFirstQuestion(t *testing.T) {
 func TestProfileEditFormKeepsUnavailablePin(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Description (optional)", text: "updated"},
-		{label: agentQuestion, text: "claude"},
+		{label: agentQuestion, choice: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: "New API key (blank keeps current; env:NAME and cmd:... also work)"},
 		{label: slotLabel("opus"), index: 1},
@@ -58,13 +58,13 @@ func TestProfileEditFormKeepsUnavailablePin(t *testing.T) {
 func TestProfileEditBackFromOtherAgentKeepsClaudeModels(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Description (optional)", text: "updated"},
-		{label: agentQuestion, text: "codex"},
+		{label: agentQuestion, choice: "codex"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: "New API key (blank keeps current; env:NAME and cmd:... also work)"},
 		{label: "Model (optional)", back: true},
 		{label: "New API key (blank keeps current; env:NAME and cmd:... also work)", back: true},
 		{label: "Gateway base URL", back: true},
-		{label: agentQuestion, text: "claude"},
+		{label: agentQuestion, choice: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: "New API key (blank keeps current; env:NAME and cmd:... also work)"},
 		{label: fallbackQuestion, text: "backup-model"},
@@ -84,7 +84,7 @@ func TestProfileEditBackFromOtherAgentKeepsClaudeModels(t *testing.T) {
 func TestProfileEditUnboundProfileAllowsEmptyAgent(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Description (optional)", text: "updated"},
-		{label: agentQuestion, text: ""},
+		{label: agentQuestion, choice: agentUnbound},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: "New API key (blank keeps current; env:NAME and cmd:... also work)"},
 	}}
@@ -107,7 +107,8 @@ func TestProfileEditFormUsesCustomClaudeAgentFromTarget(t *testing.T) {
 	}
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Description (optional)"},
-		{label: agentQuestion, text: "my-claude"},
+		{label: agentQuestion, choice: agentOther},
+		{label: agentInputLabel, text: "my-claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: "New API key (blank keeps current; env:NAME and cmd:... also work)"},
 		{label: fallbackQuestion, text: "backup-model"},
