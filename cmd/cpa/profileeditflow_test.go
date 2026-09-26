@@ -38,7 +38,7 @@ func TestProfileEditFormKeepsUnavailablePin(t *testing.T) {
 		{label: slotLabel("sonnet"), index: 0},
 		{label: slotLabel("haiku"), index: 0},
 		{label: slotLabel("fable"), index: 0},
-		{label: fallbackQuestion},
+		{label: fallbackPick},
 	}}
 	name := "dev"
 	p := &config.Profile{Agent: "claude", BaseURL: "http://gateway", Models: map[string]string{"opus": "retired-model"}}

@@ -36,6 +36,7 @@ const (
 type profileQuestions interface {
 	Input(string, string, func(string) error) (string, error)
 	ChooseSearchDefault(string, []string, int) (int, error)
+	ChooseMultiSearch(string, []string, []int, int) ([]int, error)
 	SetIndent(int)
 	Section(string)
 	Back()
@@ -236,14 +237,37 @@ func (f *profileForm) ask(step profileStep) (profileStep, error) {
 	case stepOtherModel:
 		return input("Model (optional)", &p.Model, nil, stepDone)
 	case stepFallbackModel:
-		answer, err := f.pr.Input("Fallback models (optional; comma-separated, in order, max 3)", strings.Join(p.FallbackModel, ", "), func(s string) error {
-			_, err := parseFallbackModels(s)
-			return err
-		})
+		// With a catalogue in hand the answer is a pick from what the gateway
+		// actually serves, which is what the slot rows above already do. Unlike
+		// those rows the catalogue is not narrowed to the profile's family: a
+		// fallback is usually a different upstream to retry on, which is the
+		// whole point of naming one.
+		//
+		// Without a catalogue — --no-discover, or a gateway that was down —
+		// there is nothing to list, so the line-edited prompt stays for an id
+		// typed from memory.
+		if len(f.available) == 0 {
+			line := strings.Join(p.FallbackModel, ", ")
+			answer, err := f.pr.Input(fallbackInputLabel, line, func(s string) error {
+				_, err := parseFallbackModels(s)
+				return err
+			})
+			if err != nil {
+				return stepDone, err
+			}
+			p.FallbackModel, _ = parseFallbackModels(answer)
+			return stepDone, nil
+		}
+		labels, values, picked := fallbackChoices(f.available, p.FallbackModel)
+		chosen, err := f.pr.ChooseMultiSearch(fallbackLabel, labels, picked, maxFallbackModels)
 		if err != nil {
 			return stepDone, err
 		}
-		p.FallbackModel, _ = parseFallbackModels(answer)
+		var fallbacks []string
+		for _, i := range chosen {
+			fallbacks = append(fallbacks, values[i])
+		}
+		p.FallbackModel = fallbacks
 		return stepDone, nil
 	case stepOpus, stepSonnet, stepHaiku, stepFable:
 		slot := config.Slots[int(step-stepOpus)]
@@ -283,13 +307,53 @@ func (f *profileForm) ask(step profileStep) (profileStep, error) {
 	return stepDone, fmt.Errorf("unknown profile step %d", step)
 }
 
+// fallbackChoices turns a catalogue into the rows of the fallback list, plus
+// the positions the profile's current fallbacks occupy in it, so the question
+// opens with what is already configured already picked.
+//
+// candidates is the gateway's whole catalogue rather than the profile's
+// family: a fallback is usually a different upstream to retry on, which is the
+// whole point of naming one. A fallback the gateway no longer advertises is
+// appended after the advertised ones and marked as such — it cannot be found
+// by searching a catalogue that does not list it, and dropping it silently
+// would rewrite a choice the user made deliberately.
+func fallbackChoices(candidates []proxy.Model, current []string) (labels, values []string, picked []int) {
+	seen := make(map[string]bool, len(candidates))
+	for _, m := range candidates {
+		if seen[m.ID] {
+			continue
+		}
+		seen[m.ID] = true
+		values = append(values, m.ID)
+		labels = append(labels, m.Label())
+	}
+	for _, id := range current {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		values = append(values, id)
+		labels = append(labels, id+" (not advertised)")
+	}
+	index := make(map[string]int, len(values))
+	for i, v := range values {
+		index[v] = i
+	}
+	for _, id := range current {
+		if i, ok := index[id]; ok {
+			picked = append(picked, i)
+		}
+	}
+	return labels, values, picked
+}
+
 func parseFallbackModels(s string) ([]string, error) {
 	if strings.TrimSpace(s) == "" {
 		return nil, nil
 	}
 	parts := strings.Split(s, ",")
-	if len(parts) > 3 {
-		return nil, fmt.Errorf("at most 3 fallback models are allowed")
+	if len(parts) > maxFallbackModels {
+		return nil, fmt.Errorf("at most %d fallback models are allowed", maxFallbackModels)
 	}
 	seen := make(map[string]bool, len(parts))
 	for i, part := range parts {

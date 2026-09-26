@@ -170,6 +170,159 @@ func (p *Prompter) ChooseSearchDefault(label string, options []string, def int) 
 	return p.choose(label, options, def, true)
 }
 
+// ChooseMultiSearch asks for up to max of options, from a list filtered as
+// characters are typed. Tab picks and unpicks the highlighted option; the
+// answer is every pick, as original indices, in the order they were picked —
+// an order the caller may well mean something by. Enter accepts what is
+// picked, including nothing. picked is what starts out picked, in its own
+// order.
+func (p *Prompter) ChooseMultiSearch(label string, options []string, picked []int, max int) ([]int, error) {
+	defer func() { p.drawn = 0 }()
+
+	if len(options) == 0 {
+		return nil, fmt.Errorf("nothing to choose from for %q", label)
+	}
+	// Both the picks and the highlight are held as original indices, and the
+	// list is rebuilt from them on each pass. Searching only ever changes
+	// which slice of the options is on screen, so what is picked survives
+	// typing in the search box; the list's own positions are derived rather
+	// than carried, because the search box keeps renumbering them.
+	order := append([]int(nil), picked...)
+	cursor := 0
+	if len(order) > 0 {
+		cursor = order[0]
+	}
+	query := ""
+	notice := ""
+	for {
+		indices := searchIndices(options, query)
+		l := NewList(labelsOf(options, indices), p.listHeight())
+		l.SetChecked(positionsOf(indices, order))
+		if pos := positionsOf(indices, []int{cursor}); len(pos) > 0 {
+			l.SetIndex(pos[0])
+		}
+		p.drawMultiList(label, l, query, pickedNames(options, order), max, notice)
+		k, r, err := p.dec.Next()
+		if err != nil {
+			p.abort()
+			return nil, ErrEOF
+		}
+		switch k {
+		case KeyEnter:
+			p.endMulti(label, order, options)
+			return order, nil
+		case KeyInterrupt:
+			p.abort()
+			return nil, ErrInterrupted
+		case KeyBack:
+			p.eraseActive()
+			return nil, ErrBack
+		case KeyTab:
+			if l.Len() == 0 {
+				continue
+			}
+			// Tab only ever toggles the highlighted row, and leaves the
+			// highlight where it is: a second Tab has to undo the first, which
+			// is the move a reader makes the moment they pick the wrong row.
+			// Moving on to the next pick is the down key's job.
+			next, ok := togglePick(order, indices[l.Index()], max)
+			if !ok {
+				notice = fmt.Sprintf("! %d already picked; untick one with Tab first", max)
+				continue
+			}
+			notice = ""
+			order = next
+			cursor = indices[l.Index()]
+		case KeyRune, KeyBackspace:
+			notice = ""
+			if k == KeyBackspace && query == "" {
+				continue
+			}
+			if k == KeyRune {
+				query += string(r)
+			} else {
+				query = string([]rune(query)[:len([]rune(query))-1])
+			}
+			continue
+		default:
+			notice = ""
+			if l.Apply(k) {
+				cursor = indices[l.Index()]
+			}
+		}
+	}
+}
+
+func labelsOf(options []string, indices []int) []string {
+	labels := make([]string, len(indices))
+	for i, orig := range indices {
+		labels[i] = options[orig]
+	}
+	return labels
+}
+
+// pickedNames is every pick, in pick order, whether or not the search box
+// still shows it. A pick the query has filtered away is dropped by the list —
+// there is no row to tick — so this is the only line left saying it is still
+// chosen, and it must not go quiet while the reader is typing.
+func pickedNames(options []string, order []int) []string {
+	names := make([]string, 0, len(order))
+	for _, orig := range order {
+		names = append(names, options[orig])
+	}
+	return names
+}
+
+// searchIndices is the original indices of the options a query leaves, in
+// order. An empty query leaves every option, which is what clearing the
+// search box has to restore.
+func searchIndices(options []string, query string) []int {
+	var indices []int
+	for i, option := range options {
+		if query == "" || strings.Contains(strings.ToLower(option), strings.ToLower(query)) {
+			indices = append(indices, i)
+		}
+	}
+	return indices
+}
+
+// positionsOf maps original indices onto where they sit in the filtered view,
+// dropping the ones the filter has taken off screen. A highlight that the
+// search box has just hidden is therefore not restored when the query clears,
+// which is the honest answer: the reader cannot see what they are pointing at.
+func positionsOf(indices, order []int) []int {
+	position := make(map[int]int, len(indices))
+	for pos, orig := range indices {
+		position[orig] = pos
+	}
+	var positions []int
+	for _, orig := range order {
+		if pos, ok := position[orig]; ok {
+			positions = append(positions, pos)
+		}
+	}
+	return positions
+}
+
+// togglePick adds an original index to the picks, or removes it, keeping the
+// order the picks were made in. It reports false when the pick would exceed
+// max, which the caller says out loud rather than silently dropping.
+func togglePick(order []int, orig, max int) ([]int, bool) {
+	for i, o := range order {
+		if o == orig {
+			next := make([]int, 0, len(order)-1)
+			next = append(next, order[:i]...)
+			return append(next, order[i+1:]...), true
+		}
+	}
+	if len(order) >= max {
+		return order, false
+	}
+	next := make([]int, 0, len(order)+1)
+	next = append(next, order...)
+	return append(next, orig), true
+}
+
 func (p *Prompter) choose(label string, options []string, def int, searchable bool) (int, error) {
 	defer func() { p.drawn = 0 }()
 
@@ -317,6 +470,77 @@ func (p *Prompter) drawSearchList(label string, l *List, query string) {
 	p.drawListWithSearch(label, l, query, true)
 }
 
+// drawMultiList paints a pickable list: the same rows as a single-choice one,
+// with a tick column, a line naming what is picked and in what order, and —
+// when the reader tries to pick past the limit — why that did nothing.
+//
+// picked is every pick by name, not the rows the list happens to be showing:
+// the search box can filter a picked row away, and the line has to keep saying
+// it is picked. It is drawn above the notice so the count a refusal complains
+// about is on screen beside the complaint.
+func (p *Prompter) drawMultiList(label string, l *List, query string, picked []string, limit int, notice string) {
+	p.rewind()
+	width := p.width()
+	indent := p.indent
+	avail := max(width-len(indent)-2, 1)
+
+	hint := fmt.Sprintf(" [Tab to pick, up to %d]", limit)
+	search := ""
+	if query != "" {
+		search = " [search: " + query + "]"
+	}
+	// The hint is what a reader needs first; a long search term is dropped to
+	// fit rather than allowed to wrap the heading, which would put the
+	// row-based redraw a line out.
+	label = clip(label+hint, avail)
+	if remaining := avail - searchColumns(label); remaining > 1 {
+		label += clip(search, remaining-1)
+	}
+	fmt.Fprintf(p.out, "\r\x1b[K%s\x1b[1m?\x1b[0m %s", indent, label)
+	n := 0
+
+	if len(picked) > 0 {
+		line := fmt.Sprintf("picked %d/%d: %s", len(picked), limit, strings.Join(picked, ", "))
+		fmt.Fprintf(p.out, "\n\r\x1b[K%s\x1b[2m%s\x1b[0m", indent, clip(line, avail))
+		n++
+	}
+	if notice != "" {
+		fmt.Fprintf(p.out, "\n\r\x1b[K%s\x1b[31m%s\x1b[0m", indent, clip(notice, avail))
+		n++
+	}
+	if l.Len() == 0 {
+		fmt.Fprintf(p.out, "\n\r\x1b[K%s%s", indent, clip("No matching models", avail))
+		n++
+	}
+	// A window shorter than the list says so on its own first and last rows,
+	// dimmed; otherwise the list looks complete at the bottom edge.
+	if above, _ := l.Hidden(); above > 0 {
+		fmt.Fprintf(p.out, "\n\r\x1b[K%s\x1b[2m  ↑ %d more\x1b[0m", indent, above)
+		n++
+	}
+	for _, it := range l.Visible() {
+		mark, tick := "  ", "  "
+		if it.Selected {
+			mark = marker
+		}
+		if it.Checked {
+			tick = "✓ "
+		} else {
+			tick = "○ "
+		}
+		fmt.Fprintf(p.out, "\n\r\x1b[K%s%s%s%s", indent, mark, tick, clip(it.Text, width-len(indent)-4))
+		n++
+	}
+	if _, below := l.Hidden(); below > 0 {
+		fmt.Fprintf(p.out, "\n\r\x1b[K%s\x1b[2m  ↓ %d more\x1b[0m", indent, below)
+		n++
+	}
+	// Scrolling can drop an indicator and so paint fewer rows than last time;
+	// erase whatever is below the list, or the surplus row stays on screen.
+	fmt.Fprint(p.out, "\x1b[J")
+	p.drawn = n
+}
+
 func (p *Prompter) drawListWithSearch(label string, l *List, query string, searchable bool) {
 	p.rewind()
 	width := p.width()
@@ -429,6 +653,23 @@ func searchColumns(s string) int {
 }
 
 func (p *Prompter) endChoose(label, value string) {
+	p.rewind()
+	fmt.Fprintf(p.out, "\r\x1b[K%s\x1b[1m✓\x1b[0m %s\x1b[J\r\n", p.indent, clip(label+" "+value, max(p.width()-len(p.indent)-3, 1)))
+	p.drawn = 0
+	p.confirmAnswer()
+}
+
+// endMulti confirms a pickable list. What is reported is the picked models in
+// pick order, which is the order the caller will write them down in.
+func (p *Prompter) endMulti(label string, order []int, options []string) {
+	names := make([]string, 0, len(order))
+	for _, orig := range order {
+		names = append(names, options[orig])
+	}
+	value := "none"
+	if len(names) > 0 {
+		value = strings.Join(names, ", ")
+	}
 	p.rewind()
 	fmt.Fprintf(p.out, "\r\x1b[K%s\x1b[1m✓\x1b[0m %s\x1b[J\r\n", p.indent, clip(label+" "+value, max(p.width()-len(p.indent)-3, 1)))
 	p.drawn = 0

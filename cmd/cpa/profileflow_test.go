@@ -16,6 +16,9 @@ type formAnswer struct {
 	label string
 	text  string
 	index int
+	// picks is the answer to a pickable list, as positions into it. It is
+	// distinct from index so a test can pick several, and none at all.
+	picks []int
 	back  bool
 	abort bool
 }
@@ -70,13 +73,33 @@ func (s *scriptedQuestions) ChooseSearchDefault(label string, options []string, 
 	}
 	return a.index, nil
 }
+func (s *scriptedQuestions) ChooseMultiSearch(label string, options []string, _ []int, max int) ([]int, error) {
+	s.searches++
+	a, err := s.next(label)
+	if err != nil {
+		return nil, err
+	}
+	if len(a.picks) > max {
+		return nil, fmt.Errorf("%d picks for %q exceeds the limit of %d", len(a.picks), label, max)
+	}
+	for _, i := range a.picks {
+		if i >= len(options) {
+			return nil, fmt.Errorf("pick %d missing for %q", i, label)
+		}
+	}
+	return a.picks, nil
+}
 func (s *scriptedQuestions) SetIndent(int)  {}
 func (s *scriptedQuestions) Section(string) { s.sections++ }
 func (s *scriptedQuestions) Back()          { s.backs++ }
 
 const agentQuestion = "Agent this profile is for (claude, codex, or a name from \"agents\")"
 const keyQuestion = "API key (optional; env:NAME and cmd:... also work)"
-const fallbackQuestion = "Fallback models (optional; comma-separated, in order, max 3)"
+
+// fallbackQuestion is what is asked with no catalogue to list; fallbackPick is
+// the pickable list used when discovery found models to offer.
+const fallbackQuestion = fallbackInputLabel
+const fallbackPick = fallbackLabel
 
 func TestProfileFormBackAndRediscover(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
@@ -96,7 +119,7 @@ func TestProfileFormBackAndRediscover(t *testing.T) {
 		{label: slotLabel("sonnet"), index: 0},
 		{label: slotLabel("haiku"), index: 0},
 		{label: slotLabel("fable"), index: 0},
-		{label: fallbackQuestion, text: "sonnet, haiku"},
+		{label: fallbackPick, picks: []int{0}},
 	}}
 	calls := 0
 	name := ""
@@ -116,8 +139,8 @@ func TestProfileFormBackAndRediscover(t *testing.T) {
 	if calls != 2 || q.backs != 3 || q.sections != 2 {
 		t.Errorf("discovery calls = %d, back steps = %d, sections = %d; want 2, 3, 2", calls, q.backs, q.sections)
 	}
-	if name != "devbox" || p.BaseURL != "http://second" || len(p.Models) != 0 || !reflect.DeepEqual(p.FallbackModel, []string{"sonnet", "haiku"}) || len(q.answers) != 0 {
-		t.Errorf("name=%q, baseURL=%q, pins=%v, remaining=%v", name, p.BaseURL, p.Models, q.answers)
+	if name != "devbox" || p.BaseURL != "http://second" || len(p.Models) != 0 || !reflect.DeepEqual(p.FallbackModel, []string{"new-model"}) || len(q.answers) != 0 {
+		t.Errorf("name=%q, baseURL=%q, pins=%v, fallback=%v, remaining=%v", name, p.BaseURL, p.Models, p.FallbackModel, q.answers)
 	}
 }
 
@@ -285,7 +308,7 @@ func TestProfileFormSearchChoiceKeepsModelIndex(t *testing.T) {
 		{label: slotLabel("sonnet"), index: 0},
 		{label: slotLabel("haiku"), index: 0},
 		{label: slotLabel("fable"), index: 0},
-		{label: "Fallback models (optional; comma-separated, in order, max 3)"},
+		{label: fallbackPick},
 	}}
 	name := ""
 	p := &config.Profile{Agent: "claude"}
@@ -297,8 +320,8 @@ func TestProfileFormSearchChoiceKeepsModelIndex(t *testing.T) {
 	if err := form.run(); err != nil {
 		t.Fatal(err)
 	}
-	if q.searches != 4 || p.Models["opus"] != "gamma" || len(p.Models) != 1 {
-		t.Errorf("searches=%d, models=%v; want four searched slots and opus=gamma", q.searches, p.Models)
+	if q.searches != 5 || p.Models["opus"] != "gamma" || len(p.Models) != 1 {
+		t.Errorf("searches=%d, models=%v; want five searched rows and opus=gamma", q.searches, p.Models)
 	}
 }
 
