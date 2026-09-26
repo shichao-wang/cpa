@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -593,5 +594,99 @@ func TestDrawSearchListClipsLongQuery(t *testing.T) {
 		if columns := searchColumns(row) + 2; columns > p.width() {
 			t.Errorf("search heading occupies %d columns (width %d): %q", columns, p.width(), row)
 		}
+	}
+}
+
+func TestChooseMultiSearchPicksInTabOrder(t *testing.T) {
+	var out bytes.Buffer
+	// Tab on the first row, down, Tab on the second, enter.
+	p := &Prompter{out: &out, dec: newDecoder(strings.NewReader("\t\x1b[B\t\r"))}
+	got, err := p.ChooseMultiSearch("fallbacks", []string{"alpha", "beta", "gamma"}, nil, 3)
+	if err != nil || !reflect.DeepEqual(got, []int{0, 1}) {
+		t.Fatalf("picks = %v, error = %v; want [0 1]", got, err)
+	}
+	if !strings.Contains(out.String(), "picked 2/3: alpha, beta") {
+		t.Errorf("the picked line does not name what is picked, in order: %q", out.String())
+	}
+}
+
+func TestChooseMultiSearchSearchKeepsPicksAndReturnsOriginalIndices(t *testing.T) {
+	var out bytes.Buffer
+	// Tab on "alpha", type "gam" to search, Tab on the remaining row, enter.
+	p := &Prompter{out: &out, dec: newDecoder(strings.NewReader("\tgam\t\r"))}
+	got, err := p.ChooseMultiSearch("fallbacks", []string{"alpha", "beta", "gamma"}, nil, 3)
+	if err != nil || !reflect.DeepEqual(got, []int{0, 2}) {
+		t.Fatalf("picks = %v, error = %v; want the original indices [0 2]", got, err)
+	}
+	// The line keeps naming the pick the search has filtered away: its row is
+	// gone, so nothing else on screen says it is still chosen.
+	if !strings.Contains(out.String(), "picked 2/3: alpha, gamma") {
+		t.Errorf("the pick made before the search was lost: %q", out.String())
+	}
+}
+
+func TestChooseMultiSearchStartsFromTheExistingPicks(t *testing.T) {
+	var out bytes.Buffer
+	// The existing pick is shown; a bare enter keeps it, and a second tab
+	// on it removes it.
+	p := &Prompter{out: &out, dec: newDecoder(strings.NewReader("\r"))}
+	got, err := p.ChooseMultiSearch("fallbacks", []string{"alpha", "beta"}, []int{1}, 3)
+	if err != nil || !reflect.DeepEqual(got, []int{1}) {
+		t.Fatalf("picks = %v, error = %v; want the passed-in [1]", got, err)
+	}
+}
+
+func TestChooseMultiSearchReportsTheLimitInTheHeading(t *testing.T) {
+	var out bytes.Buffer
+	// Pick one of two past a limit of one, then try a second: the second is
+	// refused and said out loud, and the answer stays the first pick.
+	p := &Prompter{out: &out, dec: newDecoder(strings.NewReader("\t\x1b[B\t\r"))}
+	got, err := p.ChooseMultiSearch("fallbacks", []string{"alpha", "beta"}, nil, 1)
+	if err != nil || !reflect.DeepEqual(got, []int{0}) {
+		t.Fatalf("picks = %v, error = %v; want just the first pick", got, err)
+	}
+	if !strings.Contains(out.String(), "up to 1") || !strings.Contains(out.String(), "already picked") {
+		t.Errorf("the heading and the refusal are not shown: %q", out.String())
+	}
+}
+
+// Tab toggles the row under the highlight and leaves the highlight on it, so
+// a second Tab undoes the first without the reader hunting for the row again.
+func TestChooseMultiSearchTabTwiceUndoesThePick(t *testing.T) {
+	var out bytes.Buffer
+	p := &Prompter{out: &out, dec: newDecoder(strings.NewReader("\t\t\r"))}
+	got, err := p.ChooseMultiSearch("fallbacks", []string{"alpha", "beta"}, nil, 3)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("picks = %v, error = %v; want none after picking and unpicking", got, err)
+	}
+	if !strings.Contains(out.String(), "picked 1/3: alpha") {
+		t.Errorf("the pick was never shown, so the undo cannot be seen either: %q", out.String())
+	}
+}
+
+// Enter with a search that matches nothing accepts what is already picked:
+// the search box is a way to reach a row, not a way to lose an answer.
+func TestChooseMultiSearchEnterDuringNoMatchesKeepsPicks(t *testing.T) {
+	var out bytes.Buffer
+	p := &Prompter{out: &out, dec: newDecoder(strings.NewReader("\tzzz\r"))}
+	got, err := p.ChooseMultiSearch("fallbacks", []string{"alpha", "beta"}, nil, 3)
+	if err != nil || !reflect.DeepEqual(got, []int{0}) {
+		t.Fatalf("picks = %v, error = %v; want the pick made before the search", got, err)
+	}
+	if !strings.Contains(out.String(), "No matching models") {
+		t.Errorf("an empty result is not said out loud: %q", out.String())
+	}
+}
+
+func TestChooseMultiSearchEscapeAndInterrupt(t *testing.T) {
+	var out bytes.Buffer
+	p := &Prompter{out: &out, dec: newDecoder(strings.NewReader("\x1b"))}
+	if _, err := p.ChooseMultiSearch("fallbacks", []string{"alpha"}, nil, 3); !errors.Is(err, ErrBack) {
+		t.Errorf("escape = %v, want ErrBack", err)
+	}
+	out.Reset()
+	p = &Prompter{out: &out, dec: newDecoder(strings.NewReader("\x03"))}
+	if _, err := p.ChooseMultiSearch("fallbacks", []string{"alpha"}, nil, 3); !errors.Is(err, ErrInterrupted) {
+		t.Errorf("ctrl-c = %v, want ErrInterrupted", err)
 	}
 }

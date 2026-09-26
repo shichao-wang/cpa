@@ -1,8 +1,9 @@
 package prompt
 
-// List is a single-choice list: the options, which one is highlighted, and
-// which slice of them is currently on screen. Like Editor it holds no
-// terminal state, so navigation and scrolling are tested directly.
+// List is a list of options: the options, which one is highlighted, and which
+// slice of them is currently on screen. A list whose picks are set also
+// remembers them, for the tick column. Like Editor it holds no terminal state,
+// so navigation and scrolling are tested directly.
 type List struct {
 	items []string
 	index int
@@ -10,6 +11,11 @@ type List struct {
 	// longer the window scrolls, and offset is where it currently starts.
 	height int
 	offset int
+	// checked is the picked options, as positions in the list. The list only
+	// carries them for the renderer: what a pick means, how many are allowed,
+	// and the order they were made in all belong to the caller, which holds
+	// them as original indices that survive the search box renumbering rows.
+	checked []int
 }
 
 // NewList returns a list over items with the first one highlighted. A height
@@ -19,6 +25,29 @@ func NewList(items []string, height int) *List {
 		height = 1
 	}
 	return &List{items: items, height: height}
+}
+
+// SetChecked picks the options at these positions. Positions outside the list
+// are dropped: a search shortens the list under the caller's feet, and a
+// caller that maps its picks through the filtered indices can hand over one
+// that is no longer on screen.
+func (l *List) SetChecked(positions []int) {
+	var checked []int
+	for _, i := range positions {
+		if i >= 0 && i < len(l.items) {
+			checked = append(checked, i)
+		}
+	}
+	l.checked = checked
+}
+
+func (l *List) isChecked(i int) bool {
+	for _, c := range l.checked {
+		if c == i {
+			return true
+		}
+	}
+	return false
 }
 
 // Len is the number of options.
@@ -46,7 +75,7 @@ func (l *List) Visible() []Item {
 	}
 	out := make([]Item, 0, end-l.offset)
 	for i := l.offset; i < end; i++ {
-		out = append(out, Item{Index: i, Text: l.items[i], Selected: i == l.index})
+		out = append(out, Item{Index: i, Text: l.items[i], Selected: i == l.index, Checked: l.isChecked(i)})
 	}
 	return out
 }
@@ -68,6 +97,7 @@ type Item struct {
 	Index    int
 	Text     string
 	Selected bool
+	Checked  bool
 }
 
 // SetIndex highlights a specific option and scrolls it into view.

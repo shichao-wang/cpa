@@ -48,12 +48,20 @@ an error, since a profile's model slots and settings mean nothing to another.
 
 With a terminal attached the fields are asked for interactively: first the
 name, description, agent, gateway address and key, then — once the gateway has
-been queried — which of its models serves each of the agent's own. Claude Code
+been queried — which of its models serves each of the agent's own. The agent is
+picked from the two cpa launches, claude and codex; no other application is
+wired up yet, and --agent is still the way to name one. Claude Code
 is asked one row per slot, named by the model Claude Code itself resolves for
 it and answered from the models the gateway actually advertises. A profile for
 another agent is asked for a single model instead, since only Claude Code has
-slots. Claude profiles also ask for up to three optional fallback model IDs,
-comma-separated in attempt order; leave the line blank to skip them. The mapping is then written into the profile as claudeSettings
+slots. Claude profiles also ask for up to three optional fallback models:
+tab picks and unpicks the highlighted model, typing filters the list, and the
+order you pick them in is the order Claude Code tries them. Submitted with
+nothing picked, the profile sets no fallbacks. That list is the gateway's whole
+catalogue, not the profile's family: a fallback is usually a different upstream
+to retry on. With no catalogue to list — --no-discover, or a gateway that was
+down — the same question is answered as comma-separated model IDs instead of
+picked. The mapping is then written into the profile as claudeSettings
 modelPicker rows — one per model, with replaceBuiltInOptions, so the /model
 picker lists those and nothing else. A row also carries behavesAs when the id
 is one Claude Code does not know: without it, Claude Code calls the id unknown
@@ -445,6 +453,14 @@ const (
 	// the launcher resolve that slot on its own — the gateway's Claude-shaped
 	// model, then the profile's catch-all one.
 	leaveUnset = "(leave unset — resolve automatically)"
+
+	// fallbackLabel names the pickable list of fallback models; fallbackInputLabel
+	// is the line-edited question used when there is no catalogue to list.
+	fallbackLabel      = "Fallback models (in the order Claude Code should try them)"
+	fallbackInputLabel = "Fallback models (optional; comma-separated, in order, max 3)"
+
+	// maxFallbackModels is how many Claude Code fallbacks a profile may carry.
+	maxFallbackModels = 3
 )
 
 // aborted turns the prompter's cancel key into the message the CLI reports.

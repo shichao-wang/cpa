@@ -179,7 +179,9 @@ $ cpa --profile deepseek claude
 `cpa profile create` walks you through a new profile: name, description, the
 agent it is for, gateway URL and key, then — having asked the gateway what it
 serves — the mapping from what the agent itself asks for onto what the gateway
-has. For Claude Code that is one row per slot, read from the agent's side: the
+has. The agent is picked from the two cpa launches, `claude` and `codex`; no other
+application is wired up yet, and `--agent` is still the way to name one. For
+Claude Code that is one row per slot, read from the agent's side: the
 row is named by the model Claude Code resolves for that slot, and the answer is
 the model on your gateway that should serve it. Every answer is picked from an
 arrow-key list of the models the gateway actually advertises, so it cannot be
@@ -198,7 +200,7 @@ another agent is asked for a single model instead: only Claude Code has slots.
 $ cpa profile create
 ✓ Profile name devbox
 ✓ Description (optional) devbox gateway
-✓ Agent this profile is for (claude, codex, or a name from "agents") claude
+✓ Agent this profile is for claude
 ✓ Gateway base URL http://127.0.0.1:18317
 ✓ API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
 Model configuration
@@ -272,9 +274,15 @@ options than fit scrolls too, and says how many are off screen
 (`↑ 8 more`, `↓ 3 more`), so a long catalogue never looks like a short one.
 The key prompt accepts `env:NAME` and
 `cmd:...`, which resolve at launch and keep the secret out of the file. The
-optional fallback-model prompt accepts comma-separated model IDs; the order you
-enter is the order Claude Code tries them, and leaving it blank sets no
-fallbacks.
+`modelPicker`-shaped prompts — the slots, and the fallback models — are
+searchable lists: type to filter, and the highlight stays on the model it was
+on. Slots take enter; the fallback list takes tab to pick and unpick, and
+answers with the picks in the order they were made, which is the order Claude
+Code tries them — so submit it with nothing picked to set no fallbacks. That
+list is the gateway's whole catalogue rather than the profile's `family`: a
+fallback is usually a different upstream to retry on. With no catalogue to
+list — `--no-discover`, or a gateway that was down — the same question is
+answered by typing comma-separated model IDs instead.
 
 Without a terminal — a pipe, a script, CI — there are no prompts at all:
 every field comes from a flag (`--name`, `--agent`, `--base-url`, `--api-key`,
@@ -345,7 +353,7 @@ your editor reads.
 | `apiKeyCmd` | Read the key from this command's stdout. |
 | `family` | Substring match against the gateway's `/v1/models` listing. It fills Claude Code's slots, so it also makes the profile a Claude Code one. |
 | `model` | Catch-all model for every slot not otherwise set. |
-| `fallbackModel` | Optional array of Claude Code fallback model IDs, tried in array order. `cpa profile create` accepts a comma-separated list and preserves its order. Passed through cpa's temporary per-launch `--settings` file; it never writes `~/.claude/settings.json`. |
+| `fallbackModel` | Optional array of Claude Code fallback model IDs, tried in array order. `cpa profile create` offers the gateway's models as a searchable list, and preserves the order you pick them in; with no catalogue to list it accepts a comma-separated string instead. Passed through cpa's temporary per-launch `--settings` file; it never writes `~/.claude/settings.json`. |
 | `models` | Pin slots by hand: `{"opus": …, "sonnet": …, "haiku": …, "fable": …}`. Pinning skips discovery entirely. |
 | `modelNames` | Override the label shown in Claude Code's model picker, per slot; `create` writes it into the row's `label`. |
 | `subagentModel` | Model for subagents (`CLAUDE_CODE_SUBAGENT_MODEL`). |

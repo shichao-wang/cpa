@@ -161,7 +161,8 @@ $ cpa --profile deepseek claude
 
 `cpa profile create` 会逐项问你：名字、描述、这个 profile 服务哪个 agent、网关
 地址与 key；随后先问网关它提供哪些模型，再为 agent 自己认的每个模型指定网关侧
-由谁服务。对 Claude Code 来说这就是一张映射表，一个槽位一行，且是从 agent 这一侧
+由谁服务。agent 从 cpa 支持的 `claude` 与 `codex` 里选；其他应用尚未接入，要指定可用
+`--agent`。对 Claude Code 来说这就是一张映射表，一个槽位一行，且是从 agent 这一侧
 读的：行名是 Claude Code 自己会给该槽位解析出的模型，答案是网关上应该服务它的那个
 模型。每个选项都来自网关真实返回的模型列表，因此不可能因为手误填进一个不存在的
 模型；每行的初始答案就是网关同槽位的那个模型，所以「全部原样映射」就是连按四次
@@ -176,7 +177,7 @@ $ cpa --profile deepseek claude
 $ cpa profile create
 ✓ Profile name devbox
 ✓ Description (optional) devbox gateway
-✓ Agent this profile is for (claude, codex, or a name from "agents") claude
+✓ Agent this profile is for claude
 ✓ Gateway base URL http://127.0.0.1:18317
 ✓ API key (optional; env:NAME and cmd:... also work) env:CPA_KEY
 Model configuration
@@ -236,8 +237,11 @@ profile 的 `claudeSettings` 已手写 `modelPicker`，则原样保留，不覆�
 ctrl-w 与 ctrl-u 删除，Esc 返回上一个问题，Ctrl-C 取消且不写任何文件。
 一行放不下的输入会横向滚动而不换行。选项多到一屏放不下时列表同样会滚动，并标出屏外还有多少项
 （`↑ 8 more`、`↓ 3 more`），因此再长的模型表也不会看起来像是只有这么多。key 那一项接受 `env:NAME`
-与 `cmd:...` 简写，它们在启动时才解析，密钥因此不必落进文件。可选的 fallbackModel 提示可以留空，
-也可以输入逗号分隔的模型 ID；输入顺序就是 Claude Code 的尝试顺序。
+与 `cmd:...` 简写，它们在启动时才解析，密钥因此不必落进文件。需要挑模型的几项——四个 slot 与
+fallbackModel——都是可检索列表：直接输入即可过滤，高亮停在原来的模型上。slot 用回车选中；
+fallbackModel 用 Tab 勾选/取消，提交时按勾选顺序写入，也就是 Claude Code 的尝试顺序——什么都不勾直接
+回车则不设置 fallback。该列表用的是网关的完整模型表而非 profile 的 `family`：fallback 通常就是要换一个
+上游重试。若没有模型表可列（`--no-discover`，或网关当时不可达），同一问题改为输入逗号分隔的模型 ID。
 
 没有终端时（管道、脚本、CI）完全不提问：所有字段都从命令行参数取
 （`--name`、`--agent`、`--base-url`、`--api-key`、`--family`、`--model`
@@ -301,7 +305,7 @@ $ cpa import-claude --name mygateway
 | `apiKeyCmd` | 从该命令的标准输出读取 key。 |
 | `family` | 对网关 `/v1/models` 列表做子串匹配。它填的是 Claude Code 的槽位，所以设了它这个 profile 也就是 Claude Code 的了。 |
 | `model` | 兜底模型，用于所有未显式指定的槽位。 |
-| `fallbackModel` | Claude Code 的后备模型 ID 字符串数组，按数组顺序尝试。交互式创建可留空或输入逗号分隔的列表，并保留输入顺序。cpa 只将它放入每次启动生成的临时 `--settings` 文件，不会写入 `~/.claude/settings.json`。 |
+| `fallbackModel` | Claude Code 的后备模型 ID 字符串数组，按数组顺序尝试。交互式创建把它作为可检索列表给出，并保留勾选顺序；没有模型表可列时改为接受逗号分隔的字符串。cpa 只将它放入每次启动生成的临时 `--settings` 文件，不会写入 `~/.claude/settings.json`。 |
 | `models` | 手工钉死槽位：`{"opus": …, "sonnet": …, "haiku": …, "fable": …}`。钉死后完全跳过模型发现。 |
 | `modelNames` | 按槽位覆盖模型选择器里显示的标签；`create` 会把它写进行里的 `label`。 |
 | `subagentModel` | 子 agent 使用的模型（`CLAUDE_CODE_SUBAGENT_MODEL`）。 |

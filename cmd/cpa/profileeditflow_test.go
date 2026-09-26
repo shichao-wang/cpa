@@ -31,14 +31,14 @@ func TestProfileFormDetectsNameConflictAtFirstQuestion(t *testing.T) {
 func TestProfileEditFormKeepsUnavailablePin(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Description (optional)", text: "updated"},
-		{label: agentQuestion, text: "claude"},
+		{label: agentQuestion, choice: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: "New API key (blank keeps current; env:NAME and cmd:... also work)"},
 		{label: slotLabel("opus"), index: 1},
 		{label: slotLabel("sonnet"), index: 0},
 		{label: slotLabel("haiku"), index: 0},
 		{label: slotLabel("fable"), index: 0},
-		{label: fallbackQuestion},
+		{label: fallbackPick},
 	}}
 	name := "dev"
 	p := &config.Profile{Agent: "claude", BaseURL: "http://gateway", Models: map[string]string{"opus": "retired-model"}}
@@ -58,13 +58,13 @@ func TestProfileEditFormKeepsUnavailablePin(t *testing.T) {
 func TestProfileEditBackFromOtherAgentKeepsClaudeModels(t *testing.T) {
 	q := &scriptedQuestions{answers: []formAnswer{
 		{label: "Description (optional)", text: "updated"},
-		{label: agentQuestion, text: "codex"},
+		{label: agentQuestion, choice: "codex"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: "New API key (blank keeps current; env:NAME and cmd:... also work)"},
 		{label: "Model (optional)", back: true},
 		{label: "New API key (blank keeps current; env:NAME and cmd:... also work)", back: true},
 		{label: "Gateway base URL", back: true},
-		{label: agentQuestion, text: "claude"},
+		{label: agentQuestion, choice: "claude"},
 		{label: "Gateway base URL", text: "http://gateway"},
 		{label: "New API key (blank keeps current; env:NAME and cmd:... also work)"},
 		{label: fallbackQuestion, text: "backup-model"},
@@ -78,50 +78,6 @@ func TestProfileEditBackFromOtherAgentKeepsClaudeModels(t *testing.T) {
 	}
 	if p.Models["opus"] != "pinned-model" || len(p.FallbackModel) != 1 || p.FallbackModel[0] != "backup-model" {
 		t.Fatalf("returning to Claude lost routing data: %+v", p)
-	}
-}
-
-func TestProfileEditUnboundProfileAllowsEmptyAgent(t *testing.T) {
-	q := &scriptedQuestions{answers: []formAnswer{
-		{label: "Description (optional)", text: "updated"},
-		{label: agentQuestion, text: ""},
-		{label: "Gateway base URL", text: "http://gateway"},
-		{label: "New API key (blank keeps current; env:NAME and cmd:... also work)"},
-	}}
-	name := "dev"
-	p := &config.Profile{BaseURL: "http://gateway"}
-	form := newProfileForm(context.Background(), q, &name, p, true)
-	form.start, form.editing = stepDescription, true
-	if err := form.run(); err != nil {
-		t.Fatal(err)
-	}
-	if p.Agent != "" || p.Description != "updated" {
-		t.Fatalf("unbound profile changed unexpectedly: %+v", p)
-	}
-}
-
-func TestProfileEditFormUsesCustomClaudeAgentFromTarget(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "settings.json")
-	if err := os.WriteFile(path, []byte(`{"agents":{"my-claude":{"kind":"claude","bin":"claude"}}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	q := &scriptedQuestions{answers: []formAnswer{
-		{label: "Description (optional)"},
-		{label: agentQuestion, text: "my-claude"},
-		{label: "Gateway base URL", text: "http://gateway"},
-		{label: "New API key (blank keeps current; env:NAME and cmd:... also work)"},
-		{label: fallbackQuestion, text: "backup-model"},
-	}}
-	name := "dev"
-	p := &config.Profile{Agent: "my-claude", BaseURL: "http://gateway"}
-	form := newProfileForm(context.Background(), q, &name, p, true)
-	form.start, form.editing = stepDescription, true
-	form.kind = func(agent string) config.Kind { return resolveKindAt(path, agent) }
-	if err := form.run(); err != nil {
-		t.Fatal(err)
-	}
-	if len(q.answers) != 0 || len(p.FallbackModel) != 1 || p.FallbackModel[0] != "backup-model" {
-		t.Fatalf("custom Claude model questions were skipped: %+v, remaining %v", p, q.answers)
 	}
 }
 
