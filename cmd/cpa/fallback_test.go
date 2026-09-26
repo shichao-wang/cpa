@@ -133,6 +133,9 @@ type recordingQuestions struct {
 func (r *recordingQuestions) Input(label, def string, v func(string) error) (string, error) {
 	return r.inner.Input(label, def, v)
 }
+func (r *recordingQuestions) ChooseDefault(label string, options []string, def int) (int, error) {
+	return r.inner.ChooseDefault(label, options, def)
+}
 func (r *recordingQuestions) ChooseSearchDefault(label string, options []string, def int) (int, error) {
 	return r.inner.ChooseSearchDefault(label, options, def)
 }
