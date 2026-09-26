@@ -390,7 +390,8 @@ mapping source: claude aliases
 | `cpa [flags] <agent> [agent args]` | 用某个 profile 启动 agent。 |
 | `cpa models --profile X` | 列出网关模型与槽位映射。 |
 | `cpa profile list [--json]` | 列出已配置的 profile。 |
-| `cpa profile create` | 新增一个：有终端时交互，否则走参数。 |
+| `cpa profile create` | 新增一个：有终端时交互，否则走参数；同名会在名字输入时提示。 |
+| `cpa profile edit <name>` | 编辑目标文件中已有的 profile；有终端时预填现值，否则只更新显式传入的参数。 |
 | `cpa doctor` | 检查每个 profile 的端点与 key。 |
 | `cpa init [--force]` | 写入起始配置文件。 |
 | `cpa import-claude` | 把 `~/.claude/settings.json` 的环境变量转成 profile。 |
@@ -405,6 +406,15 @@ mapping source: claude aliases
 `--api-key`、`--family`、`--model`、`--force`，用来在没有终端时回答它的提问。
 `--family` 仍可作为未 pin 槽位的兜底；交互流程会直接配置 Claude Code 的各个槽位，
 不再询问 family。
+
+创建遇到同名会立即提示改名或运行 `cpa profile edit <name>`。`create --name <name>`
+同样会提前检查；只有显式 `--force` 才会**整体替换**旧 profile，旧的高级字段可能丢失。
+编辑默认只查找用户配置文件；若 profile 定义在项目配置中，请传 `--file <path>`，
+不会把 `profile list` 的合并结果复制进用户配置。交互编辑会预填常用字段、保留旧凭据，
+保存前需明确选择；脚本中可用 `cpa profile edit devbox --base-url http://gateway`，
+未传入的字段保持不变，`--description ""` 则明确清空描述，`--api-key ""` 会清除
+已有的 key（包括 `apiKeyEnv`／`apiKeyCmd` 来源）。未在表单中展示的高级字段与自定义
+配置仍会保留；要直接编辑这些字段，请修改目标 JSON 文件。当前不支持改名。
 
 ## 排错
 

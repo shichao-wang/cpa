@@ -30,6 +30,7 @@ type flags struct {
 	agent                 string
 	family                string
 	model                 string
+	provided              map[string]bool
 	rest                  []string
 }
 
@@ -103,6 +104,16 @@ func parseFlags(args []string) (*flags, error) {
 		}
 		if err != nil {
 			return nil, err
+		}
+		if strings.HasPrefix(a, "--") || a == "-p" || strings.HasPrefix(a, "-p=") {
+			if f.provided == nil {
+				f.provided = make(map[string]bool)
+			}
+			if a == "-p" || strings.HasPrefix(a, "-p=") {
+				f.provided["--profile"] = true
+			} else {
+				f.provided[strings.SplitN(a, "=", 2)[0]] = true
+			}
 		}
 	}
 	return f, nil

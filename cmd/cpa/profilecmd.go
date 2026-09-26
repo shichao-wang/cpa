@@ -14,23 +14,32 @@ import (
 	"github.com/shichao-wang/cpa/internal/proxy"
 )
 
-const profileHelp = `cpa profile - inspect and create launch profiles
+const profileHelp = `cpa profile - inspect and manage launch profiles
 
 USAGE
-  cpa profile list [--json]     list the profiles cpa can see
-  cpa profile create [flags]    create one; prompts on a terminal
+  cpa profile list [--json]          list the profiles cpa can see
+  cpa profile create [flags]         create one; prompts on a terminal
+  cpa profile edit <name> [flags]    update one in its settings file
 
-CREATE FLAGS
-  --name <name>          answer the name prompt up front
-  --description <text>   ditto for the description
-  --agent <name>         ditto for the agent the profile is for (default: claude)
-  --base-url <url>       ditto for the gateway address
-  --api-key <key>        ditto for the key ("env:NAME" / "cmd:..." also work)
+CREATE AND EDIT FLAGS
+  --description <text>   set the description
+  --agent <name>         set the agent (create default: claude)
+  --base-url <url>       set the gateway address
+  --api-key <key>        set the key ("env:NAME" / "cmd:..." also work)
   --family <family>      narrow the listed models to this family
-  --model <model>        pin one model onto every slot
-  --file <path>          write somewhere other than the user config
-  --force                overwrite an existing profile without asking
+  --model <model>        set the catch-all model
+  --file <path>          use a settings file other than the user config
   --no-discover          do not query the gateway
+
+CREATE ONLY
+  --name <name>          answer the name prompt up front
+  --force                replace the entire existing profile
+
+Create refuses an occupied name immediately; use edit to change an existing
+profile. --force replaces the whole profile and may remove advanced fields.
+Edit takes a positional name and preserves fields you do not change. Without
+a terminal, pass at least one field flag; an explicit empty value clears an
+optional field. Edit looks only in the target file, not project overrides.
 
 A created profile lands in $XDG_CONFIG_HOME/cpa/settings.json
 (~/.config/cpa/settings.json); --file writes somewhere else instead. It
@@ -68,11 +77,13 @@ func cmdProfile(ctx context.Context, args []string) error {
 		return cmdProfileList(args[1:])
 	case "create":
 		return cmdProfileCreate(ctx, args[1:])
+	case "edit":
+		return cmdProfileEdit(ctx, args[1:])
 	case "help", "-h", "--help":
 		fmt.Print(profileHelp)
 		return nil
 	default:
-		return fmt.Errorf("unknown subcommand %q; want `cpa profile list` or `cpa profile create`", args[0])
+		return fmt.Errorf("unknown subcommand %q; want `cpa profile list`, `cpa profile create`, or `cpa profile edit`", args[0])
 	}
 }
 
@@ -149,6 +160,11 @@ func cmdProfileCreate(ctx context.Context, args []string) error {
 	}
 
 	name := f.name
+	if strings.TrimSpace(name) != "" && !f.force {
+		if err := ensureNewProfile(path, strings.TrimSpace(name)); err != nil {
+			return err
+		}
+	}
 	p := &config.Profile{
 		Agent:       f.agent,
 		Description: f.description,
@@ -166,7 +182,7 @@ func cmdProfileCreate(ctx context.Context, args []string) error {
 
 	pr, err := prompt.New(os.Stdin, os.Stdout)
 	if errors.Is(err, prompt.ErrNotATerminal) {
-		if !f.noDiscover && resolveKind(p.Agent) == config.KindClaude {
+		if !f.noDiscover && resolveKindAt(path, p.Agent) == config.KindClaude {
 			previewMapping(ctx, p)
 		}
 		return commitProfile(ctx, path, name, p, f, nil)
@@ -177,18 +193,12 @@ func cmdProfileCreate(ctx context.Context, args []string) error {
 	defer pr.Close()
 
 	form := newProfileForm(ctx, pr, &name, p, f.noDiscover)
+	form.path, form.force = path, f.force
+	form.kind = func(agent string) config.Kind { return resolveKindAt(path, agent) }
 	if err := form.run(); err != nil {
 		return err
 	}
-	for {
-		err := commitProfile(ctx, path, name, p, f, pr)
-		if !errors.Is(err, prompt.ErrBack) {
-			return err
-		}
-		if err := form.backFromConfirmation(); err != nil {
-			return err
-		}
-	}
+	return commitProfile(ctx, path, name, p, f, pr)
 }
 
 // resolveKind answers what kind of agent a name is, which is what decides the
@@ -207,6 +217,21 @@ func resolveKind(name string) config.Kind {
 		return config.KindGeneric
 	}
 	return a.Kind
+}
+
+// resolveKindAt gives an agent defined in the target file precedence over
+// the merged launch configuration. --file may point outside Candidates().
+func resolveKindAt(path, name string) config.Kind {
+	if data, err := os.ReadFile(path); err == nil {
+		if cfg, err := config.Parse(data); err == nil {
+			if _, defined := cfg.Agents[name]; defined {
+				if agent, err := cfg.AgentFor(name); err == nil {
+					return agent.Kind
+				}
+			}
+		}
+	}
+	return resolveKind(name)
 }
 
 // slotLabel names a row the way the model is known to whoever is answering: by
@@ -260,11 +285,9 @@ func defaultSlotChoice(slot string, candidates []proxy.Model, current string) in
 	return 0
 }
 
-// commitProfile validates the collected profile, optionally confirms that an
-// existing one may be replaced, and merges it into the settings file. It is
-// the single write path for `cpa profile create`, so the flag-driven and the
-// interactive flow report and refuse identically. A nil prompter means there
-// is no terminal to ask on, which makes an existing profile an error.
+// commitProfile validates the collected profile and merges it into the target
+// settings file. An existing name is rejected unless --force explicitly allows
+// replacing the entire profile, on both terminal and flag-driven paths.
 func commitProfile(ctx context.Context, path, name string, p *config.Profile, f *flags, pr *prompt.Prompter) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -285,23 +308,12 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 		return err
 	}
 
-	old, exists := existingProfile(path, name)
+	old, exists, err := readProfileAt(path, name)
+	if err != nil {
+		return err
+	}
 	if exists && !f.force {
-		if pr == nil {
-			return fmt.Errorf("profile %q already exists in %s; pass --force to overwrite it", name, path)
-		}
-		ok, err := pr.Confirm(
-			fmt.Sprintf("Profile %q already exists in %s (currently %s). Overwrite it?", name, path, describeProfile(old)),
-			"Overwrite", "Cancel")
-		if errors.Is(err, prompt.ErrBack) {
-			return err
-		}
-		if err != nil {
-			return aborted(err)
-		}
-		if !ok {
-			return fmt.Errorf("aborted; %q left untouched in %s", name, path)
-		}
+		return profileExistsError(path, name)
 	}
 
 	// Every answer the prompt needed is in hand. Hand the terminal back
@@ -338,7 +350,7 @@ func commitProfile(ctx context.Context, path, name string, p *config.Profile, f 
 	// agent alone reads, so writing it onto a profile for another one would
 	// change which agent the profile is even for.
 	rows := []pickerRow(nil)
-	if resolveKind(p.Agent) == config.KindClaude {
+	if resolveKindAt(path, p.Agent) == config.KindClaude {
 		rows = pickerRows(p)
 	}
 	if len(rows) > 0 {
@@ -483,24 +495,36 @@ func matching(models []proxy.Model, family string) []proxy.Model {
 	return out
 }
 
-// existingProfile reports whether the settings file at path already defines
-// name, returning the profile so a caller can describe what it is replacing.
-// An unreadable or malformed file reads as "nothing there", leaving the
-// error to the write path where it can be reported properly.
-func existingProfile(path, name string) (*config.Profile, bool) {
+// readProfileAt reads only the document that a command will write.
+func readProfileAt(path, name string) (*config.Profile, bool, error) {
 	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
 	if err != nil {
-		return nil, false
+		return nil, false, err
 	}
 	cfg, err := config.Parse(data)
 	if err != nil {
-		return nil, false
+		return nil, false, fmt.Errorf("%s: %w", path, err)
 	}
 	p, ok := cfg.Profiles[name]
-	if !ok {
-		return nil, false
+	return p, ok, nil
+}
+
+func profileExistsError(path, name string) error {
+	return fmt.Errorf("profile %q already exists in %s; use `cpa profile edit %s` to update it, or --force to replace it entirely", name, path, name)
+}
+
+func ensureNewProfile(path, name string) error {
+	_, exists, err := readProfileAt(path, name)
+	if err != nil {
+		return err
 	}
-	return p, true
+	if exists {
+		return profileExistsError(path, name)
+	}
+	return nil
 }
 
 // describeProfile summarises a profile in one line for prompts and reports.
