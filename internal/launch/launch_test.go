@@ -198,12 +198,34 @@ func TestBuildInjectsClaudeEnv(t *testing.T) {
 	if plan.Bin != "claude" {
 		t.Errorf("bin = %q", plan.Bin)
 	}
-	// The profile's env rides along in --settings; user args still come last.
-	if got := plan.Args[len(plan.Args)-1]; got != "--resume" {
-		t.Errorf("user args not forwarded: %v", plan.Args)
+	if want := []string{"--resume", "--settings", plan.SettingsPath}; !reflect.DeepEqual(plan.Args, want) {
+		t.Errorf("args = %v, want %v", plan.Args, want)
 	}
-	if !strings.Contains(strings.Join(plan.Args, " "), "--settings "+plan.SettingsPath) {
-		t.Errorf("expected --settings <path> in argv, got %v", plan.Args)
+}
+
+func TestClaudeArgs(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		agentArgs   []string
+		profileArgs []string
+		userArgs    []string
+		settings    string
+		want        []string
+	}{
+		{name: "interactive", settings: "settings.json", want: []string{"--settings", "settings.json"}},
+		{name: "print", userArgs: []string{"-p", "hello"}, settings: "settings.json", want: []string{"-p", "hello", "--settings", "settings.json"}},
+		{name: "positional prompt", userArgs: []string{"hello"}, settings: "settings.json", want: []string{"hello", "--settings", "settings.json"}},
+		{name: "resume", userArgs: []string{"--resume", "session-id"}, settings: "settings.json", want: []string{"--resume", "session-id", "--settings", "settings.json"}},
+		{name: "configured args without attach", agentArgs: []string{"--model", "opus"}, profileArgs: []string{"--permission-mode", "auto"}, userArgs: []string{"-p", "hello"}, settings: "settings.json", want: []string{"--model", "opus", "--permission-mode", "auto", "-p", "hello", "--settings", "settings.json"}},
+		{name: "separator", userArgs: []string{"-p", "--", "hello"}, settings: "settings.json", want: []string{"-p", "--settings", "settings.json", "--", "hello"}},
+		{name: "no generated settings", userArgs: []string{"-p", "hello"}, want: []string{"-p", "hello"}},
+		{name: "user settings last before cpa", userArgs: []string{"--settings", "mine.json", "-p", "hello"}, settings: "settings.json", want: []string{"--settings", "mine.json", "-p", "hello", "--settings", "settings.json"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := claudeArgs(tt.agentArgs, tt.profileArgs, tt.userArgs, tt.settings); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("args = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -380,6 +402,22 @@ func TestBuildRefusesCompetingSettingsFlag(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "claudeSettings") {
 		t.Errorf("error should suggest the profile's claudeSettings, got: %v", err)
+	}
+}
+
+func TestBuildAttachUsesExistingSessionSettings(t *testing.T) {
+	cfg := testConfig()
+	cfg.Agents = map[string]config.Agent{"claude": {Bin: "claude", Kind: config.KindClaude, Args: []string{"--model", "opus"}}}
+	cfg.Profiles["deepseek"].Args = []string{"--permission-mode", "auto"}
+	plan, err := Build(cfg, "claude", "", []string{"attach", "short-id"}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"attach", "short-id"}; !reflect.DeepEqual(plan.Args, want) {
+		t.Errorf("args = %v, want %v", plan.Args, want)
+	}
+	if plan.SettingsPath != "" || len(plan.SettingsBlob) != 0 {
+		t.Errorf("attach must not generate startup settings: path=%q", plan.SettingsPath)
 	}
 }
 
