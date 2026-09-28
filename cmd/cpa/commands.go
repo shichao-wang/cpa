@@ -16,22 +16,21 @@ import (
 // flags holds cpa's own options. Launch arguments after the agent name are
 // passed through untouched.
 type flags struct {
-	profile               string
-	dryRun                bool
-	noDiscover            bool
-	jsonOut               bool
-	force                 bool
-	allowSettingsConflict bool
-	name                  string
-	file                  string
-	baseURL               string
-	apiKey                string
-	description           string
-	agent                 string
-	family                string
-	model                 string
-	provided              map[string]bool
-	rest                  []string
+	profile     string
+	dryRun      bool
+	noDiscover  bool
+	jsonOut     bool
+	force       bool
+	name        string
+	file        string
+	baseURL     string
+	apiKey      string
+	description string
+	agent       string
+	family      string
+	model       string
+	provided    map[string]bool
+	rest        []string
 }
 
 func parseFlags(args []string) (*flags, error) {
@@ -93,8 +92,6 @@ func parseFlags(args []string) (*flags, error) {
 			f.dryRun = true
 		case a == "--no-discover":
 			f.noDiscover = true
-		case a == "--allow-settings-conflict":
-			f.allowSettingsConflict = true
 		case a == "--json":
 			f.jsonOut = true
 		case a == "--force":
@@ -186,8 +183,6 @@ func parseLaunchArgs(args []string) (string, *flags, error) {
 			f.dryRun = true
 		case a == "--no-discover":
 			f.noDiscover = true
-		case a == "--allow-settings-conflict":
-			f.allowSettingsConflict = true
 		case strings.HasPrefix(a, "-"):
 			return "", nil, fmt.Errorf("unknown cpa flag %q before agent", a)
 		default:
@@ -221,10 +216,7 @@ func cmdLaunch(ctx context.Context, agentName string, f *flags) error {
 		}
 	}
 
-	plan, err := launch.Build(cfg, agentName, name, f.rest, launch.Options{
-		Available:             available,
-		AllowSettingsConflict: f.allowSettingsConflict,
-	})
+	plan, err := launch.Build(cfg, agentName, name, f.rest, launch.Options{Available: available})
 	if err != nil {
 		return err
 	}

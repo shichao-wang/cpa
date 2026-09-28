@@ -459,8 +459,7 @@ the slots that model serves.
 | `cpa upgrade [--check]` | Update cpa from its GitHub releases. |
 | `cpa version` | Print the version. |
 
-Launch flags (`--profile` / `-p`, `--dry-run`, `--no-discover`,
-`--allow-settings-conflict`) go before the agent name. Everything after it is
+Launch flags (`--profile` / `-p`, `--dry-run`, `--no-discover`) go before the agent name. Everything after it is
 forwarded unchanged: `cpa -p deepseek claude -p "explain this repo"` uses the
 first `-p` for cpa and the second for Claude Code. For new Claude Code
 sessions, cpa places its generated `--settings` after the agent arguments but
@@ -507,8 +506,7 @@ that one over too.
 
 **Two different `--settings`.** `cpa` supplies `--settings` itself, so passing
 your own is an error rather than a coin flip. Move those settings into the
-profile's `claudeSettings`, or pass `--allow-settings-conflict` to let cpa's
-document come last.
+profile's `claudeSettings`.
 
 ## Status
 

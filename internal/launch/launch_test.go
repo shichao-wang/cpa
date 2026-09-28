@@ -400,17 +400,8 @@ func TestBuildRefusesCompetingSettingsFlag(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error when the user passes their own --settings")
 	}
-	if !strings.Contains(err.Error(), "allow-settings-conflict") {
-		t.Errorf("error should name the escape hatch, got: %v", err)
-	}
-
-	plan, err := Build(testConfig(), "claude", "", []string{"--settings", "mine.json"},
-		Options{AllowSettingsConflict: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := []string{"--settings", "mine.json", "--settings", plan.SettingsPath}; !reflect.DeepEqual(plan.Args, want) {
-		t.Errorf("args = %v, want %v", plan.Args, want)
+	if !strings.Contains(err.Error(), "claudeSettings") {
+		t.Errorf("error should suggest the profile's claudeSettings, got: %v", err)
 	}
 }
 

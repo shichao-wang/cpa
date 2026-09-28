@@ -66,9 +66,6 @@ type Options struct {
 	// A nil slice means discovery was skipped or failed; the reasons for
 	// that are appended to Plan.Notices.
 	Available []proxy.Model
-	// AllowSettingsConflict lets a launch proceed when the user passed
-	// their own --settings. cpa's settings come last in that case.
-	AllowSettingsConflict bool
 }
 
 // Build resolves agent + profile into a Plan.
@@ -150,13 +147,12 @@ func Build(cfg *config.Config, agentName, profileName string, userArgs []string,
 		return nil, err
 	}
 	if blob != nil {
-		if hasSettingsFlag(userArgs) && !opts.AllowSettingsConflict {
+		if hasSettingsFlag(userArgs) {
 			return nil, fmt.Errorf(
 				"you passed --settings, which cpa also needs: it is how the profile's " +
 					"endpoint reaches Claude Code (a global settings.json env block would " +
 					"otherwise win over the process environment).\n" +
-					"Move those settings into this profile's \"claudeSettings\", or pass " +
-					"--allow-settings-conflict to let cpa's settings come last")
+					"Move those settings into this profile's \"claudeSettings\"")
 		}
 		plan.SettingsBlob = blob
 		plan.SettingsPath = settingsPath()
