@@ -40,8 +40,10 @@ $ ANTHROPIC_BASE_URL=http://127.0.0.1:9999 claude -p ok
 ok                      # ← 用的是 settings.json 里的端点，不是你指定的
 ```
 
-因此 `cpa` 通过 `claude --settings <文件>` 传递 profile，它的优先级高于
-`settings.json`。已在 Claude Code 2.1.280 上实测：
+因此 `cpa` 通过 Claude Code 的 `--settings <文件>` 选项传递 profile，它的
+优先级高于 `settings.json`。`attach <id>` 是例外：cpa 不注入启动选项，
+因为现有后台会话已经具备启动时的设置；在 Claude Code 2.1.283 中，将选项放在
+`attach` 前会启动新会话。以下设置优先级已在 Claude Code 2.1.280 上实测：
 
 | profile 传给 Claude Code 的方式 | 能压过 `settings.json` 吗 |
 |---|---|
@@ -405,8 +407,9 @@ mapping source: claude aliases
 启动参数（`--profile` / `-p`、`--dry-run`、`--no-discover`、
 `--allow-settings-conflict`）放在 agent 名称前；其后参数原样透传。
 例如 `cpa -p deepseek claude -p "解释一下这个仓库"` 中第一个 `-p` 属于 cpa，
-第二个属于 Claude Code。其他子命令还支持 `--json`、`--name`、`--agent`、
-`--file` 等参数。`cpa profile create` 另有 `--description`、`--base-url`、
+第二个属于 Claude Code。对于新建的 Claude Code 会话，cpa 将生成的
+`--settings` 放在 agent 参数之后、用于结束选项解析的 `--` 之前，使 profile 保持生效。
+其他子命令还支持 `--json`、`--name`、`--agent`、`--file` 等参数。`cpa profile create` 另有 `--description`、`--base-url`、
 `--api-key`、`--family`、`--model`、`--force`，用来在没有终端时回答它的提问。
 `--family` 仍可作为未 pin 槽位的兜底；交互流程会直接配置 Claude Code 的各个槽位，
 不再询问 family。

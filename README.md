@@ -45,8 +45,12 @@ $ ANTHROPIC_BASE_URL=http://127.0.0.1:9999 claude -p ok
 ok                      # ← the settings.json endpoint was used, not yours
 ```
 
-`cpa` therefore supplies the profile through `claude --settings <file>`,
-which outranks `settings.json`. Verified against Claude Code 2.1.280:
+`cpa` therefore supplies the profile through Claude Code's `--settings <file>`
+option, which outranks `settings.json`. The exception is `attach <id>`: cpa
+does not inject startup options, because the existing background session already
+has its launch settings; putting options before `attach` starts a new session
+in Claude Code 2.1.283. The settings precedence below was verified against
+Claude Code 2.1.280:
 
 | How the profile reaches Claude Code | Wins over `settings.json`? |
 |---|---|
@@ -458,8 +462,10 @@ the slots that model serves.
 Launch flags (`--profile` / `-p`, `--dry-run`, `--no-discover`,
 `--allow-settings-conflict`) go before the agent name. Everything after it is
 forwarded unchanged: `cpa -p deepseek claude -p "explain this repo"` uses the
-first `-p` for cpa and the second for Claude Code. Other commands also accept
-`--json`, `--name`, `--agent`, and `--file` as documented.
+first `-p` for cpa and the second for Claude Code. For new Claude Code
+sessions, cpa places its generated `--settings` after the agent arguments but
+before any `--` end-of-options separator, so the profile still applies. Other commands
+also accept `--json`, `--name`, `--agent`, and `--file` as documented.
 `cpa profile create` additionally takes `--description`, `--base-url`,
 `--api-key`, `--family`, `--model` and `--force`, which answer its prompts
 without a terminal. `--family` remains available as a fallback for any slot
