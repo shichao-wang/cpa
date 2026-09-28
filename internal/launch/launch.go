@@ -130,30 +130,58 @@ func Build(cfg *config.Config, agentName, profileName string, userArgs []string,
 		plan.Unset = removeString(plan.Unset, "ANTHROPIC_API_KEY")
 	}
 
-	plan.Args = append(plan.Args, agent.Args...)
-	plan.Args = append(plan.Args, profile.Args...)
+	if agent.Kind != config.KindClaude {
+		plan.Args = append(plan.Args, agent.Args...)
+		plan.Args = append(plan.Args, profile.Args...)
+		plan.Args = append(plan.Args, userArgs...)
+		return plan, nil
+	}
 
-	if agent.Kind == config.KindClaude {
-		blob, err := buildSettings(cfg, profile, plan.Env, plan.Models)
-		if err != nil {
-			return nil, err
+	// attach connects to an existing background process, which already has its
+	// launch settings. Claude Code requires the subcommand to come first and
+	// does not accept startup options after its session ID.
+	if len(userArgs) >= 2 && userArgs[0] == "attach" {
+		plan.Args = append(plan.Args, userArgs...)
+		return plan, nil
+	}
+
+	blob, err := buildSettings(cfg, profile, plan.Env, plan.Models)
+	if err != nil {
+		return nil, err
+	}
+	if blob != nil {
+		if hasSettingsFlag(userArgs) && !opts.AllowSettingsConflict {
+			return nil, fmt.Errorf(
+				"you passed --settings, which cpa also needs: it is how the profile's " +
+					"endpoint reaches Claude Code (a global settings.json env block would " +
+					"otherwise win over the process environment).\n" +
+					"Move those settings into this profile's \"claudeSettings\", or pass " +
+					"--allow-settings-conflict to let cpa's settings come last")
 		}
-		if blob != nil {
-			if hasSettingsFlag(userArgs) && !opts.AllowSettingsConflict {
-				return nil, fmt.Errorf(
-					"you passed --settings, which cpa also needs: it is how the profile's " +
-						"endpoint reaches Claude Code (a global settings.json env block would " +
-						"otherwise win over the process environment).\n" +
-						"Move those settings into this profile's \"claudeSettings\", or pass " +
-						"--allow-settings-conflict to let cpa's settings come last")
-			}
-			plan.SettingsBlob = blob
-			plan.SettingsPath = settingsPath()
-			plan.Args = append(plan.Args, "--settings", plan.SettingsPath)
+		plan.SettingsBlob = blob
+		plan.SettingsPath = settingsPath()
+	}
+	plan.Args = claudeArgs(agent.Args, profile.Args, userArgs, plan.SettingsPath)
+	return plan, nil
+}
+
+func claudeArgs(agentArgs, profileArgs, userArgs []string, settingsPath string) []string {
+	args := make([]string, 0, len(agentArgs)+len(profileArgs)+len(userArgs)+2)
+	args = append(args, agentArgs...)
+	args = append(args, profileArgs...)
+	args = append(args, userArgs...)
+	if settingsPath == "" {
+		return args
+	}
+	for i, arg := range args {
+		if arg == "--" {
+			args = append(args, "", "")
+			copy(args[i+2:], args[i:])
+			args[i], args[i+1] = "--settings", settingsPath
+			return args
 		}
 	}
-	plan.Args = append(plan.Args, userArgs...)
-	return plan, nil
+	return append(args, "--settings", settingsPath)
 }
 
 // profileFitsAgent refuses to apply a profile to a downstream application it
