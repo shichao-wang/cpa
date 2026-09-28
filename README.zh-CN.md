@@ -402,8 +402,7 @@ mapping source: claude aliases
 | `cpa upgrade [--check]` | 从 GitHub release 更新 cpa。 |
 | `cpa version` | 打印版本。 |
 
-启动参数（`--profile` / `-p`、`--dry-run`、`--no-discover`、
-`--allow-settings-conflict`）放在 agent 名称前；其后参数原样透传。
+启动参数（`--profile` / `-p`、`--dry-run`、`--no-discover`）放在 agent 名称前；其后参数原样透传。
 例如 `cpa -p deepseek claude -p "解释一下这个仓库"` 中第一个 `-p` 属于 cpa，
 第二个属于 Claude Code。其他子命令还支持 `--json`、`--name`、`--agent`、
 `--file` 等参数。`cpa profile create` 另有 `--description`、`--base-url`、
@@ -438,8 +437,7 @@ profile list` 会显示每个 profile 绑在哪个 agent 上，未绑定的显�
 接管这一项，就设置 `customModelOption`。
 
 **两个 `--settings`。** `cpa` 自己要用 `--settings`，所以你自己传一个会被报错
-拦下，而不是靠猜。把那些设置放进 profile 的 `claudeSettings`，或加
-`--allow-settings-conflict` 让 cpa 的文档排在后面。
+拦下，而不是靠猜。把那些设置放进 profile 的 `claudeSettings`。
 
 ## 状态
 

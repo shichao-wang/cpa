@@ -49,8 +49,6 @@ FLAGS
   --no-discover      skip querying the gateway for its model catalogue
   --json             machine-readable output for "models" and "profile list"
   --force            overwrite an existing settings file ("init")
-  --allow-settings-conflict
-                     proceed even if you passed your own --settings
   --name <name>      profile name to create ("import-claude", "profile create")
   --agent <name>     agent for "profile create/edit" (create default: claude)
   --file <path>      settings file for "profile create/edit"
