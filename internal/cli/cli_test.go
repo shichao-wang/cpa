@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/connection"
-	"github.com/shichao-wang/cpagw/internal/profile"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/connection"
+	"github.com/shichao-wang/cpa/internal/profile"
+	"github.com/shichao-wang/cpa/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -366,7 +366,7 @@ func TestConnectionStdinModeDoesNotEnterWizardOnTTY(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &fakePrompter{terminal: true, lines: []string{"should-not-be-read"}, secret: "ignored"}
-	root := &cobra.Command{Use: "cpagw"}
+	root := &cobra.Command{Use: "cpa"}
 	root.AddCommand(newConnectionCommandWithPrompter(func() (*store.Store, error) { return store.New(dir) }, Options{}, p))
 	root.SetIn(strings.NewReader("tty-script-secret\n"))
 	root.SetArgs([]string{"connection", "add", "demo", "--protocol", config.Chat, "--base-url", "https://api.example.test", "--models", modelPath, "--api-key-stdin"})
@@ -378,7 +378,7 @@ func TestConnectionStdinModeDoesNotEnterWizardOnTTY(t *testing.T) {
 	}
 
 	p = &fakePrompter{terminal: true, lines: []string{"must-not-be-consumed"}}
-	root = &cobra.Command{Use: "cpagw"}
+	root = &cobra.Command{Use: "cpa"}
 	root.AddCommand(newConnectionCommandWithPrompter(func() (*store.Store, error) { return store.New(dir) }, Options{}, p))
 	root.SetIn(strings.NewReader("another-secret"))
 	root.SetArgs([]string{"connection", "add", "demo", "--api-key-stdin"})
@@ -399,7 +399,7 @@ func TestConnectionWizardCreatesWithoutLeakingSecret(t *testing.T) {
 	var output, stderr bytes.Buffer
 	// 用私有命令构造器注入向导输入，避免扩大公开 Options。
 	cmd := newConnectionCommandWithPrompter(func() (*store.Store, error) { return store.New(dir) }, Options{}, p)
-	isolated := &cobra.Command{Use: "cpagw"}
+	isolated := &cobra.Command{Use: "cpa"}
 	isolated.AddCommand(cmd)
 	isolated.SetOut(&output)
 	isolated.SetErr(&stderr)
@@ -466,7 +466,7 @@ func TestConnectionWizardCancellationAndInvalidInputDoNotSave(t *testing.T) {
 				t.Fatal(err)
 			}
 			open := func() (*store.Store, error) { return store.New(dir) }
-			root := &cobra.Command{Use: "cpagw"}
+			root := &cobra.Command{Use: "cpa"}
 			root.AddCommand(newConnectionCommandWithPrompter(open, Options{}, tc.p))
 			var output, stderr bytes.Buffer
 			root.SetOut(&output)
@@ -511,7 +511,7 @@ func TestVersionCommand(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("version 执行失败：%v", err)
 	}
-	if got := output.String(); !strings.Contains(got, "cpagw unknown") {
+	if got := output.String(); !strings.Contains(got, "cpa unknown") {
 		t.Fatalf("version 未报告未知版本：%q", got)
 	}
 }
@@ -536,9 +536,9 @@ func TestFormatVersion(t *testing.T) {
 		want  []string
 		omits []string
 	}{
-		{name: "全部注入", info: VersionInfo{Version: "v1.2.3", Commit: "abc123", Date: "2026-10-05T19:40:00Z"}, want: []string{"cpagw v1.2.3", "commit: abc123", "构建时间: 2026-10-05T19:40:00Z"}},
-		{name: "仅版本号时省略其余行", info: VersionInfo{Version: "v1.2.3"}, want: []string{"cpagw v1.2.3"}, omits: []string{"commit:", "构建时间:"}},
-		{name: "均未注入", info: VersionInfo{}, want: []string{"cpagw unknown"}, omits: []string{"commit:", "构建时间:"}},
+		{name: "全部注入", info: VersionInfo{Version: "v1.2.3", Commit: "abc123", Date: "2026-10-05T19:40:00Z"}, want: []string{"cpa v1.2.3", "commit: abc123", "构建时间: 2026-10-05T19:40:00Z"}},
+		{name: "仅版本号时省略其余行", info: VersionInfo{Version: "v1.2.3"}, want: []string{"cpa v1.2.3"}, omits: []string{"commit:", "构建时间:"}},
+		{name: "均未注入", info: VersionInfo{}, want: []string{"cpa unknown"}, omits: []string{"commit:", "构建时间:"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

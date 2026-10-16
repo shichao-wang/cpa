@@ -1,6 +1,6 @@
 /bin/
 /dist/
-/.cpagw/
+/.cpa/
 /.claude/
 *.log
 *.test

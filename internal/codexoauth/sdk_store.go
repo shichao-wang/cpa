@@ -14,13 +14,13 @@ import (
 
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
-var ErrDeleteUnsupported = errors.New("SDK 不得删除 cpagw 管理的 OAuth 凭证")
+var ErrDeleteUnsupported = errors.New("SDK 不得删除 cpa 管理的 OAuth 凭证")
 
-// SDKStore 将 cpagw 的强类型 OAuth 状态适配为 SDK 公开的 coreauth.Store。
+// SDKStore 将 cpa 的强类型 OAuth 状态适配为 SDK 公开的 coreauth.Store。
 // 它不会读取或写入 SDK 认证文件。
 type SDKStore struct {
 	state     *store.Store
@@ -60,7 +60,7 @@ func (s *SDKStore) AuthID(ref string) string {
 		return ""
 	}
 	sum := sha256.Sum256([]byte(ref))
-	return "cpagw:" + s.namespace + ":" + hex.EncodeToString(sum[:])
+	return "cpa:" + s.namespace + ":" + hex.EncodeToString(sum[:])
 }
 
 // BindManager 将失败处理逻辑连接到 SDK CoreManager。
@@ -126,10 +126,10 @@ func (s *SDKStore) Track(ctx context.Context, authID string) (context.Context, f
 	return tracked, release, nil
 }
 
-// List 从 cpagw 唯一事实源中构造所有已登录的 OAuth 连接。
+// List 从 cpa 唯一事实源中构造所有已登录的 OAuth 连接。
 func (s *SDKStore) List(ctx context.Context) ([]*coreauth.Auth, error) {
 	if s == nil || s.state == nil {
-		return nil, errors.New("cpagw OAuth 状态存储未配置")
+		return nil, errors.New("cpa OAuth 状态存储未配置")
 	}
 	if ctx != nil {
 		if err := ctx.Err(); err != nil {
@@ -162,10 +162,10 @@ func (s *SDKStore) List(ctx context.Context) ([]*coreauth.Auth, error) {
 				"plan_type":            credential.PlanType,
 				"expired":              credential.ExpiresAt.UTC().Format(time.RFC3339Nano),
 				"last_refresh":         credential.LastRefresh.UTC().Format(time.RFC3339Nano),
-				"cpagw_generation":     credential.Generation,
-				"cpagw_connection_id":  connection.ID,
-				"cpagw_connection":     connectionName,
-				"cpagw_credential_ref": connection.CredentialRef,
+				"cpa_generation":     credential.Generation,
+				"cpa_connection_id":  connection.ID,
+				"cpa_connection":     connectionName,
+				"cpa_credential_ref": connection.CredentialRef,
 			}
 			records = append(records, &coreauth.Auth{
 				ID:       authID,
@@ -186,20 +186,20 @@ func (s *SDKStore) List(ctx context.Context) ([]*coreauth.Auth, error) {
 // Save 仅在令牌轮换时执行条件持久化；忽略 SDK 的状态记录快照。
 func (s *SDKStore) Save(ctx context.Context, auth *coreauth.Auth) (string, error) {
 	if s == nil || s.state == nil || auth == nil {
-		return "", errors.New("cpagw OAuth 状态存储未配置")
+		return "", errors.New("cpa OAuth 状态存储未配置")
 	}
 	if !s.ownsAuthID(auth.ID) {
 		return "", ErrDeleteUnsupported
 	}
-	ref := strings.TrimSpace(stringValue(auth.Metadata, "cpagw_credential_ref"))
+	ref := strings.TrimSpace(stringValue(auth.Metadata, "cpa_credential_ref"))
 	if ref == "" || auth.ID != s.AuthID(ref) {
 		return s.fail(auth.ID, errors.New("OAuth 凭证绑定信息无效"))
 	}
 	binding := store.OAuthBinding{
-		Connection:    strings.TrimSpace(stringValue(auth.Metadata, "cpagw_connection")),
-		ConnectionID:  strings.TrimSpace(stringValue(auth.Metadata, "cpagw_connection_id")),
+		Connection:    strings.TrimSpace(stringValue(auth.Metadata, "cpa_connection")),
+		ConnectionID:  strings.TrimSpace(stringValue(auth.Metadata, "cpa_connection_id")),
 		CredentialRef: ref,
-		Generation:    uintValue(auth.Metadata["cpagw_generation"]),
+		Generation:    uintValue(auth.Metadata["cpa_generation"]),
 	}
 	if binding.Connection == "" || binding.ConnectionID == "" || binding.Generation == 0 {
 		return s.fail(auth.ID, errors.New("OAuth 凭证绑定信息无效"))
@@ -268,17 +268,17 @@ func (s *SDKStore) Save(ctx context.Context, auth *coreauth.Auth) (string, error
 	if err != nil {
 		return s.fail(auth.ID, errors.New("OAuth 凭证无法安全保存"))
 	}
-	// SDK 会在同一个可变 Metadata 对象中收到更新后的 cpagw generation，
+	// SDK 会在同一个可变 Metadata 对象中收到更新后的 cpa generation，
 	// 使后续刷新使用已保存的 CAS 版本，而不是过期状态。
-	auth.Metadata["cpagw_generation"] = generation
+	auth.Metadata["cpa_generation"] = generation
 	return auth.ID, nil
 }
 
-// Delete 明确不支持；只能通过 cpagw 领域操作删除 OAuth 凭证。
+// Delete 明确不支持；只能通过 cpa 领域操作删除 OAuth 凭证。
 func (s *SDKStore) Delete(context.Context, string) error { return ErrDeleteUnsupported }
 
 func (s *SDKStore) ownsAuthID(authID string) bool {
-	prefix := "cpagw:" + s.namespace + ":"
+	prefix := "cpa:" + s.namespace + ":"
 	if !strings.HasPrefix(authID, prefix) {
 		return false
 	}
@@ -319,7 +319,7 @@ func (s *SDKStore) syncOrRemove(ctx context.Context, auth *coreauth.Auth) {
 		return
 	}
 	// Manager 会先安装 Auth 的副本，再调用 Store.Save。如果 Save 推进了
-	// cpagw 令牌 generation，也必须将该记录同步回 manager 当前记录，且不能递归持久化。
+	// cpa 令牌 generation，也必须将该记录同步回 manager 当前记录，且不能递归持久化。
 	s.mu.RLock()
 	manager := s.manager
 	s.mu.RUnlock()
@@ -335,7 +335,7 @@ func (s *SDKStore) syncOrRemove(ctx context.Context, auth *coreauth.Auth) {
 	}
 	credentialFields := []string{
 		"access_token", "refresh_token", "id_token", "account_id", "plan_type",
-		"expired", "last_refresh", "cpagw_generation",
+		"expired", "last_refresh", "cpa_generation",
 	}
 	changed := false
 	for _, key := range credentialFields {
@@ -383,7 +383,7 @@ func restoreCredentialMetadata(auth *coreauth.Auth, credential config.OAuthCrede
 	auth.Metadata["plan_type"] = credential.PlanType
 	auth.Metadata["expired"] = credential.ExpiresAt.UTC().Format(time.RFC3339Nano)
 	auth.Metadata["last_refresh"] = credential.LastRefresh.UTC().Format(time.RFC3339Nano)
-	auth.Metadata["cpagw_generation"] = credential.Generation
+	auth.Metadata["cpa_generation"] = credential.Generation
 }
 
 func uintValue(value any) uint64 {

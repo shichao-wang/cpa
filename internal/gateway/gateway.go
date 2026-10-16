@@ -23,16 +23,16 @@ import (
 	"time"
 
 	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 	"gopkg.in/yaml.v3"
 )
 
 const (
 	RuntimeFileName = "runtime.json"
 	RunLockFileName = store.RunLockFileName
-	ReadyPath       = "/__cpagw/ready"
-	probeHeader     = "X-CPAGW-Instance-Token"
+	ReadyPath       = "/__cpa/ready"
+	probeHeader     = "X-CPA-Instance-Token"
 )
 
 // RuntimeState 是网关进程私有的运行状态。文件权限必须为 0600；其中的探测令牌不得展示给用户。

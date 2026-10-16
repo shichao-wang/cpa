@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 	"gopkg.in/yaml.v3"
 )
 
@@ -44,7 +44,7 @@ func ReadFile(path string) (File, error) {
 	return ParseFile(f)
 }
 
-// Create 根据 YAML 创建 profile，并仅将新生成的 cpagw_ key 返回一次。
+// Create 根据 YAML 创建 profile，并仅将新生成的 cpa_ key 返回一次。
 func Create(st *store.Store, file File) (string, error) {
 	if file.Name == nil || strings.TrimSpace(*file.Name) == "" {
 		return "", fmt.Errorf("profile 文件必须包含 name")
@@ -203,5 +203,5 @@ func randomKey() (string, error) {
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
 	}
-	return "cpagw_" + hex.EncodeToString(b[:]), nil
+	return "cpa_" + hex.EncodeToString(b[:]), nil
 }

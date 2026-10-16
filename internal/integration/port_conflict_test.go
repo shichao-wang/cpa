@@ -19,8 +19,8 @@ func TestBinaryPortConflictDoesNotDisturbExistingServer(t *testing.T) {
 		t.Skip("短测试模式跳过子进程验收")
 	}
 	tmp := t.TempDir()
-	binary := filepath.Join(tmp, "cpagw")
-	build := exec.Command("go", "build", "-o", binary, "./cmd/cpagw")
+	binary := filepath.Join(tmp, "cpa")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/cpa")
 	build.Dir = filepath.Join("..", "..")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("构建 binary：%v\n%s", err, out)
@@ -64,14 +64,14 @@ func TestBinaryPortConflictDoesNotDisturbExistingServer(t *testing.T) {
 }
 
 // 通配监听（*:port）与具体 loopback 地址在 macOS 上可以同时绑成功，
-// 曾经因此漏判冲突并让 cpagw 顶掉了原服务。这里用真实 binary 复现该场景。
+// 曾经因此漏判冲突并让 cpa 顶掉了原服务。这里用真实 binary 复现该场景。
 func TestBinaryRejectsWildcardListenerOnSamePort(t *testing.T) {
 	if testing.Short() {
 		t.Skip("短测试模式跳过子进程验收")
 	}
 	tmp := t.TempDir()
-	binary := filepath.Join(tmp, "cpagw")
-	build := exec.Command("go", "build", "-o", binary, "./cmd/cpagw")
+	binary := filepath.Join(tmp, "cpa")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/cpa")
 	build.Dir = filepath.Join("..", "..")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("构建 binary：%v\n%s", err, out)
@@ -106,7 +106,7 @@ func TestBinaryRejectsWildcardListenerOnSamePort(t *testing.T) {
 				t.Fatal("端口冲突应立即返回，而不是等待启动超时")
 			}
 			if err == nil {
-				t.Fatalf("通配监听已占用 %s，cpagw 不应启动成功", address)
+				t.Fatalf("通配监听已占用 %s，cpa 不应启动成功", address)
 			}
 			if !strings.Contains(string(out), "已被占用") {
 				t.Fatalf("错误应说明端口已被占用：%v %s", err, out)
@@ -114,7 +114,7 @@ func TestBinaryRejectsWildcardListenerOnSamePort(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(dir, "runtime.json")); !os.IsNotExist(err) {
 				t.Errorf("冲突时不应创建 runtime.json：%v", err)
 			}
-			// 原服务必须仍能正常响应，未被 cpagw 顶掉。
+			// 原服务必须仍能正常响应，未被 cpa 顶掉。
 			client := &http.Client{Timeout: time.Second}
 			response, err := client.Get("http://" + address)
 			if err != nil {

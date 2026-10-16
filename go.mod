@@ -1,4 +1,4 @@
-module github.com/shichao-wang/cpagw
+module github.com/shichao-wang/cpa
 
 go 1.27.1
 

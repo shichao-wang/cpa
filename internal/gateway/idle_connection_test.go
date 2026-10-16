@@ -7,7 +7,7 @@ import (
 	"time"
 
 	cliproxy "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy"
-	"github.com/shichao-wang/cpagw/internal/config"
+	"github.com/shichao-wang/cpa/internal/config"
 )
 
 func idleAPIKeyConnections(prefix string) map[string]config.Connection {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shichao-wang/cpagw/internal/upgrade"
+	"github.com/shichao-wang/cpa/internal/upgrade"
 )
 
 type failingWriter struct{}
@@ -66,7 +66,7 @@ func TestUpgradeCommandReportsReplacementAndWarning(t *testing.T) {
 	cmd := newUpgradeCommand(func(context.Context, string) (upgrade.Result, error) {
 		return upgrade.Result{
 			Version: "v2026.10.5-abc123",
-			Path:    "/usr/local/bin/cpagw",
+			Path:    "/usr/local/bin/cpa",
 			Updated: true,
 			Warning: "安装目录同步失败",
 		}, nil
@@ -78,7 +78,7 @@ func TestUpgradeCommandReportsReplacementAndWarning(t *testing.T) {
 	}
 	for _, want := range []string{
 		"已升级至 v2026.10.5-abc123",
-		"/usr/local/bin/cpagw",
+		"/usr/local/bin/cpa",
 		"配置未修改",
 		"运行中的网关需手动重启",
 		"警告：安装目录同步失败",
@@ -107,12 +107,12 @@ func TestUpgradeCommandDoesNotRunAfterOutputFailure(t *testing.T) {
 
 func TestUpgradeCommandOutputFailureAfterReplacementIsExplicit(t *testing.T) {
 	cmd := newUpgradeCommand(func(context.Context, string) (upgrade.Result, error) {
-		return upgrade.Result{Version: "v2.0.0", Path: "/opt/bin/cpagw", Updated: true}, nil
+		return upgrade.Result{Version: "v2.0.0", Path: "/opt/bin/cpa", Updated: true}, nil
 	})
 	cmd.SetOut(&failingAfterWritesWriter{writesRemaining: 2})
 
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "二进制已更新为 v2.0.0（/opt/bin/cpagw）") {
+	if err == nil || !strings.Contains(err.Error(), "二进制已更新为 v2.0.0（/opt/bin/cpa）") {
 		t.Fatalf("最终输出失败时应明确二进制已更新，实际为：%v", err)
 	}
 }
@@ -133,12 +133,12 @@ func TestUpgradeCommandRunnerError(t *testing.T) {
 func TestUpgradeCommandErrorAfterReplacementIsExplicit(t *testing.T) {
 	var output bytes.Buffer
 	cmd := newUpgradeCommand(func(context.Context, string) (upgrade.Result, error) {
-		return upgrade.Result{Version: "v2.0.0", Path: "/opt/bin/cpagw", Updated: true}, errors.New("提交记录失败")
+		return upgrade.Result{Version: "v2.0.0", Path: "/opt/bin/cpa", Updated: true}, errors.New("提交记录失败")
 	})
 	cmd.SetOut(&output)
 
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "二进制已更新为 v2.0.0（/opt/bin/cpagw）") {
+	if err == nil || !strings.Contains(err.Error(), "二进制已更新为 v2.0.0（/opt/bin/cpa）") {
 		t.Fatalf("错误应明确二进制已更新，实际为：%v", err)
 	}
 }

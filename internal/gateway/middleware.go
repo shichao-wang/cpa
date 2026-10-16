@@ -14,9 +14,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	cliproxy "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy"
-	"github.com/shichao-wang/cpagw/internal/codexoauth"
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/codexoauth"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 type requestGate struct {

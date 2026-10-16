@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shichao-wang/cpagw/internal/config"
+	"github.com/shichao-wang/cpa/internal/config"
 )
 
 func TestStrictStateSchema(t *testing.T) {

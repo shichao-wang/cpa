@@ -23,7 +23,7 @@ import (
 )
 
 const testVersion = "v2026.10.5-abc123"
-const testArchive = "cpagw_darwin_arm64.tar.gz"
+const testArchive = "cpa_darwin_arm64.tar.gz"
 
 type tarEntry struct {
 	name string
@@ -112,11 +112,11 @@ type fixture struct {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	f := &fixture{u: newUpdater(), dir: t.TempDir(), status: make(map[string]int)}
-	f.binary = filepath.Join(f.dir, "cpagw")
+	f.binary = filepath.Join(f.dir, "cpa")
 	if err := os.WriteFile(f.binary, []byte("旧 binary"), 0751); err != nil {
 		t.Fatal(err)
 	}
-	f.archive = makeArchive(t, tarEntry{name: "cpagw", body: "新 binary"}, tarEntry{name: "README.md", body: "说明"})
+	f.archive = makeArchive(t, tarEntry{name: "cpa", body: "新 binary"}, tarEntry{name: "README.md", body: "说明"})
 	f.checksums = archiveChecksum(f.archive)
 	f.metadata = releaseJSON(t, testVersion, testArchive, "checksums.txt")
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +168,7 @@ func (f *fixture) assertContents(t *testing.T, want string) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".cpagw-upgrade-") {
+		if strings.HasPrefix(entry.Name(), ".cpa-upgrade-") {
 			t.Errorf("临时目录未清理：%s", entry.Name())
 		}
 	}
@@ -178,7 +178,7 @@ func TestArchiveName(t *testing.T) {
 	for _, goos := range []string{"darwin", "linux"} {
 		for _, goarch := range []string{"amd64", "arm64"} {
 			name, err := archiveName(goos, goarch)
-			want := "cpagw_" + goos + "_" + goarch + ".tar.gz"
+			want := "cpa_" + goos + "_" + goarch + ".tar.gz"
 			if err != nil || name != want {
 				t.Fatalf("平台映射错误：%s/%s：%q，%v", goos, goarch, name, err)
 			}
@@ -243,8 +243,8 @@ func TestAlreadyLatest(t *testing.T) {
 
 func TestUpgradeSymlink(t *testing.T) {
 	f := newFixture(t)
-	link := filepath.Join(f.dir, "cpagw-link")
-	if err := os.Symlink("cpagw", link); err != nil {
+	link := filepath.Join(f.dir, "cpa-link")
+	if err := os.Symlink("cpa", link); err != nil {
 		t.Fatal(err)
 	}
 	f.u.executable = func() (string, error) { return link, nil }
@@ -252,7 +252,7 @@ func TestUpgradeSymlink(t *testing.T) {
 	if err != nil || !result.Updated {
 		t.Fatalf("通过 symlink 升级失败：%+v，%v", result, err)
 	}
-	if value, err := os.Readlink(link); err != nil || value != "cpagw" {
+	if value, err := os.Readlink(link); err != nil || value != "cpa" {
 		t.Fatalf("symlink 被替换：%q，%v", value, err)
 	}
 	f.assertContents(t, "新 binary")
@@ -340,16 +340,16 @@ func TestUpgradeFailurePreservesBinary(t *testing.T) {
 }
 
 func TestInvalidArchives(t *testing.T) {
-	valid := tarEntry{name: "cpagw", body: "新 binary"}
+	valid := tarEntry{name: "cpa", body: "新 binary"}
 	cases := map[string][]byte{
 		"不是gzip":   []byte("not gzip"),
 		"缺少binary": makeArchive(t, tarEntry{name: "README.md", body: "说明"}),
 		"重复binary": makeArchive(t, valid, valid),
-		"symlink":  makeArchive(t, tarEntry{name: "cpagw", kind: tar.TypeSymlink}),
-		"hardlink": makeArchive(t, tarEntry{name: "cpagw", kind: tar.TypeLink}),
-		"目录":       makeArchive(t, tarEntry{name: "cpagw", kind: tar.TypeDir}),
-		"嵌套binary": makeArchive(t, tarEntry{name: "nested/cpagw", body: "新 binary"}),
-		"空binary":  makeArchive(t, tarEntry{name: "cpagw"}),
+		"symlink":  makeArchive(t, tarEntry{name: "cpa", kind: tar.TypeSymlink}),
+		"hardlink": makeArchive(t, tarEntry{name: "cpa", kind: tar.TypeLink}),
+		"目录":       makeArchive(t, tarEntry{name: "cpa", kind: tar.TypeDir}),
+		"嵌套binary": makeArchive(t, tarEntry{name: "nested/cpa", body: "新 binary"}),
+		"空binary":  makeArchive(t, tarEntry{name: "cpa"}),
 		"穿越路径":     makeArchive(t, valid, tarEntry{name: "../escape", body: "不能落盘"}),
 		"绝对路径":     makeArchive(t, valid, tarEntry{name: "/escape", body: "不能落盘"}),
 	}
@@ -361,7 +361,7 @@ func TestInvalidArchives(t *testing.T) {
 	var raw bytes.Buffer
 	gz := gzip.NewWriter(&raw)
 	tw := tar.NewWriter(gz)
-	if err := tw.WriteHeader(&tar.Header{Name: "cpagw", Size: 100, Mode: 0755}); err != nil {
+	if err := tw.WriteHeader(&tar.Header{Name: "cpa", Size: 100, Mode: 0755}); err != nil {
 		t.Fatal(err)
 	}
 	// 故意不补全 tar entry，仅完成 gzip 封装。
@@ -545,7 +545,7 @@ func TestChangedTarget(t *testing.T) {
 		t.Run(change, func(t *testing.T) {
 			f := newFixture(t)
 			link := filepath.Join(f.dir, "entry")
-			if err := os.Symlink("cpagw", link); err != nil {
+			if err := os.Symlink("cpa", link); err != nil {
 				t.Fatal(err)
 			}
 			f.u.executable = func() (string, error) { return link, nil }

@@ -16,8 +16,8 @@ func TestEmptyBinaryStartsFailClosed(t *testing.T) {
 		t.Skip("短测试模式跳过子进程验收")
 	}
 	tmp := t.TempDir()
-	binary := filepath.Join(tmp, "cpagw")
-	build := exec.Command("go", "build", "-o", binary, "./cmd/cpagw")
+	binary := filepath.Join(tmp, "cpa")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/cpa")
 	build.Dir = filepath.Join("..", "..")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("%v\n%s", err, out)
@@ -41,7 +41,7 @@ func TestEmptyBinaryStartsFailClosed(t *testing.T) {
 		t.Fatal("重复启动必须拒绝")
 	}
 	client := &http.Client{Timeout: 3 * time.Second}
-	for path, want := range map[string]int{"/v1/models": 401, "/__cpagw/ready": 404, "/v8/management/config": 404} {
+	for path, want := range map[string]int{"/v1/models": 401, "/__cpa/ready": 404, "/v8/management/config": 404} {
 		req, err := http.NewRequest("GET", "http://"+address+path, nil)
 		if err != nil {
 			t.Fatal(err)

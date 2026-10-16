@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 func testStore(t *testing.T) *store.Store {

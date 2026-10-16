@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 // TestOAuthBinaryConfiguration 验证实际 binary 的 OAuth 配置入口，不发起设备登录或上游请求。
@@ -19,8 +19,8 @@ func TestOAuthBinaryConfiguration(t *testing.T) {
 		t.Skip("短测试模式跳过 OAuth 配置子进程验收")
 	}
 	root := t.TempDir()
-	binary := filepath.Join(root, "cpagw")
-	build := exec.Command("go", "build", "-o", binary, "./cmd/cpagw")
+	binary := filepath.Join(root, "cpa")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/cpa")
 	build.Dir = filepath.Join("..", "..")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("构建 OAuth 测试 binary：%v\n%s", err, output)

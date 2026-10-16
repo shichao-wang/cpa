@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/shichao-wang/cpagw/internal/gateway"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/gateway"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 func TestStatusStoppedAndStalePID(t *testing.T) {
@@ -48,7 +48,7 @@ func TestStatusRequiresMatchingInstanceProbe(t *testing.T) {
 	var instance atomic.Value
 	instance.Store("matching")
 	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != gateway.ReadyPath || r.Header.Get("X-CPAGW-Instance-Token") != "private-token" {
+		if r.URL.Path != gateway.ReadyPath || r.Header.Get("X-CPA-Instance-Token") != "private-token" {
 			w.WriteHeader(404)
 			return
 		}

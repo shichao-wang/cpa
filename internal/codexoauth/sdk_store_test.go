@@ -14,8 +14,8 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 func newTestSDKStore(t *testing.T) (*SDKStore, *store.Store, config.OAuthCredential) {
@@ -185,10 +185,10 @@ func TestSDKStoreListLoadsOnlyManagedLoggedOAuth(t *testing.T) {
 	if _, ok := auth.Attributes["api_key"]; ok {
 		t.Fatal("OAuth Auth must not expose api_key")
 	}
-	if auth.Metadata["access_token"] != credential.AccessToken || auth.Metadata["cpagw_generation"] != uint64(1) {
+	if auth.Metadata["access_token"] != credential.AccessToken || auth.Metadata["cpa_generation"] != uint64(1) {
 		t.Fatalf("OAuth metadata missing token or source generation: %#v", auth.Metadata)
 	}
-	if auth.Metadata["cpagw_connection_id"] != "connection-id-1" {
+	if auth.Metadata["cpa_connection_id"] != "connection-id-1" {
 		t.Fatalf("connection identity missing: %#v", auth.Metadata)
 	}
 }
@@ -217,8 +217,8 @@ func TestSDKStoreSaveRefreshDoesNotBumpRevisionAndAdvancesSourceGeneration(t *te
 	if id != auth.ID {
 		t.Fatalf("Save ID = %q, want %q", id, auth.ID)
 	}
-	if got := uintValue(auth.Metadata["cpagw_generation"]); got != 2 {
-		t.Fatalf("runtime cpagw_generation = %d, want 2", got)
+	if got := uintValue(auth.Metadata["cpa_generation"]); got != 2 {
+		t.Fatalf("runtime cpa_generation = %d, want 2", got)
 	}
 	stateAfter, err := st.Read()
 	if err != nil {
@@ -264,8 +264,8 @@ func TestSDKStoreRefreshSynchronizesManagerGeneration(t *testing.T) {
 			t.Fatal("refreshed auth missing")
 		}
 		wantGeneration := uint64(rotation + 1)
-		if got := uintValue(live.Metadata["cpagw_generation"]); got != wantGeneration {
-			t.Fatalf("after rotation %d, manager cpagw_generation = %d, want %d", rotation, got, wantGeneration)
+		if got := uintValue(live.Metadata["cpa_generation"]); got != wantGeneration {
+			t.Fatalf("after rotation %d, manager cpa_generation = %d, want %d", rotation, got, wantGeneration)
 		}
 		state, err := st.Read()
 		if err != nil {
@@ -341,7 +341,7 @@ func TestSDKStoreSDK401RefreshSerializesSameIDAndPreservesConcurrentUpdate(t *te
 	if !ok || live.Metadata["structural_marker"] != "changed-during-refresh" {
 		t.Fatalf("concurrent structural metadata was not preserved: %#v", live)
 	}
-	if got := uintValue(live.Metadata["cpagw_generation"]); got != 2 {
+	if got := uintValue(live.Metadata["cpa_generation"]); got != 2 {
 		t.Fatalf("runtime generation = %d, want 2", got)
 	}
 	state, err := st.Read()
@@ -362,8 +362,8 @@ func TestSDKStoreSDK401RefreshSerializesSameIDAndPreservesConcurrentUpdate(t *te
 		if got := stringValue(refreshed.Metadata, "access_token"); got != wantToken {
 			t.Fatalf("SDK rotation %d access token = %q, want %q", rotation, got, wantToken)
 		}
-		if got := uintValue(refreshed.Metadata["cpagw_generation"]); got != uint64(rotation+1) {
-			t.Fatalf("SDK rotation %d cpagw generation = %d, want %d", rotation, got, rotation+1)
+		if got := uintValue(refreshed.Metadata["cpa_generation"]); got != uint64(rotation+1) {
+			t.Fatalf("SDK rotation %d cpa generation = %d, want %d", rotation, got, rotation+1)
 		}
 	}
 	state, err = st.Read()
@@ -492,7 +492,7 @@ func TestSDKStoreConcurrentMarkResultDuringGenerationSync(t *testing.T) {
 	if !ok {
 		t.Fatal("concurrent MarkResult removed OAuth Auth")
 	}
-	if got := uintValue(live.Metadata["cpagw_generation"]); got != 2 {
+	if got := uintValue(live.Metadata["cpa_generation"]); got != 2 {
 		t.Fatalf("manager generation after concurrent MarkResult = %d, want 2", got)
 	}
 	state, err := st.Read()
@@ -525,7 +525,7 @@ func TestSDKStoreIgnoresUnchangedSDKBookkeeping(t *testing.T) {
 		t.Fatal(err)
 	}
 	if state.Revision != before || state.OAuthCredentials["oauth-ref-1"].Generation != 1 {
-		t.Fatal("non-token SDK state changed cpagw credential state")
+		t.Fatal("non-token SDK state changed cpa credential state")
 	}
 }
 
@@ -571,7 +571,7 @@ func TestSDKStoreIgnoresStaleUnchangedCredentialSnapshot(t *testing.T) {
 	if !ok {
 		t.Fatal("unchanged stale snapshot removed the registered Auth")
 	}
-	if got := uintValue(live.Metadata["cpagw_generation"]); got != credential.Generation {
+	if got := uintValue(live.Metadata["cpa_generation"]); got != credential.Generation {
 		t.Fatalf("runtime generation = %d, want durable generation %d", got, credential.Generation)
 	}
 	if live.Metadata["plan_type"] != credential.PlanType {
@@ -603,7 +603,7 @@ func TestSDKStoreIgnoresStaleUnchangedCredentialSnapshot(t *testing.T) {
 		t.Fatalf("legal rotation after stale snapshot was rejected: %v", err)
 	}
 	live, ok = manager.GetByID(stale.ID)
-	if !ok || uintValue(live.Metadata["cpagw_generation"]) != 3 || live.Metadata["access_token"] != "access-after-stale-snapshot" {
+	if !ok || uintValue(live.Metadata["cpa_generation"]) != 3 || live.Metadata["access_token"] != "access-after-stale-snapshot" {
 		t.Fatalf("legal post-stale rotation did not advance runtime credential: %#v", live)
 	}
 	state, err = st.Read()
@@ -729,6 +729,6 @@ func TestSDKStoreDeleteCannotRemoveDomainState(t *testing.T) {
 		t.Fatalf("Delete error = %v", err)
 	}
 	if _, err := os.Stat(st.Path("state.json")); err != nil {
-		t.Fatal("Delete modified cpagw source state")
+		t.Fatal("Delete modified cpa source state")
 	}
 }
