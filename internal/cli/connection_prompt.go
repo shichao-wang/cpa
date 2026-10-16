@@ -11,6 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
+	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
 
@@ -45,7 +46,7 @@ func (p terminalPrompter) IsTerminal() bool {
 func (p terminalPrompter) ReadLine(ctx context.Context, label string) (string, error) {
 	var value string
 	field := huh.NewInput().Title(label + "（Enter 提交；Ctrl+C 取消）").CharLimit(4096).Value(&value)
-	if err := p.form(field).RunWithContext(ctx); err != nil {
+	if err := p.runForm(ctx, field); err != nil {
 		return "", promptError(ctx, err)
 	}
 	return value, nil
@@ -54,7 +55,7 @@ func (p terminalPrompter) ReadLine(ctx context.Context, label string) (string, e
 func (p terminalPrompter) ReadSecret(ctx context.Context, label string) (string, error) {
 	var value string
 	field := huh.NewInput().Title(label + "（Enter 提交；Ctrl+C 取消）").EchoMode(huh.EchoModeNone).CharLimit(4096).Value(&value)
-	if err := p.form(field).RunWithContext(ctx); err != nil {
+	if err := p.runForm(ctx, field); err != nil {
 		return "", promptError(ctx, err)
 	}
 	return value, nil
@@ -67,7 +68,7 @@ func (p terminalPrompter) Select(ctx context.Context, label string, options []pr
 		huhOptions = append(huhOptions, huh.NewOption(option.label, option.value))
 	}
 	field := huh.NewSelect[string]().Title(label + "（↑/↓选择，Enter 确认；Ctrl+C 取消）").Options(huhOptions...).Value(&value)
-	if err := p.form(field).RunWithContext(ctx); err != nil {
+	if err := p.runForm(ctx, field); err != nil {
 		return "", promptError(ctx, err)
 	}
 	for _, option := range options {
@@ -84,13 +85,25 @@ func (p terminalPrompter) Confirm(ctx context.Context, label string) (bool, erro
 		huh.NewOption("取消", false),
 		huh.NewOption("确认", true),
 	).Value(&value)
-	if err := p.form(field).RunWithContext(ctx); err != nil {
+	if err := p.runForm(ctx, field); err != nil {
 		return false, promptError(ctx, err)
 	}
 	return value, nil
 }
 
-func (p terminalPrompter) form(field huh.Field) *huh.Form {
+func (p terminalPrompter) runForm(ctx context.Context, field huh.Field) error {
+	input := p.in
+	if file, ok := input.(*os.File); ok {
+		fd, err := unix.Dup(int(file.Fd()))
+		if err != nil {
+			return fmt.Errorf("无法创建表单终端输入：%w", err)
+		}
+		unix.CloseOnExec(fd)
+		owned := os.NewFile(uintptr(fd), file.Name())
+		defer owned.Close()
+		// 每个表单独占文件句柄；关闭后，旧表单的读取不能消费下一表单的输入。
+		input = owned
+	}
 	keymap := huh.NewDefaultKeyMap()
 	keymap.Input.Next.SetHelp("Enter", "下一项")
 	keymap.Input.Submit.SetHelp("Enter", "提交")
@@ -99,7 +112,7 @@ func (p terminalPrompter) form(field huh.Field) *huh.Form {
 	keymap.Select.Up.SetHelp("↑", "上移")
 	keymap.Select.Down.SetHelp("↓", "下移")
 	// OS 信号统一由主程序的 NotifyContext 管理，表单仅通过 context 取消。
-	return huh.NewForm(huh.NewGroup(field)).WithProgramOptions(tea.WithoutSignalHandler()).WithInput(p.in).WithOutput(p.out).WithAccessible(false).WithKeyMap(keymap)
+	return huh.NewForm(huh.NewGroup(field)).WithProgramOptions(tea.WithoutSignalHandler()).WithInput(input).WithOutput(p.out).WithAccessible(false).WithKeyMap(keymap).RunWithContext(ctx)
 }
 
 func promptError(ctx context.Context, err error) error {
