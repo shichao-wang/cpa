@@ -1,15 +1,15 @@
-# cpagw 开发约定
+# cpa 开发约定
 
 ## 定位
 
-本仓库产物是单个 `cpagw` binary，通过 CLIProxyAPI 的公开 Go SDK 嵌入网关。与同工作空间中的 `cpa` 仓库无关，不修改或导入其实现。
+本仓库产物是单个 `cpa` binary，通过 CLIProxyAPI 的公开 Go SDK 嵌入网关。本仓库独立实现网关，不修改或导入同工作空间中其他仓库的实现。
 
 ## 领域边界
 
 - `connection` 是独立上游连接，保存稳定 ID、明确的协议/认证方式、地址、自己的凭证引用和模型清单；名称在状态内唯一。
 - `profile` 表示下游 Agent 的专属 key、公开模型 ID 与 connection/上游模型绑定。
 - 不引入 provider、vendor 或默认凭证继承；不要从连接名称推断协议能力。
-- cpagw 状态是唯一事实源，SDK 配置是私有派生数据。
+- cpa 状态是唯一事实源，SDK 配置是私有派生数据。
 - 仅支持 schema 3，不保留 provider、旧绑定或 schema 1/2 的兼容与迁移；遇到旧状态拒绝读取和覆盖，使用新状态目录重新配置。
 - Codex OAuth 仅允许 responses 协议及官方 Codex endpoint，不回退 API key。结构状态与 OAuth 凭证分离，刷新以连接 ID/ref/generation 条件保存，不增加结构 revision；失败须撤销目标 SDK 认证并停止在途输出。
 - OAuth 创建、登录/退出、认证切换及删除要求网关停止；网络登录只持运行锁，不持状态锁。静态热更新不能重新加载 OAuth 或复活失效凭证。
@@ -29,7 +29,7 @@
 go test ./...
 go test -race ./...
 go vet ./...
-go build -o bin/cpagw ./cmd/cpagw
+go build -o bin/cpa ./cmd/cpa
 ```
 
 测试使用临时状态目录、临时 settings 和 mock 上游。不修改真实 `~/.claude`，不执行真实付费模型调用或账户登录，除非用户明确授权。

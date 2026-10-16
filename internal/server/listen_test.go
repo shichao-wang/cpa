@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 // listenOn 在指定地址上启动真实监听，用于复现通配监听与 loopback 共存的情况。

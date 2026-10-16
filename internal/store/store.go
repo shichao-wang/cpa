@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/shichao-wang/cpagw/internal/config"
+	"github.com/shichao-wang/cpa/internal/config"
 	"golang.org/x/sys/unix"
 )
 
@@ -19,13 +19,13 @@ type Store struct{ Dir string }
 
 func DefaultDir() (string, error) {
 	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
-		return filepath.Join(d, "cpagw"), nil
+		return filepath.Join(d, "cpa"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "cpagw"), nil
+	return filepath.Join(home, ".config", "cpa"), nil
 }
 func New(dir string) (*Store, error) {
 	if dir == "" {
@@ -104,7 +104,7 @@ func AtomicWrite(path string, data []byte) error {
 	if err := CheckFile(path); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".cpagw-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".cpa-*")
 	if err != nil {
 		return err
 	}

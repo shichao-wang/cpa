@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
-	"github.com/shichao-wang/cpagw/internal/upgrade"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
+	"github.com/shichao-wang/cpa/internal/upgrade"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -48,7 +48,7 @@ func Version() VersionInfo {
 func formatVersion(info VersionInfo) string {
 	var lines []string
 	if info.Version != "" {
-		lines = append(lines, "cpagw "+info.Version)
+		lines = append(lines, "cpa "+info.Version)
 	}
 	if info.Commit != "" {
 		lines = append(lines, "commit: "+info.Commit)
@@ -57,7 +57,7 @@ func formatVersion(info VersionInfo) string {
 		lines = append(lines, "构建时间: "+info.Date)
 	}
 	if len(lines) == 0 {
-		return "cpagw unknown（开发构建，版本信息未注入）"
+		return "cpa unknown（开发构建，版本信息未注入）"
 	}
 	return strings.Join(lines, "\n")
 }
@@ -75,23 +75,23 @@ func newVersionCommand() *cobra.Command {
 	}
 }
 
-// NewCommand 构建 cpagw 命令树；服务端和 agent 命令可由主程序继续挂载。
+// NewCommand 构建 cpa 命令树；服务端和 agent 命令可由主程序继续挂载。
 func NewCommand() *cobra.Command {
 	return NewCommandWithOptions(Options{})
 }
 
-// NewCommandWithOptions 构建带运行时集成回调的 cpagw 命令树。
+// NewCommandWithOptions 构建带运行时集成回调的 cpa 命令树。
 func NewCommandWithOptions(opts Options) *cobra.Command {
 	var stateDir string
 	root := &cobra.Command{
-		Use:           "cpagw",
+		Use:           "cpa",
 		Short:         "管理 CLIProxyAPI 网关配置",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 	// 不设置 root.Version：cobra 仅在 Version 非空时注册 --version/-v，
 	// 本工具只用 version 子命令，避免两套入口输出不一致。
-	root.PersistentFlags().StringVar(&stateDir, "state-dir", "", "状态目录（默认：$XDG_CONFIG_HOME/cpagw 或 ~/.config/cpagw）")
+	root.PersistentFlags().StringVar(&stateDir, "state-dir", "", "状态目录（默认：$XDG_CONFIG_HOME/cpa 或 ~/.config/cpa）")
 	root.AddCommand(newVersionCommand())
 	root.AddCommand(newUpgradeCommand(upgrade.Run))
 	root.AddCommand(newConnectionCommand(func() (*store.Store, error) { return store.New(stateDir) }, opts))

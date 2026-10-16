@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 func TestRewriteModelFieldsOnlyTouchesTopLevelModel(t *testing.T) {
@@ -39,7 +39,7 @@ func TestRewriteModelFieldsOnlyTouchesTopLevelModel(t *testing.T) {
 }
 
 func TestTransformSSEEventPreservesFramingAndOnlyRewritesModel(t *testing.T) {
-	route := modelRoute{publicID: "claude-opus-test", targetModel: "upstream-model", sdkModel: "cpagw-prefix/upstream-model"}
+	route := modelRoute{publicID: "claude-opus-test", targetModel: "upstream-model", sdkModel: "cpa-prefix/upstream-model"}
 	input := []byte("event: message_start\r\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"upstream-model\",\"note\":\"upstream-model\"}}\r")
 	got := transformSSEEvent(input, route)
 	if !bytes.HasPrefix(got, []byte("event: message_start\r\ndata: ")) || !bytes.HasSuffix(got, []byte("\r")) {

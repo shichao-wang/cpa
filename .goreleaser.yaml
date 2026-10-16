@@ -3,12 +3,12 @@
 # 本地预览：goreleaser release --snapshot --clean
 version: 2
 
-project_name: cpagw
+project_name: cpa
 
 builds:
-  - id: cpagw
-    main: ./cmd/cpagw
-    binary: cpagw
+  - id: cpa
+    main: ./cmd/cpa
+    binary: cpa
     env:
       - CGO_ENABLED=0
     goos:
@@ -25,12 +25,12 @@ builds:
       # 注入 version 命令使用的版本信息；包路径须与 go.mod 的 module 一致。
       # 用 .Date（GoReleaser 运行时刻）而非 .CommitDate（提交时间），
       # 因为 version 命令展示的语义是构建时间。
-      - -X github.com/shichao-wang/cpagw/internal/cli.version={{ .Tag }}
-      - -X github.com/shichao-wang/cpagw/internal/cli.commit={{ .ShortCommit }}
-      - -X github.com/shichao-wang/cpagw/internal/cli.date={{ .Date }}
+      - -X github.com/shichao-wang/cpa/internal/cli.version={{ .Tag }}
+      - -X github.com/shichao-wang/cpa/internal/cli.commit={{ .ShortCommit }}
+      - -X github.com/shichao-wang/cpa/internal/cli.date={{ .Date }}
 
 archives:
-  - id: cpagw
+  - id: cpa
     formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     files:

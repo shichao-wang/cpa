@@ -11,7 +11,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
-	"github.com/shichao-wang/cpagw/internal/config"
+	"github.com/shichao-wang/cpa/internal/config"
 )
 
 // LoginFunc 可注入，以便在不使用真实账号的情况下测试 OAuth 凭证转换。
@@ -33,7 +33,7 @@ func NewLogin() *Login {
 func NewLoginWith(fn LoginFunc) *Login { return &Login{authenticate: fn} }
 
 // Login 执行 OAuth 设备码登录。令牌从 Auth.Storage 提取，而不从 Metadata 提取，
-// 并以 cpagw 自有的强类型凭证返回。
+// 并以 cpa 自有的强类型凭证返回。
 func (l *Login) Login(ctx context.Context, noBrowser bool) (config.OAuthCredential, error) {
 	if l == nil || l.authenticate == nil {
 		return config.OAuthCredential{}, errors.New("Codex OAuth 登录器未配置")

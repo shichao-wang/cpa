@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/shichao-wang/cpagw/internal/cli"
+	"github.com/shichao-wang/cpa/internal/cli"
 )
 
 func main() {

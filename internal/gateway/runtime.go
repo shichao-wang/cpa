@@ -19,9 +19,9 @@ import (
 	cliproxy "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
-	"github.com/shichao-wang/cpagw/internal/codexoauth"
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/codexoauth"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 type runtimeOptions struct {
@@ -183,7 +183,7 @@ func runManagedService(ctx context.Context, st *store.Store, listen, token strin
 
 func staticAuthID(namespace, connectionID string) string {
 	sum := sha256.Sum256([]byte(namespace + "\x00" + connectionID))
-	return "cpagw-key-" + hex.EncodeToString(sum[:16])
+	return "cpa-key-" + hex.EncodeToString(sum[:16])
 }
 
 func staticAuths(next *snapshot, namespace string) map[string]*coreauth.Auth {

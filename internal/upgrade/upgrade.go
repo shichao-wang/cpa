@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	latestURL   = "https://api.github.com/repos/shichao-wang/cpagw/releases/latest"
-	downloadURL = "https://github.com/shichao-wang/cpagw/releases/download/"
+	latestURL   = "https://api.github.com/repos/shichao-wang/cpa/releases/latest"
+	downloadURL = "https://github.com/shichao-wang/cpa/releases/download/"
 )
 
 var validTag = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$`)
@@ -96,7 +96,7 @@ func archiveName(goos, goarch string) (string, error) {
 	if (goos != "darwin" && goos != "linux") || (goarch != "amd64" && goarch != "arm64") {
 		return "", fmt.Errorf("不支持的平台：%s/%s，当前仅支持 macOS/Linux 的 amd64/arm64", goos, goarch)
 	}
-	return fmt.Sprintf("cpagw_%s_%s.tar.gz", goos, goarch), nil
+	return fmt.Sprintf("cpa_%s_%s.tar.gz", goos, goarch), nil
 }
 
 func (u updater) run(ctx context.Context, currentVersion string) (Result, error) {
@@ -133,7 +133,7 @@ func (u updater) run(ctx context.Context, currentVersion string) (Result, error)
 	if err != nil {
 		return Result{}, err
 	}
-	workdir, err := os.MkdirTemp(filepath.Dir(target.real), ".cpagw-upgrade-*")
+	workdir, err := os.MkdirTemp(filepath.Dir(target.real), ".cpa-upgrade-*")
 	if err != nil {
 		return Result{}, fmt.Errorf("无法在 binary 所在目录创建临时文件，请检查目录写权限或使用安装脚本手动升级")
 	}
@@ -210,7 +210,7 @@ func (u updater) response(ctx context.Context, address, action string) (*http.Re
 	if err != nil {
 		return nil, fmt.Errorf("无法创建%s请求", action)
 	}
-	req.Header.Set("User-Agent", "cpagw-upgrade")
+	req.Header.Set("User-Agent", "cpa-upgrade")
 	if address == latestURL {
 		req.Header.Set("Accept", "application/vnd.github+json")
 	}
@@ -316,14 +316,14 @@ func extractBinary(src io.Reader, dst io.Writer, bounds limits) error {
 				return fmt.Errorf("安装包包含危险路径")
 			}
 		}
-		if name != "cpagw" {
+		if name != "cpa" {
 			continue
 		}
 		if found || (header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA) {
-			return fmt.Errorf("安装包中的 cpagw 必须是唯一的普通文件")
+			return fmt.Errorf("安装包中的 cpa 必须是唯一的普通文件")
 		}
 		if header.Size <= 0 || header.Size > bounds.binary {
-			return fmt.Errorf("安装包中的 cpagw 为空或超过大小限制")
+			return fmt.Errorf("安装包中的 cpa 为空或超过大小限制")
 		}
 		if _, err := io.Copy(dst, tr); err != nil {
 			return fmt.Errorf("无法解压或保存新 binary")
@@ -338,7 +338,7 @@ func extractBinary(src io.Reader, dst io.Writer, bounds limits) error {
 		return fmt.Errorf("安装包解压大小超过限制")
 	}
 	if !found {
-		return fmt.Errorf("安装包中未找到根目录的 cpagw binary")
+		return fmt.Errorf("安装包中未找到根目录的 cpa binary")
 	}
 	return nil
 }

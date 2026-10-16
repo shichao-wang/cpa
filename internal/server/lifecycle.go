@@ -15,9 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/gateway"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/gateway"
+	"github.com/shichao-wang/cpa/internal/store"
 	"golang.org/x/sys/unix"
 )
 
@@ -82,7 +82,7 @@ func probe(ctx context.Context, r gateway.RuntimeState) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	req.Header.Set("X-CPAGW-Instance-Token", r.ProbeToken)
+	req.Header.Set("X-CPA-Instance-Token", r.ProbeToken)
 	client := http.Client{Timeout: 600 * time.Millisecond, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {

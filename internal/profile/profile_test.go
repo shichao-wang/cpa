@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 func TestParseFileRejectsUnknownFieldsAndExtraDocuments(t *testing.T) {
@@ -33,7 +33,7 @@ func TestCreateGeneratesPrivateKeyAndUpdatePreservesUnspecifiedFields(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(key, "cpagw_") {
+	if !strings.HasPrefix(key, "cpa_") {
 		t.Fatalf("生成 key 前缀错误：%q", key)
 	}
 	s, err := st.Read()

@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 // TestBinaryFlow 通过实际 binary 验证用户命令、服务 socket 与配置接管，不访问真实上游。
@@ -25,8 +25,8 @@ func TestBinaryFlow(t *testing.T) {
 		t.Skip("短测试模式跳过子进程验收")
 	}
 	tmp := t.TempDir()
-	binary := filepath.Join(tmp, "cpagw")
-	build := exec.Command("go", "build", "-o", binary, "./cmd/cpagw")
+	binary := filepath.Join(tmp, "cpa")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/cpa")
 	build.Dir = filepath.Join("..", "..")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("构建 binary：%v\n%s", err, out)
