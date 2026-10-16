@@ -17,6 +17,7 @@ import (
 	"github.com/shichao-wang/cpa/internal/codexoauth"
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/store"
+	"github.com/shichao-wang/cpa/internal/webui"
 )
 
 type requestGate struct {
@@ -26,10 +27,16 @@ type requestGate struct {
 	instanceID string
 	ready      atomic.Bool
 	oauth      *codexoauth.SDKStore
+	webui      http.Handler
 }
 
 func (g *requestGate) middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if g.webui != nil && webui.Handles(c.Request.URL.Path) {
+			g.webui.ServeHTTP(c.Writer, c.Request)
+			c.Abort()
+			return
+		}
 		if !allowedRoute(c.Request.Method, c.Request.URL.Path) {
 			c.AbortWithStatus(http.StatusNotFound)
 			return

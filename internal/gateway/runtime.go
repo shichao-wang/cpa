@@ -22,6 +22,7 @@ import (
 	"github.com/shichao-wang/cpa/internal/codexoauth"
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/store"
+	"github.com/shichao-wang/cpa/internal/webui"
 )
 
 type runtimeOptions struct {
@@ -38,6 +39,16 @@ func runManagedService(ctx context.Context, st *store.Store, listen, token strin
 	manager := coreauth.NewManager(credentials, nil, credentials.Hook())
 	credentials.BindManager(manager)
 	gate := &requestGate{store: st, active: active, token: token, instanceID: runtimeState.InstanceID, oauth: credentials}
+	gate.webui, err = webui.New(st, func() (uint64, bool) {
+		current := active.Load()
+		if current == nil {
+			return 0, false
+		}
+		return current.revision, gate.ready.Load()
+	})
+	if err != nil {
+		return err
+	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer func() {

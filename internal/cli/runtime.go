@@ -12,6 +12,7 @@ import (
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/server"
 	"github.com/shichao-wang/cpa/internal/store"
+	"github.com/shichao-wang/cpa/internal/webui"
 	"github.com/spf13/cobra"
 )
 
@@ -62,6 +63,22 @@ func NewAppCommand() *cobra.Command {
 }
 func serverCommand(openStore storeFactory) *cobra.Command {
 	parent := &cobra.Command{Use: "server", Short: "启动、查询和停止本地网关"}
+	parent.AddCommand(&cobra.Command{Use: "admin-token", Short: "显示 WebUI 专用管理令牌（敏感信息）", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		s, err := openStore()
+		if err != nil {
+			return err
+		}
+		// 与其他状态操作一致，拒绝在不兼容的旧状态目录创建新文件。
+		if _, err := s.Read(); err != nil {
+			return err
+		}
+		token, err := webui.Token(s)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), token)
+		return err
+	}})
 	var foreground bool
 	var listen string
 	start := &cobra.Command{Use: "start", Short: "启动网关（默认后台运行）", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
