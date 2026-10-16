@@ -189,6 +189,33 @@ cpagw profile delete daily
 
 更新未指定 key 时保留连接的原凭证；地址、模型与 key 同时修改时按同一事务保存。轮换只影响目标连接。删除连接或移除模型前检查 profile 引用，存在引用时拒绝。被活动 apply 记录引用的 profile 需先 restore 或切换到其他 profile；解除 profile 对连接的引用后才能删除连接。非交互删除需提供 `--yes`。
 
+## WebUI 与远端配置
+
+WebUI 随 `server start` 启动，与模型 API 共用监听端口，并随 `server stop` 关闭。页面和脚本内嵌在单个 binary 中，不需要安装前端依赖或访问 CDN。
+
+在服务器执行：
+
+```sh
+cpagw server start
+cpagw server admin-token
+```
+
+在本地机器建立 SSH 隧道：
+
+```sh
+ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18317:127.0.0.1:8317 user@remote-host
+```
+
+在浏览器打开 [管理页面](http://127.0.0.1:18317/ui/)，输入远端命令输出的管理令牌。远端网关仍只监听 loopback。本地端口可以不同于远端端口；如果远端使用其他监听端口，修改转发目标即可。使用自定义状态目录时，所有远端命令都需要指定相同的 `--state-dir`。
+
+管理页面支持 API key 连接的创建、地址与模型清单更新、凭证轮换和删除，以及 profile 的创建、映射更新和删除。连接协议创建后固定。模型清单每行填写 `模型 ID` 或 `模型 ID=展示名`。页面显示已保存和实际生效的修订，等待加载时可以刷新确认。CLI 与 WebUI 共用状态事务、引用检查和热更新流程。
+
+OAuth 连接可以查看状态和更新模型清单。OAuth 创建、登录、退出、认证切换及删除仍需先停止网关，再使用服务器上的 CLI。WebUI 不提供停机期间的管理服务，也不修改 Claude Code 的 settings；远端执行 `profile apply` 修改的是远端机器的设置。
+
+管理令牌首次使用时自动生成，独立保存在状态目录的 `admin-token` 文件中，权限为 0600，不进入 schema 3 状态、SDK 配置或服务日志。`server admin-token` 会主动输出敏感令牌，请勿分享。页面仅在内存中保留令牌，刷新页面后需重新输入。profile key 不能访问管理接口，管理令牌也不能调用模型 API。列表不会返回上游 key、OAuth token、profile key 或凭证引用。
+
+管理接口位于 `/admin/api/`，仅接受独立 Bearer 管理认证，不使用 Cookie 或 URL 参数认证。接口校验 loopback Host 和浏览器 Origin，不开放跨来源访问。通过隧道访问页面即可配置远端，无需另设服务地址或开放公网监听。
+
 ## 本地状态与安全
 
 - 状态目录默认为 `$XDG_CONFIG_HOME/cpagw`，未设置时使用 `~/.config/cpagw`；可用 `--state-dir` 隔离。
@@ -207,6 +234,13 @@ cpagw profile delete daily
 go test ./...
 go test -race ./...
 go vet ./...
+go build -o bin/cpagw ./cmd/cpagw
 ```
 
 测试只使用临时状态/settings 和 mock 上游，不改真实 `~/.claude`，不调用付费模型。真实模型的兼容性和费用需要另外授权验收。
+
+WebUI 与隧道流程可单独复验（需要 Node.js 检查脚本语法）：
+
+```sh
+./scripts/check-webui.sh
+```
