@@ -1,11 +1,45 @@
 package connection
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/store"
 )
+
+// CreateOAuth 将确认的模型、连接和凭证放在同一事务中，失败时不留下半成品。
+func CreateOAuth(ctx context.Context, st *store.Store, name string, models []config.Model, credential config.OAuthCredential) error {
+	c := config.Connection{Name: name, AuthType: config.AuthCodexOAuth, Protocol: config.Responses, BaseURL: config.CodexBaseURL, Models: models}
+	if err := config.ValidateModels(models); err != nil {
+		return err
+	}
+	if err := ValidateConnection(c); err != nil {
+		return err
+	}
+	credential.Generation = 1
+	if err := config.ValidateOAuthCredential(credential); err != nil {
+		return err
+	}
+	id, err := config.RandomID()
+	if err != nil {
+		return err
+	}
+	ref, err := newSecretRef()
+	if err != nil {
+		return err
+	}
+	c.ID = id
+	c.CredentialRef = ref
+	return st.UpdateContext(ctx, func(s *config.State) error {
+		if _, exists := s.Connections[name]; exists {
+			return fmt.Errorf("连接名称已被使用，请放弃后重新登录")
+		}
+		s.Connections[name] = c
+		s.OAuthCredentials[ref] = credential
+		return nil
+	})
+}
 
 type OAuthSession struct {
 	store         *store.Store
@@ -17,9 +51,9 @@ type OAuthSession struct {
 	closed        bool
 }
 
-// BeginOAuth 在不持有 state.lock 的情况下获取 runtime 锁并固定登录目标。
+// BeginOAuth 用独立登录锁固定目标；联网不持状态锁，也不阻塞模型服务。
 func BeginOAuth(st *store.Store, name string) (*OAuthSession, error) {
-	lock, err := st.AcquireRunLock()
+	lock, err := st.AcquireOAuthLock()
 	if err != nil {
 		return nil, err
 	}

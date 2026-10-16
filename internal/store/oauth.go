@@ -69,9 +69,17 @@ func (s *Store) SaveOAuth(binding OAuthBinding, credential config.OAuthCredentia
 
 type RunLock struct{ fd int }
 
-// AcquireRunLock 获取与网关共用的非阻塞独占锁，串行化 OAuth runtime 变更。
+// AcquireRunLock 获取与网关共用的非阻塞独占锁，防止停机操作与模型服务并行。
 func (s *Store) AcquireRunLock() (*RunLock, error) {
-	path := s.Path(RunLockFileName)
+	return s.acquireExclusive(RunLockFileName)
+}
+
+// AcquireOAuthLock 仅串行化 OAuth 登录，不占用模型服务的运行锁。
+func (s *Store) AcquireOAuthLock() (*RunLock, error) {
+	return s.acquireExclusive(".oauth-login.lock")
+}
+func (s *Store) acquireExclusive(name string) (*RunLock, error) {
+	path := s.Path(name)
 	if err := CheckFile(path); err != nil {
 		return nil, err
 	}
@@ -81,7 +89,7 @@ func (s *Store) AcquireRunLock() (*RunLock, error) {
 	}
 	if err = unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		unix.Close(fd)
-		return nil, fmt.Errorf("网关正在运行或认证状态被占用")
+		return nil, fmt.Errorf("目标运行锁或 OAuth 登录会话已被占用")
 	}
 	return &RunLock{fd: fd}, nil
 }

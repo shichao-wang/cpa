@@ -1,9 +1,13 @@
 package webui
 
 import (
+	"bytes"
+	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"mime"
@@ -14,6 +18,7 @@ import (
 	"time"
 
 	"github.com/shichao-wang/cpa/internal/agent/claudecode"
+	"github.com/shichao-wang/cpa/internal/codexoauth"
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/connection"
 	"github.com/shichao-wang/cpa/internal/profile"
@@ -28,16 +33,28 @@ type Handler struct {
 	tokenHash [32]byte
 	active    func() (uint64, bool)
 	mux       *http.ServeMux
+	oauth     *oauthManager
 }
 
 // New 使用公开状态操作，active 返回模型网关实际生效的修订及就绪状态。
-func New(st *store.Store, active func() (uint64, bool)) (*Handler, error) {
+func New(st *store.Store, active func() (uint64, bool), control GatewayControl, ctx context.Context) (*Handler, error) {
 	token, err := Token(st)
 	if err != nil {
 		return nil, err
 	}
 	h := &Handler{store: st, tokenHash: sha256.Sum256([]byte(token)), active: active, mux: http.NewServeMux()}
+	if control != nil {
+		h.oauth = newOAuthManager(ctx, st, control)
+	}
+	h.mux.HandleFunc("POST /admin/api/oauth/login", h.oauthLogin)
+	h.mux.HandleFunc("POST /admin/api/oauth/authorize", h.oauthAuthorize)
+	h.mux.HandleFunc("GET /admin/api/oauth/session", h.oauthStatus)
+	h.mux.HandleFunc("DELETE /admin/api/oauth/session/{id}", h.oauthCancel)
+	h.mux.HandleFunc("POST /admin/api/oauth/session/{id}/connection", h.oauthCreateConnection)
+	h.mux.HandleFunc("POST /admin/api/oauth/connections/{name}", h.oauthAction)
+	h.mux.HandleFunc("POST /admin/api/gateway/resume", h.resumeGateway)
 	h.mux.HandleFunc("GET /admin/api/state", h.state)
+	h.mux.HandleFunc("POST /admin/api/connections/test", h.testConnection)
 	h.mux.HandleFunc("POST /admin/api/connections", h.createConnection)
 	h.mux.HandleFunc("PATCH /admin/api/connections/{name}", h.updateConnection)
 	h.mux.HandleFunc("DELETE /admin/api/connections/{name}", h.deleteConnection)
@@ -62,7 +79,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	const policy = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+	w.Header().Set("Content-Security-Policy", policy)
 	// 校验浏览器实际访问的 Host，不信任转发头；允许 SSH 隧道使用不同本地端口。
 	host := r.Host
 	if hostname, _, err := net.SplitHostPort(host); err == nil {
@@ -119,6 +137,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			fail(w, 500, "页面资源不可用")
 			return
+		}
+		if file == "index.html" {
+			// 弹层滚动锁需要动态样式，仅允许本次页面请求的随机 nonce。
+			var random [16]byte
+			if _, err := rand.Read(random[:]); err != nil {
+				fail(w, 500, "无法生成页面样式凭证")
+				return
+			}
+			nonce := base64.RawStdEncoding.EncodeToString(random[:])
+			w.Header().Set("Content-Security-Policy", strings.Replace(policy, "style-src 'self'", "style-src 'self' 'nonce-"+nonce+"'", 1))
+			data = bytes.Replace(data, []byte("</head>"), []byte(`<meta name="cpa-style-nonce" content="`+nonce+`"></head>`), 1)
 		}
 		w.Header().Set("Content-Type", contentType)
 		// Gin 的未注册路径预设为 404，页面资源需要显式提交成功状态。
@@ -189,14 +218,18 @@ func (h *Handler) state(w http.ResponseWriter, r *http.Request) {
 	connections := map[string]connectionView{}
 	for name, c := range s.Connections {
 		_, err := s.Credential(c)
-		connections[name] = connectionView{name, c.AuthType, c.Protocol, c.BaseURL, c.Models, err == nil}
+		connections[name] = connectionView{name, c.AuthType, c.Protocol, c.BaseURL, append([]config.Model{}, c.Models...), err == nil}
 	}
 	profiles := map[string]profileView{}
 	for name, p := range s.Profiles {
 		profiles[name] = profileView{name, p.Agent, p.Models, claudecode.IsManagedProfile(h.store, name)}
 	}
 	revision, ready := h.active()
-	respond(w, 200, map[string]any{"revision": s.Revision, "activeRevision": revision, "ready": ready, "listen": s.Listen, "connections": connections, "profiles": profiles})
+	mode := "running"
+	if h.oauth != nil {
+		mode = h.oauth.control.Mode()
+	}
+	respond(w, 200, map[string]any{"oauthAvailable": h.oauth != nil, "gatewayMode": mode, "revision": s.Revision, "activeRevision": revision, "ready": ready, "listen": s.Listen, "connections": connections, "profiles": profiles})
 }
 
 func (h *Handler) saved(w http.ResponseWriter, r *http.Request, err error) {
@@ -252,6 +285,81 @@ type connectionInput struct {
 	Models   []config.Model `json:"models"`
 	APIKey   string         `json:"apiKey"`
 	AuthType string         `json:"authType"`
+}
+
+// testConnection 只读取凭证快照，联网期间不持状态锁，也不保存输入或目录结果。
+func (h *Handler) testConnection(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Connection string `json:"connection"`
+		Protocol   string `json:"protocol"`
+		BaseURL    string `json:"baseURL"`
+		APIKey     string `json:"apiKey"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	c := config.Connection{Protocol: in.Protocol, BaseURL: in.BaseURL, AuthType: config.AuthAPIKey}
+	if in.Connection != "" {
+		s, err := h.store.Read()
+		if err != nil {
+			fail(w, 500, "无法读取连接配置")
+			return
+		}
+		stored, ok := s.Connections[in.Connection]
+		if !ok {
+			fail(w, 404, "连接不存在")
+			return
+		}
+		if stored.AuthType != config.AuthAPIKey {
+			if in.APIKey != "" || (in.BaseURL != "" && in.BaseURL != stored.BaseURL) || (in.Protocol != "" && in.Protocol != stored.Protocol) {
+				fail(w, 400, "OAuth 模型发现不接受 API key、自定义地址或协议")
+				return
+			}
+			_, err := s.Credential(stored)
+			if err != nil {
+				fail(w, 409, "OAuth 连接尚未登录，请先登录")
+				return
+			}
+			credential := s.OAuthCredentials[stored.CredentialRef]
+			discover := codexoauth.DiscoverModels
+			if h.oauth != nil {
+				discover = h.oauth.discover
+			}
+			models, err := discover(r.Context(), credential)
+			if err != nil {
+				fail(w, 400, "OAuth 模型目录获取失败，请重试或重新登录")
+				return
+			}
+			respond(w, 200, map[string]any{"models": models})
+			return
+		}
+		if in.Protocol != "" && in.Protocol != stored.Protocol {
+			fail(w, 400, "已有连接不能切换协议")
+			return
+		}
+		c.Protocol = stored.Protocol
+		if c.BaseURL == "" {
+			c.BaseURL = stored.BaseURL
+		}
+		if in.APIKey == "" {
+			// 已保存的凭证只能发送到原地址，修改地址后须显式提供该地址的 key。
+			if c.BaseURL != stored.BaseURL {
+				fail(w, 400, "测试新地址时请填写对应的 API key")
+				return
+			}
+			in.APIKey, err = s.Key(stored)
+			if err != nil {
+				fail(w, 409, "连接缺少有效的 API key")
+				return
+			}
+		}
+	}
+	models, err := connection.DiscoverModels(r.Context(), c, in.APIKey)
+	if err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	respond(w, 200, map[string]any{"models": models})
 }
 
 func (h *Handler) createConnection(w http.ResponseWriter, r *http.Request) {
@@ -321,3 +429,10 @@ func (h *Handler) deleteProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 var _ http.Handler = (*Handler)(nil)
+
+// Close 取消正在等待的设备授权，停止登录进程并释放运行锁。
+func (h *Handler) Close() {
+	if h.oauth != nil {
+		h.oauth.close()
+	}
+}

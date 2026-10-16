@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -101,7 +102,7 @@ func Create(ctx context.Context, st *store.Store, c config.Connection, apiKey st
 		return fmt.Errorf("生成连接 ID 失败")
 	}
 	c.ID = id
-	return withOAuthRunLock(st, c.AuthType == config.AuthCodexOAuth, func() error {
+	return withOAuthRunLock(st, false, func() error {
 		return st.UpdateContext(ctx, func(s *config.State) error {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -274,6 +275,22 @@ func Check(ctx context.Context, c config.Connection, apiKey string) error {
 	if err := config.ValidateKey(apiKey); err != nil {
 		return fmt.Errorf("连接缺少有效的 API key")
 	}
+	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
+	defer cancel()
+	resp, err := modelDirectoryResponse(ctx, c, apiKey, "")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseSize))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("模型目录返回 HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// modelDirectoryResponse 只请求连接自己的模型目录，不跟随重定向或发送推理请求。
+func modelDirectoryResponse(ctx context.Context, c config.Connection, apiKey, after string) (*http.Response, error) {
 	endpoint := strings.TrimRight(c.BaseURL, "/")
 	if c.Protocol == config.Anthropic {
 		if !strings.HasSuffix(endpoint, "/v1") {
@@ -283,11 +300,13 @@ func Check(ctx context.Context, c config.Connection, apiKey string) error {
 	} else {
 		endpoint += "/models"
 	}
-	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
-	defer cancel()
+
+	if after != "" {
+		endpoint += "?after_id=" + url.QueryEscape(after)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return fmt.Errorf("目录请求失败")
+		return nil, fmt.Errorf("目录请求失败")
 	}
 	if c.Protocol == config.Anthropic {
 		req.Header.Set("x-api-key", apiKey)
@@ -303,14 +322,9 @@ func Check(ctx context.Context, c config.Connection, apiKey string) error {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("模型目录请求失败；请检查连接地址和网络")
+		return nil, fmt.Errorf("模型目录请求失败；请检查连接地址和网络")
 	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseSize))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("模型目录返回 HTTP %d", resp.StatusCode)
-	}
-	return nil
+	return resp, nil
 }
 
 func withOAuthRunLock(st *store.Store, required bool, fn func() error) error {

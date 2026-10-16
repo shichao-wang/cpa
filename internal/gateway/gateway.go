@@ -68,6 +68,7 @@ type profileSnapshot struct {
 }
 
 type snapshot struct {
+	policy      *config.State
 	revision    uint64
 	profiles    map[string]profileSnapshot
 	keyIndex    map[[32]byte]string
@@ -77,7 +78,7 @@ type snapshot struct {
 }
 
 // Run 在当前进程运行单个 SDK 服务，状态修订变更通过受管热更新生效。
-func Run(ctx context.Context, st *store.Store, instanceID string) error {
+func Run(ctx context.Context, st *store.Store, instanceID, bindAddress string) error {
 	if st == nil {
 		return fmt.Errorf("状态存储不能为空")
 	}
@@ -140,6 +141,13 @@ func Run(ctx context.Context, st *store.Store, instanceID string) error {
 		return err
 	}
 
+	if bindAddress != "" {
+		listen, err = normalizeListen(bindAddress)
+		if err != nil {
+			return err
+		}
+	}
+	setSnapshotListen(initial, listen)
 	err = runManagedService(ctx, st, listen, probeToken, &active, initial, &runtimeState, &runtimeMu, runtimeOptions{})
 	if err != nil && !errors.Is(err, context.Canceled) {
 		runtimeState.Error = err.Error()
@@ -225,6 +233,7 @@ func compile(state *config.State, st *store.Store) (*snapshot, error) {
 	}
 	out := &snapshot{
 		revision: state.Revision,
+		policy:   state,
 		profiles: make(map[string]profileSnapshot, len(state.Profiles)),
 		keyIndex: make(map[[32]byte]string, len(state.Profiles)),
 		sdkKey:   sdkKey,

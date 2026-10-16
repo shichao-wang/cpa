@@ -214,13 +214,6 @@ func TestOAuthAndAPIKeySameModelIsolationAndHotReload(t *testing.T) {
 		t.Fatal("未登录 OAuth 不应继承默认 key")
 	}
 	for _, operation := range []func() error{
-		func() error {
-			session, err := connection.BeginOAuth(st, "a")
-			if session != nil {
-				session.Close()
-			}
-			return err
-		},
 		func() error { return connection.LogoutOAuth(st, "a") },
 		func() error {
 			auth := config.AuthAPIKey

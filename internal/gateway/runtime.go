@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -45,7 +46,7 @@ func runManagedService(ctx context.Context, st *store.Store, listen, token strin
 			return 0, false
 		}
 		return current.revision, gate.ready.Load()
-	})
+	}, nil, ctx)
 	if err != nil {
 		return err
 	}
@@ -99,10 +100,8 @@ func runManagedService(ctx context.Context, st *store.Store, listen, token strin
 	go func() { done <- service.Run(runCtx) }()
 	defer func() {
 		cancel()
-		select {
-		case <-done:
-		case <-time.After(35 * time.Second):
-		}
+		// SDK 必须完全退出后才能由外层释放运行锁并开始 OAuth 操作。
+		<-done
 	}()
 	var reload func(*sdkconfig.Config)
 	select {
@@ -113,9 +112,12 @@ func runManagedService(ctx context.Context, st *store.Store, listen, token strin
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	apply := func(next *snapshot, update bool) error {
-		gate.ready.Store(false)
-		if update {
+	apply := func(next *snapshot, update bool, reloadStatic bool) error {
+		previous := active.Load()
+		if reloadStatic {
+			gate.ready.Store(false)
+		}
+		if update && reloadStatic {
 			if err := persistSDKConfig(st, next.config); err != nil {
 				return err
 			}
@@ -129,7 +131,7 @@ func runManagedService(ctx context.Context, st *store.Store, listen, token strin
 		}
 		active.Store(next)
 		if err := probeStartup(runCtx, listen, token, runtimeState.InstanceID, next.revision); err != nil {
-			active.Store(nil)
+			active.Store(previous)
 			return err
 		}
 		runtimeMu.Lock()
@@ -140,13 +142,13 @@ func runManagedService(ctx context.Context, st *store.Store, listen, token strin
 		err := writeRuntime(st, *runtimeState)
 		runtimeMu.Unlock()
 		if err != nil {
-			active.Store(nil)
+			active.Store(previous)
 			return err
 		}
 		gate.ready.Store(true)
 		return nil
 	}
-	if err := apply(initial, false); err != nil {
+	if err := apply(initial, false, false); err != nil {
 		return err
 	}
 	current := initial
@@ -167,29 +169,70 @@ func runManagedService(ctx context.Context, st *store.Store, listen, token strin
 			if state.Revision == current.revision {
 				continue
 			}
-			gate.ready.Store(false)
 			newListen, err := normalizeListen(state.Listen)
 			if err != nil {
 				return err
 			}
-			if newListen != listen {
+			if newListen != runtimeState.Listen {
 				return fmt.Errorf("监听地址已改变，请重启网关")
 			}
 			next, err := compile(state, st)
 			if err != nil {
 				return err
 			}
-			if !sameOAuthTopology(current, next) {
+			if !oauthHotUpdateAllowed(current, next) {
 				return fmt.Errorf("OAuth 认证配置已改变，请停止并重启网关")
 			}
+			setSnapshotListen(next, listen)
 			next.sdkKey = current.sdkKey
 			next.config.SDKConfig.APIKeys = []string{current.sdkKey}
-			if err := apply(next, true); err != nil {
-				return err
+			added, retired, err := reconcileOAuth(runCtx, manager, credentials, current, next)
+			if err != nil {
+				runtimeMu.Lock()
+				runtimeState.Error = "OAuth 热更新失败，保留原有模型服务"
+				_ = writeRuntime(st, *runtimeState)
+				runtimeMu.Unlock()
+				continue
+			}
+			reloadStatic := !reflect.DeepEqual(current.config, next.config)
+			if reloadStatic && staticAddOnly(current, next) {
+				err = persistSDKConfig(st, next.config)
+				if err == nil {
+					err = registerStaticAdditions(runCtx, manager, current, next, namespace)
+				}
+				reloadStatic = false
+			}
+			if err == nil {
+				err = apply(next, true, reloadStatic)
+			}
+			if err != nil {
+				for _, id := range added {
+					manager.Remove(runCtx, id)
+					cliproxy.GlobalModelRegistry().UnregisterClient(id)
+				}
+				if reloadStatic {
+					return err
+				}
+				runtimeMu.Lock()
+				runtimeState.Error = "热更新失败，保留原有模型服务"
+				_ = writeRuntime(st, *runtimeState)
+				runtimeMu.Unlock()
+				continue
+			}
+			for _, id := range retired {
+				manager.Remove(runCtx, id)
+				cliproxy.GlobalModelRegistry().UnregisterClient(id)
 			}
 			current = next
 		}
 	}
+}
+
+// setSnapshotListen 只改变私有 SDK 的监听地址，不写入结构状态。
+func setSnapshotListen(next *snapshot, address string) {
+	host, port, _ := net.SplitHostPort(address)
+	next.config.Host = host
+	next.config.Port, _ = strconv.Atoi(port)
 }
 
 func staticAuthID(namespace, connectionID string) string {
@@ -280,7 +323,7 @@ func verifySnapshot(manager *coreauth.Manager, credentials *codexoauth.SDKStore,
 				if connection.credentialRef == "" {
 					route.unavailable = "该 OAuth 连接尚未登录"
 				} else if !credentials.Healthy(route.authID) {
-					route.unavailable = "该 OAuth 凭证不可用，请停止网关后重新登录"
+					route.unavailable = "该 OAuth 凭证不可用，请重新登录"
 				} else if !registry.ClientSupportsModel(route.authID, route.sdkModel) {
 					route.unavailable = "该 OAuth 账号未注册所选模型"
 				}
@@ -293,17 +336,4 @@ func verifySnapshot(manager *coreauth.Manager, credentials *codexoauth.SDKStore,
 		next.profiles[name] = profile
 	}
 	return nil
-}
-
-func sameOAuthTopology(a, b *snapshot) bool {
-	topology := func(s *snapshot) map[string]string {
-		out := map[string]string{}
-		for _, c := range s.connections {
-			if c.authType == config.AuthCodexOAuth {
-				out[c.id] = c.name + "\x00" + c.baseURL + "\x00" + c.credentialRef
-			}
-		}
-		return out
-	}
-	return reflect.DeepEqual(topology(a), topology(b))
 }

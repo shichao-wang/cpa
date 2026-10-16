@@ -30,7 +30,7 @@ func setup(t *testing.T) (*store.Store, *Handler, string) {
 			return 0, false
 		}
 		return s.Revision, true
-	})
+	}, nil, context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestTokenPersistenceAndPermissions(t *testing.T) {
 }
 func TestNoActiveRevisionAcknowledgement(t *testing.T) {
 	st, _, token := setup(t)
-	h, err := New(st, func() (uint64, bool) { return 0, false })
+	h, err := New(st, func() (uint64, bool) { return 0, false }, nil, context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,5 +288,34 @@ func TestOriginWithSDKConnectionState(t *testing.T) {
 		if w.Code != 200 {
 			t.Fatalf("%s 同源请求被拒绝", tc.scheme)
 		}
+	}
+}
+
+func TestPageStyleNonce(t *testing.T) {
+	_, h, _ := setup(t)
+	var previous string
+	for range 2 {
+		w := request(t, h, "GET", "/ui/", "", "", nil)
+		if w.Code != http.StatusOK {
+			t.Fatal("页面不可用")
+		}
+		const marker = `<meta name="cpa-style-nonce" content="`
+		_, rest, found := strings.Cut(w.Body.String(), marker)
+		if !found {
+			t.Fatal("页面缺少动态样式凭证")
+		}
+		nonce, _, found := strings.Cut(rest, `"`)
+		if !found || len(nonce) < 22 || nonce == previous {
+			t.Fatal("样式凭证必须足够长且每次请求不同")
+		}
+		policy := w.Header().Get("Content-Security-Policy")
+		if !strings.Contains(policy, "style-src 'self' 'nonce-"+nonce+"'") || !strings.Contains(policy, "script-src 'self';") || strings.Contains(policy, "unsafe-inline") {
+			t.Fatal("页面 CSP 必须仅为当前动态样式放行 nonce")
+		}
+		previous = nonce
+	}
+	w := request(t, h, "GET", "/ui/app.js", "", "", nil)
+	if strings.Contains(w.Header().Get("Content-Security-Policy"), "nonce-") {
+		t.Fatal("静态脚本响应不应携带页面 nonce")
 	}
 }

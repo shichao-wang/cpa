@@ -12,6 +12,7 @@ import (
 
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/connection"
+	"github.com/shichao-wang/cpa/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -242,6 +243,20 @@ func newConnectionCommandWithPrompter(open storeFactory, opts Options, prompter 
 	remove.Flags().BoolVar(&yes, "yes", false, "确认删除")
 	parent.AddCommand(remove)
 	parent.AddCommand(connectionLoginCommand(open, opts), connectionLogoutCommand(open))
+	parent.AddCommand(&cobra.Command{Use: "oauth-login-worker <result-file>", Hidden: true, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if opts.Login == nil {
+			return fmt.Errorf("OAuth 登录器未配置")
+		}
+		credential, err := opts.Login(cmd.Context(), true)
+		if err != nil {
+			return err
+		}
+		credential.Generation = 1
+		if err = config.ValidateOAuthCredential(credential); err != nil {
+			return fmt.Errorf("OAuth 授权结果无效")
+		}
+		return store.WriteJSON(args[0], credential)
+	}})
 	parent.AddCommand(connectionDirectoryCommand(open, false), connectionDirectoryCommand(open, true))
 	return parent
 }
