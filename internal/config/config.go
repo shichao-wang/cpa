@@ -319,6 +319,12 @@ func ConnectionPrefix(name string) string {
 	return "cpa-" + hex.EncodeToString(sum[:8])
 }
 
+// OAuthConnectionPrefix 将路由绑定到具体凭证引用，登录切换期间旧账号不能参与新路由选择。
+func OAuthConnectionPrefix(connectionID, credentialRef string) string {
+	sum := sha256.Sum256([]byte(connectionID + "\x00" + credentialRef))
+	return "cpa-oauth-" + hex.EncodeToString(sum[:])
+}
+
 func (s *State) References(connectionName, targetModel string) []string {
 	var names []string
 	for name, p := range s.Profiles {

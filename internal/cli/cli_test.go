@@ -556,3 +556,35 @@ func TestFormatVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestOAuthLoginWorkerDoesNotCreateConnectionOrPrintCredentials(t *testing.T) {
+	dir := t.TempDir()
+	result := filepath.Join(t.TempDir(), "credential.json")
+	var output bytes.Buffer
+	root := NewCommandWithOptions(Options{Login: func(_ context.Context, noBrowser bool) (config.OAuthCredential, error) {
+		if !noBrowser {
+			t.Fatal("后台授权不能自动打开浏览器")
+		}
+		return config.OAuthCredential{AccessToken: "mock-access", RefreshToken: "mock-refresh", AccountID: "mock-account", ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}})
+	root.SetOut(&output)
+	root.SetErr(&output)
+	root.SetArgs([]string{"--state-dir", dir, "connection", "oauth-login-worker", result})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "mock-access") || strings.Contains(output.String(), "mock-account") {
+		t.Fatal("后台授权不得在输出中暴露凭证")
+	}
+	info, err := os.Stat(result)
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("临时凭证文件权限应为 0600")
+	}
+	if _, err = os.Stat(filepath.Join(dir, "state.json")); !os.IsNotExist(err) {
+		t.Fatal("后台授权不得创建 connection 状态")
+	}
+	data, err := os.ReadFile(result)
+	if err != nil || !bytes.Contains(data, []byte("mock-access")) {
+		t.Fatal("授权结果未交接给父进程")
+	}
+}

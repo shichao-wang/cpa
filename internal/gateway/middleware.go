@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -67,7 +68,7 @@ func (g *requestGate) middleware() gin.HandlerFunc {
 			return
 		}
 		latest, err := g.store.Read()
-		if err != nil || latest.Revision != current.revision {
+		if err != nil {
 			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "配置正在切换或无法读取，请稍后重试"})
 			return
 		}
@@ -84,6 +85,10 @@ func (g *requestGate) middleware() gin.HandlerFunc {
 		profile, ok := current.profiles[profileName]
 		if !ok {
 			writeAuthError(c)
+			return
+		}
+		if latest.Revision != current.revision && !profilePolicyUnchanged(current.policy, latest, profileName) {
+			writeRequestError(c, http.StatusServiceUnavailable, "该 profile 的配置正在切换，请稍后重试")
 			return
 		}
 		if c.Request.Method == http.MethodGet && c.Request.URL.Path == "/v1/models" {
@@ -107,7 +112,7 @@ func (g *requestGate) middleware() gin.HandlerFunc {
 		}
 		if route.authType == config.AuthCodexOAuth {
 			if g.oauth == nil || !g.oauth.Healthy(route.authID) || !cliproxy.GlobalModelRegistry().ClientSupportsModel(route.authID, route.sdkModel) {
-				writeRequestError(c, http.StatusServiceUnavailable, "该 OAuth 凭证或模型不可用，请停止网关后重新登录")
+				writeRequestError(c, http.StatusServiceUnavailable, "该 OAuth 凭证或模型不可用，请重新登录")
 				return
 			}
 			ctx, release, err := g.oauth.Track(c.Request.Context(), route.authID)
@@ -702,4 +707,27 @@ func (w *transformWriter) finish() {
 func (w *transformWriter) Pusher() http.Pusher {
 	pusher, _ := w.ResponseWriter.(http.Pusher)
 	return pusher
+}
+
+// profilePolicyUnchanged 只阻止受变更影响的 profile；无关新增不能阻断已有路由。
+func profilePolicyUnchanged(before, after *config.State, name string) bool {
+	if before == nil || after == nil {
+		return false
+	}
+	p, exists := after.Profiles[name]
+	old, was := before.Profiles[name]
+	if !exists || !was || !reflect.DeepEqual(p, old) || before.Secrets[old.KeyRef] != after.Secrets[p.KeyRef] {
+		return false
+	}
+	for _, binding := range p.Models {
+		a, ok := before.Connections[binding.Connection]
+		b, found := after.Connections[binding.Connection]
+		if !ok || !found || !reflect.DeepEqual(a, b) {
+			return false
+		}
+		if a.AuthType == config.AuthAPIKey && before.Secrets[a.CredentialRef] != after.Secrets[b.CredentialRef] {
+			return false
+		}
+	}
+	return true
 }

@@ -167,7 +167,11 @@ func registerLifecycleTestModel(t *testing.T, authID string) {
 }
 
 func TestSDKStoreListLoadsOnlyManagedLoggedOAuth(t *testing.T) {
-	sdkStore, _, credential := newTestSDKStore(t)
+	sdkStore, st, credential := newTestSDKStore(t)
+	state, err := st.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
 	got, err := sdkStore.List(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +180,7 @@ func TestSDKStoreListLoadsOnlyManagedLoggedOAuth(t *testing.T) {
 		t.Fatalf("List returned %d auth records, want 1", len(got))
 	}
 	auth := got[0]
-	if auth.ID != sdkStore.AuthID("oauth-ref-1") || auth.Provider != "codex" || auth.Prefix != config.ConnectionPrefix("codex-main") {
+	if auth.ID != sdkStore.AuthID("oauth-ref-1") || auth.Provider != "codex" || auth.Prefix != config.OAuthConnectionPrefix(state.Connections["codex-main"].ID, "oauth-ref-1") {
 		t.Fatalf("unexpected auth identity: %#v", auth)
 	}
 	if auth.Attributes["base_url"] != config.CodexBaseURL || auth.Attributes["plan_type"] != credential.PlanType {

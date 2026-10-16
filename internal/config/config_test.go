@@ -140,3 +140,14 @@ func TestValidateRejectsDuplicateConnectionIDsAndUnboundOAuth(t *testing.T) {
 		t.Fatal("未绑定 OAuth 凭证必须拒绝")
 	}
 }
+
+func TestConnectionRequiresNonEmptyModelCatalog(t *testing.T) {
+	for _, authType := range []string{AuthAPIKey, AuthCodexOAuth} {
+		s := NewState()
+		c := Connection{ID: "pending-id", Name: "pending", AuthType: authType, Protocol: Responses, BaseURL: CodexBaseURL}
+		s.Connections[c.Name] = c
+		if s.Validate() == nil {
+			t.Fatal("未确认模型目录不得保存为 connection")
+		}
+	}
+}

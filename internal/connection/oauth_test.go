@@ -65,9 +65,15 @@ func TestOAuthMutationRequiresRuntimeLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := BeginOAuth(st, "oauth"); err == nil {
-		t.Fatal("login should fail while runtime lock is held")
+	session, err := BeginOAuth(st, "oauth")
+	if err != nil {
+		t.Fatal("运行期间应允许登录", err)
 	}
+	if second, err := BeginOAuth(st, "oauth"); err == nil {
+		second.Close()
+		t.Fatal("只能有一个网络登录会话")
+	}
+	session.Close()
 	if err := LogoutOAuth(st, "oauth"); err == nil {
 		t.Fatal("logout should fail while runtime lock is held")
 	}

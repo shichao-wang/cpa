@@ -1,0 +1,3 @@
+internal/webui/assets/* linguist-generated=true
+# 上游滚动锁 CSS 模板字符串包含有意义的空白行，保留构建器原始输出。
+internal/webui/assets/app.js whitespace=-blank-at-eol

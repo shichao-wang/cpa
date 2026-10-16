@@ -143,7 +143,7 @@ func TestListenerChangeStopsGatewayAndReportsRestart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- Run(ctx, st, "listener-change-test") }()
+	go func() { done <- Run(ctx, st, "listener-change-test", "") }()
 	t.Cleanup(func() {
 		cancel()
 		select {

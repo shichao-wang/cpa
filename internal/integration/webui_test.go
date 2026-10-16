@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -140,7 +141,14 @@ func TestWebUIThroughTunnel(t *testing.T) {
 	if code != 401 {
 		t.Fatal("管理令牌不能用于模型请求")
 	}
+	var inferenceCalls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/models" && r.Header.Get("X-Api-Key") == "upstream-mock-key" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"data":[{"id":"actual","display_name":"测试模型"},{"id":"unselected","display_name":"未选模型"}],"has_more":false}`)
+			return
+		}
+		inferenceCalls.Add(1)
 		if r.URL.Path != "/v1/messages" || (r.Header.Get("X-Api-Key") != "upstream-mock-key" && r.Header.Get("Authorization") != "Bearer upstream-mock-key") {
 			t.Error("上游连接路由或认证错误")
 			w.WriteHeader(401)
@@ -152,7 +160,25 @@ func TestWebUIThroughTunnel(t *testing.T) {
 	}))
 	defer upstream.Close()
 	connectionBody := map[string]any{"name": "remote", "protocol": "anthropic-messages", "baseURL": upstream.URL, "models": []config.Model{{ID: "actual"}}, "apiKey": "upstream-mock-key"}
-	code, data := request("POST", "/admin/api/connections", token, connectionBody, "http://evil.example")
+	code, data := request("GET", "/admin/api/state", token, nil, base)
+	var beforeDiscovery struct {
+		Revision uint64 `json:"revision"`
+	}
+	if code != 200 || json.Unmarshal(data, &beforeDiscovery) != nil {
+		t.Fatal("无法读取测试前的修订")
+	}
+	code, data = request("POST", "/admin/api/connections/test", token, map[string]any{"protocol": "anthropic-messages", "baseURL": upstream.URL, "apiKey": "upstream-mock-key"}, base)
+	if code != 200 || !bytes.Contains(data, []byte(`"id":"actual"`)) || !bytes.Contains(data, []byte(`"id":"unselected"`)) || bytes.Contains(data, []byte("upstream-mock-key")) {
+		t.Fatalf("通过隧道获取模型目录失败：%d", code)
+	}
+	code, data = request("GET", "/admin/api/state", token, nil, base)
+	var afterDiscovery struct {
+		Revision uint64 `json:"revision"`
+	}
+	if code != 200 || json.Unmarshal(data, &afterDiscovery) != nil || afterDiscovery.Revision != beforeDiscovery.Revision || !bytes.Contains(data, []byte(`"connections":{}`)) {
+		t.Fatal("测试连接不得提前保存配置")
+	}
+	code, data = request("POST", "/admin/api/connections", token, connectionBody, "http://evil.example")
 	if code != 403 {
 		t.Fatal("跨来源写入必须拒绝")
 	}
@@ -163,6 +189,15 @@ func TestWebUIThroughTunnel(t *testing.T) {
 	models := map[string]config.Binding{}
 	for _, slot := range config.Slots {
 		models[slot] = config.Binding{PublicModel: "claude-" + slot, Connection: "remote", TargetModel: "actual"}
+	}
+	invalidModels := map[string]config.Binding{}
+	for slot, binding := range models {
+		invalidModels[slot] = binding
+	}
+	invalidModels["sonnet"] = config.Binding{PublicModel: "claude-sonnet", Connection: "remote", TargetModel: "unselected"}
+	code, _ = request("POST", "/admin/api/profiles", token, map[string]any{"name": "forbidden", "models": invalidModels}, base)
+	if code != 409 {
+		t.Fatal("未选中的模型不得通过管理接口绑定到 profile")
 	}
 	code, data = request("POST", "/admin/api/profiles", token, map[string]any{"name": "daily", "models": models}, base)
 	if code != 200 || !bytes.Contains(data, []byte(`"active":true`)) {
@@ -190,9 +225,23 @@ func TestWebUIThroughTunnel(t *testing.T) {
 	if code != 200 || bytes.Contains(data, []byte(key)) || bytes.Contains(data, []byte("upstream-mock-key")) {
 		t.Fatal("管理状态不得泄漏凭证")
 	}
+	if bytes.Contains(data, []byte("unselected")) {
+		t.Fatal("未选模型不得被保存到连接或 profile")
+	}
 	code, _ = request("GET", "/admin/api/state", key, nil, base)
 	if code != 401 {
 		t.Fatal("profile key 不能用于管理")
+	}
+	code, data = request("GET", "/v1/models", key, nil, base)
+	if code != 200 || bytes.Contains(data, []byte("unselected")) {
+		t.Fatal("下游模型目录不得暴露未选模型")
+	}
+	beforeCalls := inferenceCalls.Load()
+	for _, path := range []string{"/v1/messages", "/v1/messages/count_tokens"} {
+		code, _ = request("POST", path, key, map[string]any{"model": "unselected", "max_tokens": 8, "messages": []map[string]string{{"role": "user", "content": "mock"}}}, base)
+		if code != 400 || inferenceCalls.Load() != beforeCalls {
+			t.Fatal("未选模型必须在网关边界被拒绝，不能转发到上游")
+		}
 	}
 	code, data = request("POST", "/v1/messages", key, map[string]any{"model": "claude-sonnet", "max_tokens": 8, "messages": []map[string]string{{"role": "user", "content": "mock"}}}, base)
 	if code != 200 || !bytes.Contains(data, []byte(`"model":"claude-sonnet"`)) {
@@ -205,7 +254,7 @@ func TestWebUIThroughTunnel(t *testing.T) {
 	}
 	code, data = request("GET", "/v1/models", key, nil, base)
 	if code != 200 || !bytes.Contains(data, []byte("远端修改")) {
-		t.Fatal("修改未对模型服务生效")
+		t.Fatalf("修改未对模型服务生效：HTTP %d，响应 %s",code,data)
 	}
 	code, _ = request("DELETE", "/admin/api/connections/remote", token, nil, base)
 	if code != 409 {
