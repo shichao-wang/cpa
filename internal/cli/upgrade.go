@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/shichao-wang/cpagw/internal/upgrade"
+	"github.com/shichao-wang/cpa/internal/upgrade"
 	"github.com/spf13/cobra"
 )
 

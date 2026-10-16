@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 // Token 从独立的 0600 文件读取管理令牌；首次使用时在锁内生成。

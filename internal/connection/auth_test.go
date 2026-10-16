@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/shichao-wang/cpagw/internal/config"
+	"github.com/shichao-wang/cpa/internal/config"
 )
 
 func TestAuthSwitchRequiresStoppedRuntimeAndDoesNotInheritCredentials(t *testing.T) {

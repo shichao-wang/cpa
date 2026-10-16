@@ -7,12 +7,12 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/shichao-wang/cpagw/internal/agent/claudecode"
-	"github.com/shichao-wang/cpagw/internal/codexoauth"
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/server"
-	"github.com/shichao-wang/cpagw/internal/store"
-	"github.com/shichao-wang/cpagw/internal/webui"
+	"github.com/shichao-wang/cpa/internal/agent/claudecode"
+	"github.com/shichao-wang/cpa/internal/codexoauth"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/server"
+	"github.com/shichao-wang/cpa/internal/store"
+	"github.com/shichao-wang/cpa/internal/webui"
 	"github.com/spf13/cobra"
 )
 
@@ -172,7 +172,7 @@ func applyCommand(openStore storeFactory) *cobra.Command {
 }
 func restoreCommand(openStore storeFactory) *cobra.Command {
 	var settings string
-	cmd := &cobra.Command{Use: "restore", Short: "仅恢复由 cpagw 接管的配置", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{Use: "restore", Short: "仅恢复由 cpa 接管的配置", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		s, err := openStore()
 		if err != nil {
 			return err
@@ -180,7 +180,7 @@ func restoreCommand(openStore storeFactory) *cobra.Command {
 		if err = claudecode.Restore(s, settings); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), "已恢复受管配置并解除 cpagw 接管")
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "已恢复受管配置并解除 cpa 接管")
 		return err
 	}}
 	cmd.Flags().StringVar(&settings, "settings", "", "之前应用的 Claude Code settings 路径")

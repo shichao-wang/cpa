@@ -1,14 +1,15 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>cpagw · 网关管理</title><link rel="stylesheet" href="/ui/style.css"><script src="/ui/app.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>cpa · 网关管理</title><link rel="stylesheet" href="/ui/style.css"><script src="/ui/app.js" defer></script></head>
 <body>
-<header><a href="/ui/" class="brand">cpagw <span>网关管理</span></a><span id="address"></span><button id="logout" hidden>退出管理</button></header>
+<header><a href="/ui/" class="brand">cpa <span>网关管理</span></a><span id="address"></span><button id="logout" hidden>退出管理</button></header>
 <main>
-<section id="login" class="card login"><p class="eyebrow">连接你的网关</p><h1>连接网关并管理配置</h1><p>管理当前服务器的上游连接和模型映射。通过 SSH 隧道访问时，修改会保存在远端。</p><form id="login-form"><label>管理令牌<input id="token" type="password" autocomplete="off" required spellcheck="false"></label><button type="submit" class="primary">连接网关</button></form><p class="muted">在服务器执行 <code>cpagw server admin-token</code> 获取独立管理令牌。令牌仅保留在当前页面内存中。</p></section>
+<section id="login" class="card login"><p class="eyebrow">连接你的网关</p><h1>连接网关并管理配置</h1><p>管理当前服务器的上游连接和模型映射。通过 SSH 隧道访问时，修改会保存在远端。</p><form id="login-form"><label>管理令牌<input id="token" type="password" autocomplete="off" required spellcheck="false"></label><button type="submit" class="primary">连接网关</button></form><p class="muted">在服务器执行 <code>cpa server admin-token</code> 获取独立管理令牌。令牌仅保留在当前页面内存中。</p></section>
 <p id="message" role="status" aria-live="polite"></p>
 <div id="workspace" hidden>
 <div class="overview"><div><p class="eyebrow">当前服务器</p><h1>网关配置</h1><p id="status"></p></div><button id="refresh">刷新状态</button></div>
 <p class="notice">WebUI 与模型网关同时启停。OAuth 创建、登录、退出、认证切换和删除需停止服务后，通过远端 CLI 完成。</p>
+<section id="profile-created" class="card" hidden><h2>profile 已创建，请保存专属 key</h2><p>此 key 仅在创建响应中返回一次。关闭提示、退出或刷新页面后不再显示。</p><label>下游 key<input id="profile-key" type="text" readonly autocomplete="off" spellcheck="false"></label><p>本地 Agent 的网关地址：<code id="agent-url"></code></p><div class="actions"><button id="copy-profile-key">复制 key</button><button id="dismiss-profile-key">我已保存，关闭提示</button></div></section>
 <div class="columns">
 <section class="card"><div class="section-heading"><h2>上游连接</h2><button id="new-connection">添加连接</button></div><div id="connections" class="items"></div></section>
 <section class="card"><div class="section-heading"><h2>下游 profile</h2><button id="new-profile">创建 profile</button></div><div id="profiles" class="items"></div></section>
@@ -19,5 +20,5 @@
 <section id="profile-editor" class="card editor" hidden><h2 id="profile-heading">创建 profile</h2><form id="profile-form"><label>名称<input name="name" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}" maxlength="64"></label><div id="bindings"></div><div class="actions"><button class="primary" type="submit">保存 profile</button><button type="button" data-close="profile-editor">取消</button></div></form></section>
 <p class="muted">配置应用：在运行 Claude Code 的机器上使用对应 profile 配置。远端 CLI 的 <code>profile apply</code> 修改的是远端机器的设置。</p>
 </div>
-</main><footer>cpagw 网关管理</footer>
+</main><footer>cpa 网关管理</footer>
 </body></html>

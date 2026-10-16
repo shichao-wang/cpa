@@ -1,6 +1,7 @@
 /bin/
 /dist/
-/.cpagw/
+# 新旧名称的本地状态目录均可能包含凭证。
+/.cpa*/
 /.claude/
 *.log
 *.test

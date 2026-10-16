@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/connection"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/connection"
 	"github.com/spf13/cobra"
 )
 

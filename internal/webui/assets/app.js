@@ -4,7 +4,8 @@ const slots = ['opus', 'sonnet', 'haiku'];
 let token = '', state = null, editingConnection = null, editingProfile = null;
 $('address').textContent = location.host;
 function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); }
-function logout() { token = ''; state = null; $('workspace').hidden = true; $('logout').hidden = true; $('login').hidden = false; $('connection-form').reset(); $('profile-form').reset(); $('connections').replaceChildren(); $('profiles').replaceChildren(); $('bindings').replaceChildren(); }
+function clearProfileKey() { $('profile-key').value = ''; $('agent-url').textContent = ''; $('profile-created').hidden = true; $('new-profile').disabled = false; }
+function logout() { clearProfileKey(); token = ''; state = null; $('workspace').hidden = true; $('logout').hidden = true; $('login').hidden = false; $('connection-form').reset(); $('profile-form').reset(); $('connections').replaceChildren(); $('profiles').replaceChildren(); $('bindings').replaceChildren(); }
 async function api(path, method = 'GET', body) {
   const response = await fetch('/admin/api/' + path, { method, headers: {Authorization: 'Bearer ' + token, ...(body === undefined ? {} : {'Content-Type': 'application/json'})}, body: body === undefined ? undefined : JSON.stringify(body), credentials: 'omit', cache: 'no-store', redirect: 'error'});
   const result = await response.json();
@@ -14,7 +15,10 @@ async function api(path, method = 'GET', body) {
 async function refresh() { state = await api('state'); render(); }
 async function save(path, method, body) {
   const result = await api(path, method, body);
-  await refresh();
+  if (result.profileKey) {
+    $('profile-key').value = result.profileKey; $('agent-url').textContent = location.origin; $('profile-created').hidden = false; $('new-profile').disabled = true;
+  }
+  try { await refresh(); } catch (error) { throw new Error('配置已保存，但刷新失败。请先保存页面上的新 key，再刷新确认。' + error.message); }
   message(result.active ? '配置已保存，并已在网关生效。' : '配置已保存，网关尚未确认生效。请稍后刷新状态。', !result.active);
 }
 function element(tag, text, className) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; }
@@ -56,6 +60,7 @@ function openConnection(name = null) {
 }
 function labeledInput(parent, label, name, value = '', required = false) { const wrap = element('label', label); const input = document.createElement('input'); input.name = name; input.value = value; input.required = required; wrap.append(input); parent.append(wrap); return input; }
 function openProfile(name = null) {
+  if (!name && !$('profile-created').hidden) { message('请先保存新建 profile 的 key 并关闭提示。', true); return; }
   if (!Object.keys(state.connections).length) { message('请先添加上游连接。', true); return; }
   editingProfile = name; const form = $('profile-form'); form.reset(); const p = name ? state.profiles[name] : null;
   form.elements.name.disabled = !!p; form.elements.name.value = name || '';
@@ -92,3 +97,9 @@ $('profile-form').addEventListener('submit', event => {
   const body = {models}; if (!editingProfile) body.name = f.name.value.trim();
   guarded(event.submitter, async () => { await save(editingProfile ? 'profiles/' + encodeURIComponent(editingProfile) : 'profiles', editingProfile ? 'PATCH' : 'POST', body); $('profile-editor').hidden = true; });
 });
+
+$('copy-profile-key').addEventListener('click', event => guarded(event.currentTarget, async () => {
+  try { await navigator.clipboard.writeText($('profile-key').value); message('已复制下游 key。请妥善保存后关闭提示。'); }
+  catch { $('profile-key').focus(); $('profile-key').select(); message('无法自动复制，请复制已选中的下游 key。', true); }
+}));
+$('dismiss-profile-key').addEventListener('click', clearProfileKey);

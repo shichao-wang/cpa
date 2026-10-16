@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 // TestWebUIThroughTunnel 使用真实 binary 和 TCP 转发验证 SSH 隧道的不同端口语义。
@@ -27,9 +27,9 @@ func TestWebUIThroughTunnel(t *testing.T) {
 		t.Skip("短测试模式跳过子进程验收")
 	}
 	tmp := t.TempDir()
-	binary := filepath.Join(tmp, "cpagw")
+	binary := filepath.Join(tmp, "cpa")
 	dir := filepath.Join(tmp, "state")
-	build := exec.Command("go", "build", "-o", binary, "./cmd/cpagw")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/cpa")
 	build.Dir = filepath.Join("..", "..")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("构建失败：%v %s", err, out)
@@ -158,8 +158,7 @@ func TestWebUIThroughTunnel(t *testing.T) {
 	}
 	code, data = request("POST", "/admin/api/connections", token, connectionBody, base)
 	if code != 200 || !bytes.Contains(data, []byte(`"active":true`)) {
-		logs, _ := os.ReadFile(filepath.Join(dir, "server.log"))
-		t.Fatalf("连接未实际加载：%d %s %s", code, data, logs)
+		t.Fatalf("连接未实际加载：%d", code)
 	}
 	models := map[string]config.Binding{}
 	for _, slot := range config.Slots {
@@ -167,7 +166,13 @@ func TestWebUIThroughTunnel(t *testing.T) {
 	}
 	code, data = request("POST", "/admin/api/profiles", token, map[string]any{"name": "daily", "models": models}, base)
 	if code != 200 || !bytes.Contains(data, []byte(`"active":true`)) {
-		t.Fatalf("profile 未实际加载：%d %s", code, data)
+		t.Fatalf("profile 未实际加载：%d", code)
+	}
+	var created struct {
+		ProfileKey string `json:"profileKey"`
+	}
+	if err := json.Unmarshal(data, &created); err != nil || config.ValidateKey(created.ProfileKey) != nil {
+		t.Fatal("创建响应必须提供一次下游 key")
 	}
 	st, err := store.New(dir)
 	if err != nil {
@@ -177,7 +182,10 @@ func TestWebUIThroughTunnel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := s.Secrets[s.Profiles["daily"].KeyRef]
+	key := created.ProfileKey
+	if key != s.Secrets[s.Profiles["daily"].KeyRef] {
+		t.Fatal("返回 key 与持久化 key 不符")
+	}
 	code, data = request("GET", "/admin/api/state", token, nil, base)
 	if code != 200 || bytes.Contains(data, []byte(key)) || bytes.Contains(data, []byte("upstream-mock-key")) {
 		t.Fatal("管理状态不得泄漏凭证")

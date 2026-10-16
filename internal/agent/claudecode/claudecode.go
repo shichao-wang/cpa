@@ -1,4 +1,4 @@
-// Package claudecode 将 cpagw profile 合并到 Claude Code 设置，并支持安全恢复。
+// Package claudecode 将 cpa profile 合并到 Claude Code 设置，并支持安全恢复。
 package claudecode
 
 import (
@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 const journalVersion = 1
@@ -130,10 +130,10 @@ func Apply(s *store.Store, profile config.Profile, settingsPath string) error {
 				return fmt.Errorf("已有待完成的设置恢复，请先完成恢复")
 			}
 			if j != nil && j.SettingsPath != path {
-				return fmt.Errorf("cpagw 已管理另一 settings 路径，拒绝切换：%s", j.SettingsPath)
+				return fmt.Errorf("cpa 已管理另一 settings 路径，拒绝切换：%s", j.SettingsPath)
 			}
 			if j != nil && j.Status != "committed" {
-				return fmt.Errorf("cpagw 管理记录状态无效，拒绝覆盖")
+				return fmt.Errorf("cpa 管理记录状态无效，拒绝覆盖")
 			}
 
 			current, err := readSettings(path)
@@ -156,7 +156,7 @@ func Apply(s *store.Store, profile config.Profile, settingsPath string) error {
 				fields = emptyManagedFields()
 			} else {
 				if !recordIsManaged(j) || j.Action != "apply" {
-					return fmt.Errorf("不存在有效的 cpagw Claude Code 管理记录")
+					return fmt.Errorf("不存在有效的 cpa Claude Code 管理记录")
 				}
 				if !matchesManaged(current.Data, appliedValues(j.Managed)) {
 					return fmt.Errorf("Claude Code 受管设置已被手动修改；拒绝覆盖")
@@ -285,7 +285,7 @@ func Apply(s *store.Store, profile config.Profile, settingsPath string) error {
 	})
 }
 
-// Restore 仅恢复有效 cpagw Apply 记录中的受管字段，保留用户编辑和无关模型选项。
+// Restore 仅恢复有效 cpa Apply 记录中的受管字段，保留用户编辑和无关模型选项。
 func Restore(s *store.Store, settingsPath string) error {
 	if s == nil {
 		return fmt.Errorf("状态存储未初始化")
@@ -303,13 +303,13 @@ func Restore(s *store.Store, settingsPath string) error {
 			return err
 		}
 		if j == nil || !recordIsManaged(j) {
-			return fmt.Errorf("没有有效的 cpagw Claude Code 管理记录，拒绝恢复")
+			return fmt.Errorf("没有有效的 cpa Claude Code 管理记录，拒绝恢复")
 		}
 		if err := validateJournal(j); err != nil {
 			return err
 		}
 		if j.SettingsPath != path {
-			return fmt.Errorf("settings 路径与 cpagw 管理记录不匹配，拒绝恢复")
+			return fmt.Errorf("settings 路径与 cpa 管理记录不匹配，拒绝恢复")
 		}
 		if j.Status == "pending" {
 			if j.Action != "restore" {
@@ -328,7 +328,7 @@ func Restore(s *store.Store, settingsPath string) error {
 			}
 		}
 		if j.Action != "apply" || j.Status != "committed" {
-			return fmt.Errorf("没有可恢复的 cpagw Claude Code 应用记录")
+			return fmt.Errorf("没有可恢复的 cpa Claude Code 应用记录")
 		}
 		current, err := readSettings(path)
 		if err != nil {
@@ -931,7 +931,7 @@ func readJournal(s *store.Store) (*journal, error) {
 	}
 	var j journal
 	if err := json.Unmarshal(data, &j); err != nil {
-		return nil, fmt.Errorf("cpagw Claude Code 管理记录损坏，拒绝覆盖")
+		return nil, fmt.Errorf("cpa Claude Code 管理记录损坏，拒绝覆盖")
 	}
 	return &j, nil
 }
@@ -965,10 +965,10 @@ func recordIsManaged(j *journal) bool {
 
 func validateJournal(j *journal) error {
 	if !recordIsManaged(j) || (j.Status != "pending" && j.Status != "committed") || (j.Action != "apply" && j.Action != "restore") {
-		return fmt.Errorf("cpagw Claude Code 管理记录无效，拒绝操作")
+		return fmt.Errorf("cpa Claude Code 管理记录无效，拒绝操作")
 	}
 	if !filepath.IsAbs(j.SettingsPath) {
-		return fmt.Errorf("cpagw 管理记录中的 settings 路径无效")
+		return fmt.Errorf("cpa 管理记录中的 settings 路径无效")
 	}
 	return nil
 }

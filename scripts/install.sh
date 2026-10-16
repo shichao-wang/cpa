@@ -1,16 +1,16 @@
 #!/bin/sh
-# cpagw 安装脚本：从 GitHub Release 下载对应平台产物，校验后安装。
+# cpa 安装脚本：从 GitHub Release 下载对应平台产物，校验后安装。
 #
-#   curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpagw/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpa/main/scripts/install.sh | bash
 #
 # 环境变量：
-#   CPAGW_VERSION        指定版本（如 v0.1.0），默认取最新 Release
-#   CPAGW_INSTALL_DIR    指定安装目录，默认 /usr/local/bin，不可写时回退 ~/.local/bin
+#   CPA_VERSION        指定版本（如 v0.1.0），默认取最新 Release
+#   CPA_INSTALL_DIR    指定安装目录，默认 /usr/local/bin，不可写时回退 ~/.local/bin
 set -eu
 
-REPO="shichao-wang/cpagw"
-BIN_NAME="cpagw"
-ASSET_NAME="cpagw"
+REPO="shichao-wang/cpa"
+BIN_NAME="cpa"
+ASSET_NAME="cpa"
 
 err() {
 	printf '错误：%s\n' "$1" >&2
@@ -80,14 +80,14 @@ sha256_of() {
 }
 
 resolve_version() {
-	if [ -n "${CPAGW_VERSION:-}" ]; then
-		printf '%s' "$CPAGW_VERSION"
+	if [ -n "${CPA_VERSION:-}" ]; then
+		printf '%s' "$CPA_VERSION"
 		return
 	fi
 	# 从 releases/latest 的 JSON 中取 tag_name；也可改用 /releases/latest 的跳转地址。
 	tag="$(fetch "https://api.github.com/repos/${REPO}/releases/latest" |
 		grep '"tag_name"' | head -n1 | cut -d '"' -f 4)"
-	[ -n "$tag" ] || err "无法获取最新版本，请用 CPAGW_VERSION 指定版本"
+	[ -n "$tag" ] || err "无法获取最新版本，请用 CPA_VERSION 指定版本"
 	printf '%s' "$tag"
 }
 
@@ -96,7 +96,7 @@ ARCH="$(detect_arch)"
 VERSION="$(resolve_version)"
 ARCHIVE="${ASSET_NAME}_${OS}_${ARCH}.tar.gz"
 BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cpagw-install.XXXXXX")"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cpa-install.XXXXXX")"
 
 cleanup() {
 	rm -rf "$TMP_DIR"
@@ -124,8 +124,8 @@ tar -xzf "${TMP_DIR}/${ARCHIVE}" -C "$TMP_DIR"
 chmod +x "${TMP_DIR}/${BIN_NAME}"
 
 install_dir() {
-	if [ -n "${CPAGW_INSTALL_DIR:-}" ]; then
-		printf '%s' "$CPAGW_INSTALL_DIR"
+	if [ -n "${CPA_INSTALL_DIR:-}" ]; then
+		printf '%s' "$CPA_INSTALL_DIR"
 		return
 	fi
 	if [ -w /usr/local/bin ]; then

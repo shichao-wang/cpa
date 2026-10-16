@@ -12,10 +12,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/shichao-wang/cpagw/internal/agent/claudecode"
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/connection"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/agent/claudecode"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/connection"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 func setup(t *testing.T) (*store.Store, *Handler, string) {
@@ -68,7 +68,7 @@ func TestManagementBoundary(t *testing.T) {
 		{name: "样式", method: "GET", path: "/ui/style.css", want: 200},
 		{name: "页面不能写入", method: "POST", path: "/ui/", want: 405},
 		{name: "缺少管理令牌", method: "GET", path: "/admin/api/state", want: 401},
-		{name: "profile key 不能管理", method: "GET", path: "/admin/api/state", key: "cpagw_profile_test", want: 401},
+		{name: "profile key 不能管理", method: "GET", path: "/admin/api/state", key: "cpa_profile_test", want: 401},
 		{name: "正确管理令牌", method: "GET", path: "/admin/api/state", key: token, want: 200},
 		{name: "不同隧道端口", method: "GET", path: "/admin/api/state", key: token, headers: map[string]string{"Origin": "http://localhost:18317"}, want: 200},
 		{name: "跨端口来源", method: "GET", path: "/admin/api/state", key: token, headers: map[string]string{"Origin": "http://localhost:8317"}, want: 403},
@@ -116,7 +116,7 @@ func TestConfigurationFlow(t *testing.T) {
 		t.Helper()
 		w := request(t, h, method, "/admin/api/"+path, token, body, nil)
 		if w.Code != want {
-			t.Fatalf("%s %s 状态 %d，预期 %d：%s", method, path, w.Code, want, w.Body.String())
+			t.Fatalf("%s %s 状态 %d，预期 %d", method, path, w.Code, want)
 		}
 		return w.Body.String()
 	}
@@ -136,9 +136,22 @@ func TestConfigurationFlow(t *testing.T) {
 		models[slot] = config.Binding{PublicModel: "claude-" + slot, Connection: "local", TargetModel: "actual"}
 	}
 	data, _ := json.Marshal(map[string]any{"name": "daily", "models": models})
-	call("POST", "profiles", string(data), 200)
+	created := call("POST", "profiles", string(data), 200)
+	var result struct {
+		ProfileKey string `json:"profileKey"`
+	}
+	if err := json.Unmarshal([]byte(created), &result); err != nil || config.ValidateKey(result.ProfileKey) != nil {
+		t.Fatal("创建必须返回一次有效的下游 key")
+	}
 	s, _ = st.Read()
 	profileKey := s.Secrets[s.Profiles["daily"].KeyRef]
+	if result.ProfileKey != profileKey {
+		t.Fatal("返回的 key 必须能认证新建 profile")
+	}
+	duplicate := call("POST", "profiles", string(data), 409)
+	if strings.Contains(duplicate, profileKey) {
+		t.Fatal("重复创建不能泄漏现有 key")
+	}
 	body = call("GET", "state", "", 200)
 	if strings.Contains(body, profileKey) || strings.Contains(body, "keyRef") || strings.Contains(body, "rotated-test-secret") {
 		t.Fatal("状态视图不得导出 key")
@@ -146,7 +159,10 @@ func TestConfigurationFlow(t *testing.T) {
 	call("DELETE", "connections/local", "", 409)
 	call("PATCH", "connections/local", `{"models":[{"id":"other"}]}`, 409)
 	call("PATCH", "connections/local", `{"authType":"codex-oauth"}`, 400)
-	call("PATCH", "profiles/daily", `{"models":{"sonnet":{"public_model":"claude-sonnet","connection":"local","target_model":"actual","label":"更新展示名"}}}`, 200)
+	updated := call("PATCH", "profiles/daily", `{"models":{"sonnet":{"public_model":"claude-sonnet","connection":"local","target_model":"actual","label":"更新展示名"}}}`, 200)
+	if strings.Contains(updated, profileKey) || strings.Contains(updated, "profileKey") {
+		t.Fatal("更新响应不得再次返回 key")
+	}
 	s, _ = st.Read()
 	if s.Profiles["daily"].Models["sonnet"].Label != "更新展示名" || s.Secrets[s.Profiles["daily"].KeyRef] != profileKey {
 		t.Fatal("profile 更新应保留 key 与其他档位")
@@ -233,6 +249,23 @@ func TestNoActiveRevisionAcknowledgement(t *testing.T) {
 	s, _ := st.Read()
 	if _, ok := s.Connections["pending"]; !ok {
 		t.Fatal("必须验证实际保存结果")
+	}
+	models := map[string]config.Binding{}
+	for _, slot := range config.Slots {
+		models[slot] = config.Binding{PublicModel: "claude-" + slot, Connection: "pending", TargetModel: "model"}
+	}
+	body, err := json.Marshal(map[string]any{"name": "pending-profile", "models": models})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w = request(t, h, "POST", "/admin/api/profiles", token, string(body), nil)
+	var result saveResult
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || w.Code != 202 || !result.Saved || result.Active || config.ValidateKey(result.ProfileKey) != nil {
+		t.Fatal("已保存但未生效的创建也必须返回一次 key")
+	}
+	s, err = st.Read()
+	if err != nil || result.ProfileKey != s.Secrets[s.Profiles["pending-profile"].KeyRef] {
+		t.Fatal("未生效时返回的 key 必须与实际保存值一致")
 	}
 }
 

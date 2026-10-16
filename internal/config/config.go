@@ -316,7 +316,7 @@ func (s *State) Validate() error {
 
 func ConnectionPrefix(name string) string {
 	sum := sha256.Sum256([]byte(name))
-	return "cpagw-" + hex.EncodeToString(sum[:8])
+	return "cpa-" + hex.EncodeToString(sum[:8])
 }
 
 func (s *State) References(connectionName, targetModel string) []string {

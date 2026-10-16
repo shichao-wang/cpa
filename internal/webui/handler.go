@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shichao-wang/cpagw/internal/agent/claudecode"
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/connection"
-	"github.com/shichao-wang/cpagw/internal/profile"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/agent/claudecode"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/connection"
+	"github.com/shichao-wang/cpa/internal/profile"
+	"github.com/shichao-wang/cpa/internal/store"
 )
 
 //go:embed assets/*
@@ -131,7 +131,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	auth := r.Header.Get("Authorization")
 	provided := sha256.Sum256([]byte(strings.TrimPrefix(auth, "Bearer ")))
 	if len(r.Header.Values("Authorization")) != 1 || !strings.HasPrefix(auth, "Bearer ") || subtle.ConstantTimeCompare(provided[:], h.tokenHash[:]) != 1 {
-		fail(w, http.StatusUnauthorized, "管理令牌无效，请在远端执行 cpagw server admin-token 获取")
+		fail(w, http.StatusUnauthorized, "管理令牌无效，请在远端执行 cpa server admin-token 获取")
 		return
 	}
 	h.mux.ServeHTTP(w, r)
@@ -200,6 +200,17 @@ func (h *Handler) state(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) saved(w http.ResponseWriter, r *http.Request, err error) {
+	h.savedResult(w, r, err, saveResult{})
+}
+
+type saveResult struct {
+	Saved      bool   `json:"saved"`
+	Active     bool   `json:"active"`
+	Revision   uint64 `json:"revision"`
+	ProfileKey string `json:"profileKey,omitempty"`
+}
+
+func (h *Handler) savedResult(w http.ResponseWriter, r *http.Request, err error, result saveResult) {
 	if err != nil {
 		// 不把底层错误或用户输入写入响应，避免凭证随错误内容泄漏。
 		fail(w, 409, "保存失败：请检查字段、名称是否重复、模型引用及受管 profile；OAuth 操作需停止网关后使用 CLI")
@@ -210,6 +221,8 @@ func (h *Handler) saved(w http.ResponseWriter, r *http.Request, err error) {
 		fail(w, 500, "配置已保存，但无法回读状态，请刷新确认")
 		return
 	}
+	result.Saved = true
+	result.Revision = s.Revision
 	timer := time.NewTimer(5 * time.Second)
 	defer timer.Stop()
 	ticker := time.NewTicker(50 * time.Millisecond)
@@ -217,14 +230,15 @@ func (h *Handler) saved(w http.ResponseWriter, r *http.Request, err error) {
 	for {
 		revision, ready := h.active()
 		if ready && revision >= s.Revision {
-			respond(w, 200, map[string]any{"saved": true, "active": true, "revision": s.Revision})
+			result.Active = true
+			respond(w, 200, result)
 			return
 		}
 		select {
 		case <-r.Context().Done():
 			return
 		case <-timer.C:
-			respond(w, 202, map[string]any{"saved": true, "active": false, "revision": s.Revision})
+			respond(w, 202, result)
 			return
 		case <-ticker.C:
 		}
@@ -285,8 +299,8 @@ func (h *Handler) createProfile(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	_, err := profile.Create(h.store, in.file())
-	h.saved(w, r, err)
+	key, err := profile.Create(h.store, in.file())
+	h.savedResult(w, r, err, saveResult{ProfileKey: key})
 }
 func (h *Handler) updateProfile(w http.ResponseWriter, r *http.Request) {
 	var in profileInput

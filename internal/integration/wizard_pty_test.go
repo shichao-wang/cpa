@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/shichao-wang/cpagw/internal/config"
-	"github.com/shichao-wang/cpagw/internal/store"
+	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/store"
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
@@ -28,8 +28,8 @@ func TestWizardTerminal(t *testing.T) {
 	if testing.Short() {
 		t.Skip("短测试模式跳过真实终端验收")
 	}
-	binary := filepath.Join(t.TempDir(), "cpagw")
-	build := exec.Command("go", "build", "-o", binary, "./cmd/cpagw")
+	binary := filepath.Join(t.TempDir(), "cpa")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/cpa")
 	build.Dir = filepath.Join("..", "..")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("构建终端测试binary：%v\n%s", err, output)

@@ -1,6 +1,6 @@
-# cpagw
+# cpa
 
-通过 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 的 Go SDK 嵌入网关，主要产物为单个 `cpagw` binary。本仓库与其他 `cpa` 命令或仓库无关。
+通过 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 的 Go SDK 嵌入网关，主要产物为单个 `cpa` binary。本仓库独立实现网关。
 
 ## 配置模型
 
@@ -18,17 +18,17 @@ profile：下游 Agent 的专属 key、三档 connection/实际模型绑定与�
 ## 安装
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpagw/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpa/main/scripts/install.sh | bash
 ```
 
-脚本识别 macOS/Linux 与 amd64/arm64，从 [Releases](https://github.com/shichao-wang/cpagw/releases) 下载对应产物并用 `checksums.txt` 校验后安装。默认装到 `/usr/local/bin`，该目录不可写时回退到 `~/.local/bin`。
+脚本识别 macOS/Linux 与 amd64/arm64，从 [Releases](https://github.com/shichao-wang/cpa/releases) 下载对应产物并用 `checksums.txt` 校验后安装。默认装到 `/usr/local/bin`，该目录不可写时回退到 `~/.local/bin`。
 
 可选环境变量：
 
 | 变量 | 说明 |
 |---|---|
-| `CPAGW_VERSION` | 指定版本（如 `v0.1.0`），默认为最新 Release |
-| `CPAGW_INSTALL_DIR` | 指定安装目录，优先级高于默认与回退规则 |
+| `CPA_VERSION` | 指定版本（如 `v0.1.0`），默认为最新 Release |
+| `CPA_INSTALL_DIR` | 指定安装目录，优先级高于默认与回退规则 |
 
 安装包校验是强制环节，没有跳过开关：脚本比对 `checksums.txt` 中的 SHA256，不匹配即中止。该检查防的是传输损坏与只改动产物一侧的篡改，属于完整性校验，不构成对发布来源的认证。
 
@@ -36,11 +36,24 @@ curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpagw/main/scripts/ins
 
 ## 升级
 
+### 从改名前的版本切换
+
+旧版本内置的 `upgrade` 只识别旧名称的安装包，不能用于本次改名升级。请按以下步骤手动切换：
+
+1. 使用原可执行文件执行 `profile restore`，恢复已接管的 Claude Code 配置；使用自定义状态目录或 settings 时，传入原来的路径。没有应用过 profile 时可跳过恢复。
+2. 使用原可执行文件执行 `server stop`，确认旧网关停止。保留原可执行文件和状态目录，便于需要时回退。
+3. 按上面的安装步骤安装 `cpa`，执行 `cpa version` 确认新命令可用。新版本使用独立的默认状态目录，不会自动读取或迁移旧目录，请勿让两个版本共享状态目录。
+4. 用 `cpa connection add` 和 `cpa profile create` 重新配置连接与 profile；OAuth 连接需重新登录。随后执行 `cpa server start` 和 `cpa profile apply <名称>`，并新开 Claude Code 会话。
+
+需要回退时，先用 `cpa profile restore` 恢复配置并执行 `cpa server stop`，再用原可执行文件和原状态目录启动服务、应用原 profile。
+
+### 后续版本升级
+
 ```sh
-cpagw upgrade
+cpa upgrade
 ```
 
-升级支持 macOS/Linux 的 amd64 与 arm64。命令只替换当前正在运行的 `cpagw` 实际可执行文件；通过符号链接启动时保留符号链接并更新其目标，不修改 cpagw 配置。它不会自动提权（`sudo`）、切换安装目录或重启网关进程；如果当前可执行文件所在目录不可写，升级会失败，请自行处理目录权限。网关正在运行时，升级后需手动重启。
+升级支持 macOS/Linux 的 amd64 与 arm64。命令只替换当前正在运行的 `cpa` 实际可执行文件；通过符号链接启动时保留符号链接并更新其目标，不修改 cpa 配置。它不会自动提权（`sudo`）、切换安装目录或重启网关进程；如果当前可执行文件所在目录不可写，升级会失败，请自行处理目录权限。网关正在运行时，升级后需手动重启。
 
 当前版本与最新 Release tag 相同时跳过替换；从源码构建或版本未知时，将替换为最新 Release。升级复用安装脚本的 `checksums.txt` SHA256 完整性校验边界，不代表对发布来源的认证。
 
@@ -49,9 +62,9 @@ cpagw upgrade
 首期支持 macOS/Linux（进程管理依赖 Unix 信号及 `ps`），需要 Go 1.27.1 或更新版本：
 
 ```sh
-go build -o bin/cpagw ./cmd/cpagw
+go build -o bin/cpa ./cmd/cpa
 export PATH="$PWD/bin:$PATH"
-cpagw --help
+cpa --help
 ```
 
 SDK 固定为 CLIProxyAPI v8.0.10。分发时请附上 `THIRD_PARTY_NOTICES`，并遵守传递依赖的许可证。
@@ -77,8 +90,8 @@ git tag v2026.10.5-abc123 && git push origin refs/tags/v2026.10.5-abc123
 交互接入只需一条命令：
 
 ```sh
-cpagw connection add
-# 也可以先指定名称：cpagw connection add example
+cpa connection add
+# 也可以先指定名称：cpa connection add example
 ```
 
 向导依次收集连接名称、认证方式、协议、API 根地址、模型清单和凭证信息，确认后一次保存。API-key 连接使用隐藏输入；Codex OAuth 连接不询问 key，创建后单独登录。认证方式、协议、模型来源、继续添加模型和最终确认均使用 **↑/↓ 选择、Enter 确认**，不需要输入数字编号或 `y/n`；保存和删除确认默认选中“取消”。直接录入模型时，每条使用 `ID` 或 `ID=展示名`，之后选择“继续添加模型”或“完成录入”；也可以选择 YAML 文件，不必先创建文件。
@@ -101,14 +114,14 @@ models:
 
 ```sh
 # 从安全的凭证来源提供 stdin；不要在命令中硬编码 key。
-cpagw connection add example \
+cpa connection add example \
   --protocol anthropic-messages \
   --base-url https://api.example.com \
   --models models.yaml \
   --api-key-stdin
-cpagw connection show example
-cpagw connection models example
-cpagw connection check example
+cpa connection show example
+cpa connection models example
+cpa connection check example
 ```
 
 API-key 非交互接入必须提供完整参数和 `--api-key-stdin`；OAuth 非交互接入显式指定 `--auth-type codex-oauth`、`--protocol responses` 和模型清单，不提供 API key。缺参会报错而不会等待向导。每个连接持有自己的凭证，不存在默认 key 继承或隐藏的 provider。show/list 仅显示认证方式与凭证就绪状态，不回显 key、token、凭证引用或账户标识。
@@ -128,17 +141,17 @@ models:
 `gpt-5.5` 仅为示例，使用前请确认自己的账号实际支持该模型，并据此填写模型清单与 profile 绑定。
 
 ```sh
-cpagw connection add codex \
+cpa connection add codex \
   --auth-type codex-oauth \
   --protocol responses \
   --models codex-models.yaml
-cpagw connection login codex --no-browser
+cpa connection login codex --no-browser
 # bindings.yaml 的 opus/sonnet/haiku 均设置 connection: codex、target_model: gpt-5.5
-cpagw profile create codex --agent claude-code --file bindings.yaml
-cpagw server start
-cpagw profile apply codex
-cpagw server stop
-cpagw connection logout codex --yes
+cpa profile create codex --agent claude-code --file bindings.yaml
+cpa server start
+cpa profile apply codex
+cpa server stop
+cpa connection logout codex --yes
 ```
 
 认证方式切换必须在 `connection update` 中显式传 `--auth-type`；切换为 API key 时还需在同一命令显式提供 `--api-key-stdin`，不能继承或回退。新增 OAuth 连接、`login`、`logout`、重登录、认证类型切换及删除 OAuth 连接，均要求先停止网关；API-key 连接仍支持热更新。连接保留，logout 只清除本地保存的 OAuth 凭证，不代表向上游撤销授权。OAuth 凭证属于本地敏感状态，可能以明文保存但文件权限限制为 0600；请勿提交或分享状态文件。OAuth 账号可用模型取决于账号实际授权及 SDK 注册目录；模型清单只是本地声明，不保证账号支持该模型，也不意味着任意 Responses 服务兼容。OAuth 检查不会携带 access token 请求通用 `/models` endpoint。
@@ -162,29 +175,29 @@ add/create 默认不联网。check 仅尝试模型目录，不发送推理；目
 绑定文件示例见 `examples/`。公开 model ID 需明确填写你希望 Claude Code 使用的官方 ID，不能填实际的非 Claude 上游 ID。三个档位 ID 必须唯一。
 
 ```sh
-cpagw profile create daily --agent claude-code --file bindings.yaml
-cpagw server start
-cpagw server status
-cpagw profile apply daily
+cpa profile create daily --agent claude-code --file bindings.yaml
+cpa server start
+cpa server status
+cpa profile apply daily
 # 新开 Claude Code 会话使用已应用的配置。
-cpagw profile restore
-cpagw server stop
+cpa profile restore
+cpa server stop
 ```
 
 模型选择器展示需要支持 `modelPicker` 的 Claude Code 版本（v2.1.242 或更新版本）。
 
 apply 默认合并 `~/.claude/settings.json`，也可通过 `--settings` 指定文件。通过 env 和 modelPicker 设置网关认证、模型 ID、名称与描述，不修改订阅登录凭证。模型发现不会可靠地覆盖所有内置档位，因此展示配置也由 profile 应用。
 
-restore **仅对有有效 cpagw 接管记录的配置执行**。它恢复首次接管前的受管字段，保留无关修改；受管字段发生冲突时拒绝整体恢复。没有记录、只有备份、路径不匹配或重复 restore 均不能恢复。当前 shell 环境变量及项目级设置可能覆盖用户配置，需自行检查这些优先级。
+restore **仅对有有效 cpa 接管记录的配置执行**。它恢复首次接管前的受管字段，保留无关修改；受管字段发生冲突时拒绝整体恢复。没有记录、只有备份、路径不匹配或重复 restore 均不能恢复。当前 shell 环境变量及项目级设置可能覆盖用户配置，需自行检查这些优先级。
 
 ## 更新与删除
 
 ```sh
-cpagw connection update example --api-key-stdin
-cpagw connection update example --models models.yaml
-cpagw connection update example --base-url https://api.example.com
-cpagw connection remove example
-cpagw profile delete daily
+cpa connection update example --api-key-stdin
+cpa connection update example --models models.yaml
+cpa connection update example --base-url https://api.example.com
+cpa connection remove example
+cpa profile delete daily
 ```
 
 更新未指定 key 时保留连接的原凭证；地址、模型与 key 同时修改时按同一事务保存。轮换只影响目标连接。删除连接或移除模型前检查 profile 引用，存在引用时拒绝。被活动 apply 记录引用的 profile 需先 restore 或切换到其他 profile；解除 profile 对连接的引用后才能删除连接。非交互删除需提供 `--yes`。
@@ -196,8 +209,8 @@ WebUI 随 `server start` 启动，与模型 API 共用监听端口，并随 `ser
 在服务器执行：
 
 ```sh
-cpagw server start
-cpagw server admin-token
+cpa server start
+cpa server admin-token
 ```
 
 在本地机器建立 SSH 隧道：
@@ -212,13 +225,13 @@ ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18317:127.0.0.1:8317 user@remote
 
 OAuth 连接可以查看状态和更新模型清单。OAuth 创建、登录、退出、认证切换及删除仍需先停止网关，再使用服务器上的 CLI。WebUI 不提供停机期间的管理服务，也不修改 Claude Code 的 settings；远端执行 `profile apply` 修改的是远端机器的设置。
 
-管理令牌首次使用时自动生成，独立保存在状态目录的 `admin-token` 文件中，权限为 0600，不进入 schema 3 状态、SDK 配置或服务日志。`server admin-token` 会主动输出敏感令牌，请勿分享。页面仅在内存中保留令牌，刷新页面后需重新输入。profile key 不能访问管理接口，管理令牌也不能调用模型 API。列表不会返回上游 key、OAuth token、profile key 或凭证引用。
+管理令牌首次使用时自动生成，独立保存在状态目录的 `admin-token` 文件中，权限为 0600，不进入 schema 3 状态、SDK 配置或服务日志。`server admin-token` 会主动输出敏感令牌，请勿分享。页面仅在内存中保留令牌，刷新页面后需重新输入。profile key 不能访问管理接口，管理令牌也不能调用模型 API。新建 profile 的响应会返回一次专属下游 key，页面提供复制步骤，并显示当前隧道地址供本地 Agent 使用。请在关闭提示或刷新前保存 key。之后的列表和更新响应不会返回该 key；上游 key、OAuth token 和凭证引用始终不返回。
 
 管理接口位于 `/admin/api/`，仅接受独立 Bearer 管理认证，不使用 Cookie 或 URL 参数认证。接口校验 loopback Host 和浏览器 Origin，不开放跨来源访问。通过隧道访问页面即可配置远端，无需另设服务地址或开放公网监听。
 
 ## 本地状态与安全
 
-- 状态目录默认为 `$XDG_CONFIG_HOME/cpagw`，未设置时使用 `~/.config/cpagw`；可用 `--state-dir` 隔离。
+- 状态目录默认为 `$XDG_CONFIG_HOME/cpa`，未设置时使用 `~/.config/cpa`；可用 `--state-dir` 隔离。
 - 状态目录 0700、敏感文件 0600；配置、secret 引用及 secret 数据以同一原子事务保存。上游 key、Codex OAuth 凭证和下游 profile key 分开管理，SDK 配置是私有派生数据。
 - 当前状态格式为 schema 3，仅接受显式认证方式、稳定连接 ID 与独立 OAuth 表的完整新格式；不存在 `state migrate` 或自动默认化。旧 schema 1/2 及 provider 结构会拒绝读取/覆盖，使用新状态目录重新配置，OAuth 连接重新登录。
 - 本地状态和 Claude Code 应用后的 settings 都可能含明文 key；文件权限保护不是加密保险箱。不要提交或分享这些文件。
@@ -234,7 +247,7 @@ OAuth 连接可以查看状态和更新模型清单。OAuth 创建、登录、�
 go test ./...
 go test -race ./...
 go vet ./...
-go build -o bin/cpagw ./cmd/cpagw
+go build -o bin/cpa ./cmd/cpa
 ```
 
 测试只使用临时状态/settings 和 mock 上游，不改真实 `~/.claude`，不调用付费模型。真实模型的兼容性和费用需要另外授权验收。
