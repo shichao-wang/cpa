@@ -36,6 +36,19 @@ curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpa/main/scripts/insta
 
 ## 升级
 
+### 从改名前的版本切换
+
+旧版本内置的 `upgrade` 只识别旧名称的安装包，不能用于本次改名升级。请按以下步骤手动切换：
+
+1. 使用原可执行文件执行 `profile restore`，恢复已接管的 Claude Code 配置；使用自定义状态目录或 settings 时，传入原来的路径。没有应用过 profile 时可跳过恢复。
+2. 使用原可执行文件执行 `server stop`，确认旧网关停止。保留原可执行文件和状态目录，便于需要时回退。
+3. 按上面的安装步骤安装 `cpa`，执行 `cpa version` 确认新命令可用。新版本使用独立的默认状态目录，不会自动读取或迁移旧目录，请勿让两个版本共享状态目录。
+4. 用 `cpa connection add` 和 `cpa profile create` 重新配置连接与 profile；OAuth 连接需重新登录。随后执行 `cpa server start` 和 `cpa profile apply <名称>`，并新开 Claude Code 会话。
+
+需要回退时，先用 `cpa profile restore` 恢复配置并执行 `cpa server stop`，再用原可执行文件和原状态目录启动服务、应用原 profile。
+
+### 后续版本升级
+
 ```sh
 cpa upgrade
 ```
