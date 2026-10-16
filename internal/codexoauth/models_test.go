@@ -27,13 +27,13 @@ func TestOAuthModelsUseOfficialAccountCatalog(t *testing.T) {
 		if r.Method != "GET" || r.URL.Scheme != "https" || r.URL.Host != "chatgpt.com" || r.URL.Path != "/backend-api/codex/models" || r.URL.Query().Get("client_version") == "" || r.Header.Get("Authorization") != "Bearer mock-access" || r.Header.Get("Chatgpt-Account-Id") != "mock-account" {
 			t.Fatal("必须仅向官方账号目录发送 OAuth 凭证")
 		}
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"models":[{"slug":"z-model","display_name":"Z","visibility":"list","supported_in_api":false},{"slug":"hidden","visibility":"hide"},{"slug":"a-model","display_name":"A","visibility":"list"},{"slug":"z-model","visibility":"list"}]}`)), Header: make(http.Header)}, nil
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"models":[{"slug":"gpt-6.1-sol","display_name":"Z","visibility":"list","supported_in_api":false},{"slug":"hidden","visibility":"hide"},{"slug":"future-model-not-in-sdk","visibility":"list"},{"slug":"gpt-6-luna","display_name":"A","visibility":"list"},{"slug":"gpt-6.1-sol","visibility":"list"}]}`)), Header: make(http.Header)}, nil
 	})
 	models, err := discoverModels(context.Background(), modelCredential(), transport)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []config.Model{{ID: "a-model", Name: "A"}, {ID: "z-model", Name: "Z"}}
+	want := []config.Model{{ID: "gpt-6-luna", Name: "A"}, {ID: "gpt-6.1-sol", Name: "Z"}}
 	if calls != 1 || !reflect.DeepEqual(models, want) {
 		t.Fatalf("账号模型目录不正确：%+v", models)
 	}
@@ -49,6 +49,7 @@ func TestOAuthModelFailuresDoNotLeakOrFollowRedirects(t *testing.T) {
 		{"invalid", 200, `{"models":[{"slug":"","visibility":"list"}]}`},
 		{"no catalog", 200, `{"data":[{"id":"wrong-api"}]}`},
 		{"empty", 200, `{"models":[]}`},
+		{"unsupported", 200, `{"models":[{"slug":"future-model-not-in-sdk","visibility":"list"}]}`},
 		{"oversized", 200, strings.Repeat("x", (4<<20)+1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

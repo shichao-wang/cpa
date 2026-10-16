@@ -272,6 +272,7 @@ func compile(state *config.State, st *store.Store) (*snapshot, error) {
 					return nil, err
 				}
 			case config.AuthCodexOAuth:
+				info.prefix = config.OAuthConnectionPrefix(connection.ID, connection.CredentialRef)
 			default:
 				return nil, fmt.Errorf("连接必须显式声明有效的认证方式")
 			}

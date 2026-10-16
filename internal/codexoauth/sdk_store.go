@@ -155,13 +155,13 @@ func (s *SDKStore) List(ctx context.Context) ([]*coreauth.Auth, error) {
 				continue
 			}
 			metadata := map[string]any{
-				"access_token":         credential.AccessToken,
-				"refresh_token":        credential.RefreshToken,
-				"id_token":             credential.IDToken,
-				"account_id":           credential.AccountID,
-				"plan_type":            credential.PlanType,
-				"expired":              credential.ExpiresAt.UTC().Format(time.RFC3339Nano),
-				"last_refresh":         credential.LastRefresh.UTC().Format(time.RFC3339Nano),
+				"access_token":       credential.AccessToken,
+				"refresh_token":      credential.RefreshToken,
+				"id_token":           credential.IDToken,
+				"account_id":         credential.AccountID,
+				"plan_type":          credential.PlanType,
+				"expired":            credential.ExpiresAt.UTC().Format(time.RFC3339Nano),
+				"last_refresh":       credential.LastRefresh.UTC().Format(time.RFC3339Nano),
 				"cpa_generation":     credential.Generation,
 				"cpa_connection_id":  connection.ID,
 				"cpa_connection":     connectionName,
@@ -170,7 +170,7 @@ func (s *SDKStore) List(ctx context.Context) ([]*coreauth.Auth, error) {
 			records = append(records, &coreauth.Auth{
 				ID:       authID,
 				Provider: "codex",
-				Prefix:   config.ConnectionPrefix(connectionName),
+				Prefix:   config.OAuthConnectionPrefix(connection.ID, connection.CredentialRef),
 				Status:   coreauth.StatusActive,
 				Attributes: map[string]string{
 					"base_url":  config.CodexBaseURL,

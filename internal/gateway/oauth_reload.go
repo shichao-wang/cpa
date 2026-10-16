@@ -2,35 +2,15 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http/httptest"
 	"reflect"
 
-	"github.com/gin-gonic/gin"
-	sdkapi "github.com/router-for-me/CLIProxyAPI/v8/sdk/api"
 	cliproxy "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/shichao-wang/cpa/internal/codexoauth"
 	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/sdkmodels"
 )
-
-// sdkCodexModels 通过公开 SDK 的只读处理器取得模型能力，不开放管理路由或网络监听。
-func sdkCodexModels() ([]*cliproxy.ModelInfo, error) { return sdkStaticModels("codex") }
-
-func sdkStaticModels(channel string) ([]*cliproxy.ModelInfo, error) {
-	router := gin.New()
-	router.GET("/models", new(sdkapi.Handler).GetStaticModelDefinitions)
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest("GET", "/models?channel="+channel, nil))
-	var body struct {
-		Models []*cliproxy.ModelInfo `json:"models"`
-	}
-	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &body) != nil || len(body.Models) == 0 {
-		return nil, fmt.Errorf("无法读取 SDK 模型能力目录")
-	}
-	return body.Models, nil
-}
 
 func oauthBindings(s *snapshot) map[string]connectionInfo {
 	result := map[string]connectionInfo{}
@@ -108,7 +88,7 @@ func reconcileOAuth(ctx context.Context, manager *coreauth.Manager, credentials 
 		if _, exists := manager.GetByID(id); !exists {
 			continue
 		}
-		models, err := sdkCodexModels()
+		models, err := sdkmodels.Definitions("codex")
 		if err != nil {
 			return rollback(err)
 		}

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	cliproxy "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/connection"
@@ -239,5 +240,54 @@ func TestConnectionAddAndOAuthLoginPreserveLiveRequests(t *testing.T) {
 				t.Fatal("热更新中断了在途输出", scanner.Err(), tail.String())
 			}
 		})
+	}
+}
+
+// 即使切换后旧认证尚在 SDK 内，新的请求也必须只使用当前凭证。
+func TestOAuthReloginNeverSelectsRetiredCredential(t *testing.T) {
+	st, state := oauthTestState(t)
+	transport := &oauthTransport{requests: make(chan observedOAuthRequest, 32)}
+	manager := startManagedTest(t, st, runtimeOptions{transport: transport})
+	var retired *coreauth.Auth
+	for _, a := range manager.List() {
+		if a.Metadata["account_id"] == "account-a" {
+			retired = a
+			break
+		}
+	}
+	if retired == nil {
+		t.Fatal("缺少原始账号")
+	}
+	registry := cliproxy.GlobalModelRegistry()
+	retiredModels := registry.GetModelsForClient(retired.ID)
+	session, err := connection.BeginOAuth(st, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential := config.OAuthCredential{AccessToken: "new-access-a", RefreshToken: "new-refresh-a", AccountID: "new-account-a", PlanType: "pro", ExpiresAt: time.Now().Add(7 * 24 * time.Hour)}
+	if err := session.Commit(credential); err != nil {
+		session.Close()
+		t.Fatal(err)
+	}
+	session.Close()
+	waitRevision(t, st)
+	// 延长旧新认证共存的窗口，使账号串线可以确定性复现。
+	if _, err := manager.Register(coreauth.WithSkipPersist(t.Context()), retired); err != nil {
+		t.Fatal(err)
+	}
+	registry.RegisterClient(retired.ID, "codex", retiredModels)
+	manager.RefreshSchedulerEntry(retired.ID)
+	client := &http.Client{Timeout: 5 * time.Second}
+	for i := 0; i < 12; i++ {
+		response := postMessages(t, client, state.Listen, "client-secret-a", "claude-opus-test")
+		io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		if response.StatusCode != 200 {
+			t.Fatal("当前账号请求不可用", response.StatusCode)
+		}
+		got := <-transport.requests
+		if got.key != "Bearer new-access-a" || got.account != "new-account-a" {
+			t.Fatal("切换后请求使用了旧账号")
+		}
 	}
 }

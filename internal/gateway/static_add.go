@@ -9,6 +9,7 @@ import (
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	executortypes "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/sdkmodels"
 )
 
 // staticAddOnly 允许增加连接，已有静态连接的修改仍使用完整配置更新。
@@ -74,7 +75,7 @@ func registerStaticAdditions(ctx context.Context, manager *coreauth.Manager, pre
 		// 保留 SDK 已知模型的 reasoning 等能力，避免新增连接与重启后的行为不同。
 		known := map[string]*cliproxy.ModelInfo{}
 		for _, channel := range []string{"codex", "claude"} {
-			catalog, err := sdkStaticModels(channel)
+			catalog, err := sdkmodels.Definitions(channel)
 			if err != nil {
 				return err
 			}

@@ -164,7 +164,7 @@ cpa server stop
 cpa connection logout codex --yes
 ```
 
-认证方式切换必须在 `connection update` 中显式传 `--auth-type`；切换为 API key 时还需在同一命令显式提供 `--api-key-stdin`，不能继承或回退。新增连接、OAuth `login` 与重登录支持热更新，已有请求继续完成。`logout`、认证类型切换及删除 OAuth 连接仍要求先停止网关；网页退出与删除会自动暂停模型服务并在结束后恢复。连接保留，logout 只清除本地保存的 OAuth 凭证，不代表向上游撤销授权。OAuth 凭证属于本地敏感状态，可能以明文保存但文件权限限制为 0600；请勿提交或分享状态文件。OAuth 账号可用模型取决于账号实际授权及 SDK 注册目录。CLI 提供的模型清单是本地声明，不保证账号支持。网页在授权后请求官方 Codex 账号目录，不会向自定义地址或通用 OpenAI `/v1/models` 接口发送 OAuth token。目录列出模型也不保证账号当前有可用额度。
+认证方式切换必须在 `connection update` 中显式传 `--auth-type`；切换为 API key 时还需在同一命令显式提供 `--api-key-stdin`，不能继承或回退。新增连接、OAuth `login` 与重登录支持热更新，已有请求继续完成。`logout`、认证类型切换及删除 OAuth 连接仍要求先停止网关；网页退出与删除会自动暂停模型服务并在结束后恢复。连接保留，logout 只清除本地保存的 OAuth 凭证，不代表向上游撤销授权。OAuth 凭证属于本地敏感状态，可能以明文保存但文件权限限制为 0600；请勿提交或分享状态文件。OAuth 账号可用模型取决于账号实际授权及 SDK 注册目录。CLI 提供的模型清单是本地声明，不保证账号支持。网页在授权后请求官方 Codex 账号目录，仅展示当前锁定 SDK 可以注册的模型；无兼容模型时明确报错。OAuth token 不会发送到自定义地址或通用 OpenAI `/v1/models` 接口。目录列出模型也不保证账号当前有可用额度。
 
 上游协议：
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/sdkmodels"
 )
 
 // 与锁定 SDK 的 Codex 目录客户端版本一致，仅请求官方账号目录。
@@ -64,6 +65,14 @@ func discoverModels(ctx context.Context, credential config.OAuthCredential, tran
 	if len(catalog.Models) > 10000 {
 		return nil, fmt.Errorf("OAuth 模型目录超过 10000 个模型")
 	}
+	definitions, err := sdkmodels.Definitions("codex")
+	if err != nil {
+		return nil, err
+	}
+	supported := map[string]bool{}
+	for _, model := range definitions {
+		supported[model.ID] = true
+	}
 	models := make([]config.Model, 0, len(catalog.Models))
 	seen := map[string]bool{}
 	for _, item := range catalog.Models {
@@ -75,13 +84,13 @@ func discoverModels(ctx context.Context, credential config.OAuthCredential, tran
 		if err = config.ValidateModels([]config.Model{model}); err != nil {
 			return nil, fmt.Errorf("OAuth 模型目录包含无效模型")
 		}
-		if !seen[model.ID] {
+		if supported[model.ID] && !seen[model.ID] {
 			models = append(models, model)
 			seen[model.ID] = true
 		}
 	}
 	if len(models) == 0 {
-		return nil, fmt.Errorf("OAuth 账号未返回可用模型，请检查账号权限后重试")
+		return nil, fmt.Errorf("OAuth 账号未返回当前 SDK 支持的可用模型，请检查账号权限或升级 cpa")
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
 	return models, nil
