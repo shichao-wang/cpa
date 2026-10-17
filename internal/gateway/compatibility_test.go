@@ -113,6 +113,11 @@ func TestResponsesParameterValidationAndWarnings(t *testing.T) {
 		`,"max_tokens":100`, `,"output_config":null`, `,"output_config":{"effort":null}`,
 		`,"output_config":{"effort":3}`, `,"output_config":{"effort":""}`,
 		`,"output_config":{"effort":"unknown-effort"}`,
+		`,"thinking":{"type":"adaptive"},"output_config":{"effort":"none"}`,
+		`,"thinking":{"type":"adaptive"},"output_config":{"effort":"minimal"}`,
+		`,"thinking":{"type":"enabled","budget_tokens":1024},"output_config":{"effort":"none"}`,
+		`,"output_config":{"effort":"HIGH"}`,
+		`,"output_config":{"effort":" high "}`,
 		`,"output_config":{"effort":"low","effort":"high"}`,
 	} {
 		t.Run(extra, func(t *testing.T) {

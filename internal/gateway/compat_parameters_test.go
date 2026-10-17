@@ -101,7 +101,6 @@ func TestCompatibilityParametersThroughMessages(t *testing.T) {
 		{"adaptive_medium", `,"thinking":{"type":"adaptive"},"output_config":{"effort":"medium"}`, "medium"},
 		{"adaptive_high", `,"thinking":{"type":"adaptive"},"output_config":{"effort":"high"}`, "high"},
 		{"adaptive_xhigh", `,"thinking":{"type":"adaptive"},"output_config":{"effort":"xhigh"}`, "xhigh"},
-		{"adaptive_minimal_clamps_low", `,"thinking":{"type":"adaptive"},"output_config":{"effort":"minimal"}`, "low"},
 		{"adaptive_max", `,"thinking":{"type":"adaptive"},"output_config":{"effort":"max"}`, "max"},
 		{"adaptive_display_omitted_high", `,"thinking":{"type":"adaptive","display":"omitted"},"output_config":{"effort":"high"}`, "high"},
 		{"adaptive_default", `,"thinking":{"type":"adaptive"}`, "xhigh"},

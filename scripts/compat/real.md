@@ -20,3 +20,5 @@ go test ./internal/gateway -run '^TestCompatRealCodexClaude$' -count=1 -timeout=
 后续运行必须用 `CPA_COMPAT_REAL_CASES` 指定需要的 case，并使用 `CPA_COMPAT_REAL_USED` 及 `CPA_COMPAT_REAL_LEDGER` 续接同一轮预算。启动 seed 必须与已有 ledger 一致，不能重置本轮已消耗的请求。当前已消耗 28 次，原始分轮证据必须保留，不重复跑默认和 effort。
 
 子任务验收必须同时看到 Agent 工具事件、指定 haiku 槽位的子模型请求，以及工具返回后的主模型续轮。仅主模型调用 Read 不算子任务通过。本机 bare 模式没有向上游暴露 Agent 工具。先用 agent_mock.py 证明非 bare 的隔离委派闭环，再执行一次真实子任务，已通过 Agent 事件、子模型入站和父模型汇总验收。子进程外部 HTTP(S) 代理指向拒绝连接的 loopback 端口，只有 CPA loopback 走 NO_PROXY。实际执行结果和测试验收修正见 `docs/compat-real.md`。
+
+用例名会在读取来源凭证和启动临时服务前校验。未知名称或逗号分隔后的空项会失败；各项前后空白会移除。空字符串使用默认普通用例集，`direct-image` 仅显式选择时运行。

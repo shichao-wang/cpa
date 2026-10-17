@@ -16,7 +16,7 @@ SDK 当前 Codex 转换路径去除输出预算字段。标准 [OpenAI Responses
 
 ## CPA-18：入口校验预算
 
-Responses 推理请求的参数使用原始 JSON 校验，不做字符串到零的转换。校验包括重复字段、thinking/output_config 对象、type/effort 类型、整数范围、预算与输出配置冲突。
+Responses 推理请求的参数使用原始 JSON 校验，不做字符串到零的转换。校验包括重复字段、thinking/output_config 对象、type/effort 类型、整数范围、预算与输出配置冲突。显式 effort 必须属于当前模型目录公布的档位，未支持的 none/minimal 等值会被拒绝，不再交给 SDK 静默降级。
 
 - max_tokens：提供时为 1～2147483647 的 JSON 整数。
 - budget_tokens：只用于 enabled，提供时为 1024～2147483647 的 JSON 整数，并要求 max_tokens 存在且更大。
@@ -39,3 +39,7 @@ Responses 推理请求的参数使用原始 JSON 校验，不做字符串到零�
 - 真实连接状态、管理令牌与 Claude settings 的保护基线未变；真实请求账本仍为上一轮的 28，未新增付费请求。
 
 修复后的测试 binary 为 `/private/tmp/cpa-compat-fixed`，当前运行服务没有重启或替换。
+
+## PR 评审补充
+
+路由、参数校验与模型改写共享一次读取的正文，不再为校验或改写重新读取整个请求。真实测试过滤器会在读取凭证和启动临时服务前校验用例名；未知名称、空白或未选中任何用例均失败，不能生成空跑成功的证据。默认仍跳过真实测试。

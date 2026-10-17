@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -192,6 +193,28 @@ func (b *compatRealBody) Close() error {
 func TestCompatRealCodexClaude(t *testing.T) {
 	if os.Getenv("CPA_COMPAT_REAL") != "1" {
 		t.Skip("仅显式授权后设置 CPA_COMPAT_REAL=1 执行真实短请求")
+	}
+	cases := []struct{ name, effort, settings, prompt, tools, mode, schema, agents string }{
+		{name: "default", prompt: "Reply exactly CPA_REAL_OK. No tools.", tools: ""},
+		{name: "low", effort: "low", prompt: "Reply exactly CPA_REAL_OK. No tools.", tools: ""},
+		{name: "high", effort: "high", prompt: "Reply exactly CPA_REAL_OK. No tools.", tools: ""},
+		{name: "thinking-disabled", settings: `{"alwaysThinkingEnabled":false}`, prompt: "Reply exactly CPA_REAL_OK. No tools.", tools: ""},
+		{name: "read-tool", prompt: "Use Read to read fixture.txt, then reply exactly its contents. Do not use any other tool.", tools: "Read"},
+		{name: "plan-read", mode: "plan", prompt: "In plan mode, use Read to inspect fixture.txt. Do not edit or run commands. Then reply exactly its contents.", tools: "Read"},
+		{name: "bash-tool", prompt: "Use Bash once to execute printf CPA_REAL_OK, then reply CPA_REAL_OK. Do not use any other tool.", tools: "Bash"},
+		{name: "structured-json", schema: `{"type":"object","properties":{"marker":{"type":"string","const":"CPA_REAL_OK"}},"required":["marker"],"additionalProperties":false}`, prompt: "Return an object with marker CPA_REAL_OK matching the given JSON schema.", tools: ""},
+		{name: "subagent", agents: `{"checker":{"description":"Reads the isolated fixture","prompt":"Use Read to inspect fixture.txt and report the exact contents. Do not use other tools.","tools":["Read"],"model":"haiku"}}`, prompt: "You must use Agent to delegate to checker once to read fixture.txt. Do not read the fixture yourself. Wait for checker to return, then reply with exactly the fixture contents.", tools: "Agent,Read"},
+		{name: "image-read", prompt: "Use Read once to inspect fixture.png. If the picture is solid red, reply exactly CPA_REAL_OK; otherwise reply WRONG_COLOR. Do not inspect any other files.", tools: "Read"},
+		{name: "cache-repeat-1", prompt: "Reply exactly CPA_REAL_OK. No tools.", tools: ""},
+		{name: "cache-repeat-2", prompt: "Reply exactly CPA_REAL_OK. No tools.", tools: ""},
+	}
+	names := []string{"direct-image"}
+	for _, c := range cases {
+		names = append(names, c.name)
+	}
+	selected, err := selectCompatRealCases(os.Getenv("CPA_COMPAT_REAL_CASES"), names)
+	if err != nil {
+		t.Fatal(err)
 	}
 	previousLogLevel := logrus.GetLevel()
 	logrus.SetLevel(logrus.PanicLevel)
@@ -373,20 +396,7 @@ func TestCompatRealCodexClaude(t *testing.T) {
 		observerProxy.ServeHTTP(w, r)
 	}))
 	t.Cleanup(observer.Close)
-	cases := []struct{ name, effort, settings, prompt, tools, mode, schema, agents string }{
-		{name: "default", prompt: "Reply exactly CPA_REAL_OK. No tools.", tools: ""},
-		{name: "low", effort: "low", prompt: "Reply exactly CPA_REAL_OK. No tools.", tools: ""},
-		{name: "high", effort: "high", prompt: "Reply exactly CPA_REAL_OK. No tools.", tools: ""},
-		{name: "thinking-disabled", settings: `{"alwaysThinkingEnabled":false}`, prompt: "Reply exactly CPA_REAL_OK. No tools.", tools: ""},
-		{name: "read-tool", prompt: "Use Read to read fixture.txt, then reply exactly its contents. Do not use any other tool.", tools: "Read"},
-		{name: "plan-read", mode: "plan", prompt: "In plan mode, use Read to inspect fixture.txt. Do not edit or run commands. Then reply exactly its contents.", tools: "Read"},
-		{name: "bash-tool", prompt: "Use Bash once to execute printf CPA_REAL_OK, then reply CPA_REAL_OK. Do not use any other tool.", tools: "Bash"},
-		{name: "structured-json", schema: `{"type":"object","properties":{"marker":{"type":"string","const":"CPA_REAL_OK"}},"required":["marker"],"additionalProperties":false}`, prompt: "Return an object with marker CPA_REAL_OK matching the given JSON schema.", tools: ""},
-		{name: "subagent", agents: `{"checker":{"description":"Reads the isolated fixture","prompt":"Use Read to inspect fixture.txt and report the exact contents. Do not use other tools.","tools":["Read"],"model":"haiku"}}`, prompt: "You must use Agent to delegate to checker once to read fixture.txt. Do not read the fixture yourself. Wait for checker to return, then reply with exactly the fixture contents.", tools: "Agent,Read"},
-		{name: "image-read", prompt: "Use Read once to inspect fixture.png. If the picture is solid red, reply exactly CPA_REAL_OK; otherwise reply WRONG_COLOR. Do not inspect any other files.", tools: "Read"},
-		{name: "cache-repeat-1", prompt: "Reply exactly CPA_REAL_OK. No tools.", tools: ""},
-		{name: "cache-repeat-2", prompt: "Reply exactly CPA_REAL_OK. No tools.", tools: ""},
-	}
+
 	if err = os.WriteFile(filepath.Join(work, "fixture.txt"), []byte("CPA_REAL_OK\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -403,9 +413,8 @@ func TestCompatRealCodexClaude(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(work, "fixture.png"), fixturePNG.Bytes(), 0600); err != nil {
 		t.Fatal(err)
 	}
-	filter := os.Getenv("CPA_COMPAT_REAL_CASES")
 	for _, c := range cases {
-		if filter != "" && !strings.Contains(","+filter+",", ","+c.name+",") {
+		if !selected[c.name] {
 			continue
 		}
 		if transport.failed.Load() {
@@ -505,7 +514,7 @@ func TestCompatRealCodexClaude(t *testing.T) {
 			}
 		})
 	}
-	if !transport.failed.Load() && strings.Contains(","+filter+",", ",direct-image,") {
+	if !transport.failed.Load() && selected["direct-image"] {
 		t.Run("direct-image", func(t *testing.T) {
 			transport.mu.Lock()
 			transport.currentCase = "direct-image"
@@ -684,5 +693,54 @@ func TestCompatRealBudgetLedger(t *testing.T) {
 	json.Unmarshal(data, &value)
 	if value.Used != 30 {
 		t.Fatal("预算耗尽后ledger被错误递增")
+	}
+}
+
+// 用例过滤必须在读取真实凭证或启动服务前校验，不能用空跑生成成功证据。
+func selectCompatRealCases(filter string, names []string) (map[string]bool, error) {
+	selected := map[string]bool{}
+	if filter == "" {
+		for _, name := range names {
+			if name != "direct-image" {
+				selected[name] = true
+			}
+		}
+	} else {
+		for _, name := range strings.Split(filter, ",") {
+			name = strings.TrimSpace(name)
+			if name == "" || !slices.Contains(names, name) {
+				return nil, errors.New("CPA_COMPAT_REAL_CASES 包含空白或未知用例")
+			}
+			selected[name] = true
+		}
+	}
+	if len(selected) == 0 {
+		return nil, errors.New("真实测试未选中任何用例")
+	}
+	return selected, nil
+}
+
+func TestSelectCompatRealCases(t *testing.T) {
+	names := []string{"low", "high", "direct-image"}
+	for _, filter := range []string{"typo", "low,typo", " ", ",", "low,"} {
+		if _, err := selectCompatRealCases(filter, names); err == nil {
+			t.Fatalf("非法过滤未拒绝：%q", filter)
+		}
+	}
+	for _, tc := range []struct {
+		filter string
+		want   map[string]bool
+	}{
+		{"", map[string]bool{"low": true, "high": true}},
+		{"direct-image", map[string]bool{"direct-image": true}},
+		{" low, high ", map[string]bool{"low": true, "high": true}},
+	} {
+		got, err := selectCompatRealCases(tc.filter, names)
+		if err != nil || !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("用例选择错误：%q %v %v", tc.filter, got, err)
+		}
+	}
+	if _, err := selectCompatRealCases("", nil); err == nil {
+		t.Fatal("空用例集未拒绝")
 	}
 }

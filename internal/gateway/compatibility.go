@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/shichao-wang/cpa/internal/config"
@@ -14,7 +15,7 @@ import (
 
 // Codex 转换器不执行输出 token 上限。保留普通 Messages 调用，同时明确告知限制；
 // 必须执行上限的调用方可要求入口直接拒绝，不能用流式截断伪造预算执行。
-func checkRequestCompatibility(r *http.Request, route modelRoute, headers http.Header) error {
+func checkRequestCompatibility(r *http.Request, data []byte, route modelRoute, headers http.Header) error {
 	if route.protocol != config.Responses {
 		return nil
 	}
@@ -30,12 +31,6 @@ func checkRequestCompatibility(r *http.Request, route modelRoute, headers http.H
 		}
 		return fmt.Errorf("当前 Responses 路径不执行输出 token 上限，无法满足严格输出预算；请使用支持该限制的连接")
 	}
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("无法读取请求参数")
-	}
-	r.Body.Close()
-	r.Body = io.NopCloser(bytes.NewReader(data))
 	params, err := parameterObject(data)
 	if err != nil {
 		return err
@@ -91,6 +86,9 @@ func checkRequestCompatibility(r *http.Request, route modelRoute, headers http.H
 	capability := sdkmodels.ResponsesCapabilities(route.targetModel)
 	if capability.Reasoning == "unavailable" && (mode == "enabled" || mode == "adaptive" || effort != "") {
 		return fmt.Errorf("SDK 未识别该模型的推理能力，拒绝静默丢弃 thinking / effort；请移除推理参数或选择已识别模型")
+	}
+	if effort != "" && !slices.Contains(capability.Efforts, effort) {
+		return fmt.Errorf("output_config.effort 不属于该模型支持的档位；请参照模型能力目录")
 	}
 	warnings := []string{"output-limit-not-enforced", "context-window-unverified"}
 	if mode == "disabled" {
