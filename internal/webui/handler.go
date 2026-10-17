@@ -22,6 +22,7 @@ import (
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/connection"
 	"github.com/shichao-wang/cpa/internal/profile"
+	"github.com/shichao-wang/cpa/internal/sdkmodels"
 	"github.com/shichao-wang/cpa/internal/store"
 )
 
@@ -205,12 +206,13 @@ func fail(w http.ResponseWriter, status int, message string) {
 }
 
 type connectionView struct {
-	Name                 string         `json:"name"`
-	AuthType             string         `json:"authType"`
-	Protocol             string         `json:"protocol"`
-	BaseURL              string         `json:"baseURL"`
-	Models               []config.Model `json:"models"`
-	CredentialConfigured bool           `json:"credentialConfigured"`
+	Compatibility        map[string]sdkmodels.ResponsesCompatibility `json:"compatibility,omitempty"`
+	Name                 string                                      `json:"name"`
+	AuthType             string                                      `json:"authType"`
+	Protocol             string                                      `json:"protocol"`
+	BaseURL              string                                      `json:"baseURL"`
+	Models               []config.Model                              `json:"models"`
+	CredentialConfigured bool                                        `json:"credentialConfigured"`
 }
 type profileView struct {
 	Name    string                    `json:"name"`
@@ -228,7 +230,14 @@ func (h *Handler) state(w http.ResponseWriter, r *http.Request) {
 	connections := map[string]connectionView{}
 	for name, c := range s.Connections {
 		_, err := s.Credential(c)
-		connections[name] = connectionView{name, c.AuthType, c.Protocol, c.BaseURL, append([]config.Model{}, c.Models...), err == nil}
+		view := connectionView{Name: name, AuthType: c.AuthType, Protocol: c.Protocol, BaseURL: c.BaseURL, Models: append([]config.Model{}, c.Models...), CredentialConfigured: err == nil}
+		if c.Protocol == config.Responses {
+			view.Compatibility = make(map[string]sdkmodels.ResponsesCompatibility, len(c.Models))
+			for _, model := range c.Models {
+				view.Compatibility[model.ID] = sdkmodels.ResponsesCapabilities(model.ID)
+			}
+		}
+		connections[name] = view
 	}
 	profiles := map[string]profileView{}
 	for name, p := range s.Profiles {

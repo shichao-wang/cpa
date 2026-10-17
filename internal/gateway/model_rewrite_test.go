@@ -28,7 +28,7 @@ func TestModelRewriteKeepsColonAndNestedPayload(t *testing.T) {
 		t.Fatalf("公开 ID 未恢复：%s", rewritten)
 	}
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(original))
-	if err := rewriteRequestModel(req, "prefix/actual"); err != nil {
+	if err := rewriteRequestModel(req, []byte(original), "prefix/actual"); err != nil {
 		t.Fatal(err)
 	}
 	body, _ := io.ReadAll(req.Body)

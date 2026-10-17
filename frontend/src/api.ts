@@ -8,6 +8,14 @@ export const protocols = {
   responses: "Responses",
 };
 const modelSchema = z.object({ id: z.string(), name: z.string().optional() });
+const compatibilitySchema = z.object({
+  outputLimit: z.literal("not-enforced"),
+  reasoning: z.enum(["effort-mapping", "unavailable"]),
+  efforts: z.array(z.string()),
+  thinkingOff: z.enum(["none", "lowest-effort", "unverified"]),
+  contextWindow: z.literal("unverified"),
+  warnings: z.array(z.string()),
+});
 export const discoveredSchema = z.object({
   models: z.array(modelSchema).min(1),
 });
@@ -24,6 +32,7 @@ const connectionSchema = z.object({
   baseURL: z.string(),
   models: z.array(modelSchema),
   credentialConfigured: z.boolean(),
+  compatibility: z.record(z.string(), compatibilitySchema).optional(),
 });
 const bindingSchema = z.object({
   public_model: z.string(),

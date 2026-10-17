@@ -17,6 +17,7 @@ import (
 	cliproxy "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy"
 	"github.com/shichao-wang/cpa/internal/codexoauth"
 	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/sdkmodels"
 	"github.com/shichao-wang/cpa/internal/store"
 	"github.com/shichao-wang/cpa/internal/webui"
 )
@@ -96,7 +97,7 @@ func (g *requestGate) middleware() gin.HandlerFunc {
 			return
 		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<20)
-		modelID, err := readRootModel(c.Request)
+		modelID, requestBody, err := readRootModel(c.Request)
 		if err != nil {
 			writeRequestError(c, http.StatusBadRequest, "请求必须是包含 model 字段的 JSON 对象")
 			return
@@ -109,6 +110,12 @@ func (g *requestGate) middleware() gin.HandlerFunc {
 		if route.unavailable != "" {
 			writeRequestError(c, http.StatusServiceUnavailable, route.unavailable)
 			return
+		}
+		if c.Request.URL.Path == "/v1/messages" {
+			if err := checkRequestCompatibility(c.Request, requestBody, route, c.Writer.Header()); err != nil {
+				writeRequestError(c, http.StatusBadRequest, err.Error())
+				return
+			}
 		}
 		if route.authType == config.AuthCodexOAuth {
 			if g.oauth == nil || !g.oauth.Healthy(route.authID) || !cliproxy.GlobalModelRegistry().ClientSupportsModel(route.authID, route.sdkModel) {
@@ -123,7 +130,7 @@ func (g *requestGate) middleware() gin.HandlerFunc {
 			defer release()
 			c.Request = c.Request.WithContext(ctx)
 		}
-		if err := rewriteRequestModel(c.Request, route.sdkModel); err != nil {
+		if err := rewriteRequestModel(c.Request, requestBody, route.sdkModel); err != nil {
 			writeRequestError(c, http.StatusBadRequest, "无法解析 JSON 请求")
 			return
 		}
@@ -199,11 +206,12 @@ func writeRequestError(c *gin.Context, status int, message string) {
 
 func (g *requestGate) writeCatalog(c *gin.Context, profile profileSnapshot) {
 	type catalogModel struct {
-		ID          string `json:"id"`
-		Type        string `json:"type"`
-		DisplayName string `json:"display_name"`
-		Description string `json:"description,omitempty"`
-		CreatedAt   string `json:"created_at"`
+		Compatibility *sdkmodels.ResponsesCompatibility `json:"cpa_capabilities,omitempty"`
+		ID            string                            `json:"id"`
+		Type          string                            `json:"type"`
+		DisplayName   string                            `json:"display_name"`
+		Description   string                            `json:"description,omitempty"`
+		CreatedAt     string                            `json:"created_at"`
 	}
 	data := make([]catalogModel, 0, len(profile.catalog))
 	for _, model := range profile.catalog {
@@ -213,8 +221,14 @@ func (g *requestGate) writeCatalog(c *gin.Context, profile profileSnapshot) {
 		if model.authType == config.AuthCodexOAuth && (g.oauth == nil || !g.oauth.Healthy(model.authID) || !cliproxy.GlobalModelRegistry().ClientSupportsModel(model.authID, model.sdkModel)) {
 			continue
 		}
+		var compatibility *sdkmodels.ResponsesCompatibility
+		if model.protocol == config.Responses {
+			capability := sdkmodels.ResponsesCapabilities(model.targetModel)
+			compatibility = &capability
+		}
 		data = append(data, catalogModel{
-			ID: model.publicID, Type: "model", DisplayName: model.label,
+			Compatibility: compatibility,
+			ID:            model.publicID, Type: "model", DisplayName: model.label,
 			Description: model.description, CreatedAt: time.Unix(0, 0).UTC().Format(time.RFC3339),
 		})
 	}
@@ -225,34 +239,21 @@ func (g *requestGate) writeCatalog(c *gin.Context, profile profileSnapshot) {
 	c.AbortWithStatusJSON(http.StatusOK, gin.H{"data": data, "has_more": false, "first_id": first, "last_id": last})
 }
 
-func readRootModel(r *http.Request) (string, error) {
+// 路由、兼容性校验和模型改写共享一次读取的正文，避免长上下文被反复缓冲。
+func readRootModel(r *http.Request) (string, []byte, error) {
 	if r.Body == nil {
-		return "", errors.New("empty body")
+		return "", nil, errors.New("empty body")
 	}
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	_ = r.Body.Close()
-	r.Body = io.NopCloser(bytes.NewReader(data))
-	r.ContentLength = int64(len(data))
-	r.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(data)), nil }
 	model, _, _, err := findRootModel(data)
-	if err != nil {
-		return "", err
-	}
-	return model, nil
+	return model, data, err
 }
 
-func rewriteRequestModel(r *http.Request, model string) error {
-	if r.Body == nil {
-		return errors.New("empty body")
-	}
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		return err
-	}
-	_ = r.Body.Close()
+func rewriteRequestModel(r *http.Request, data []byte, model string) error {
 	_, start, end, err := findRootModel(data)
 	if err != nil {
 		return err

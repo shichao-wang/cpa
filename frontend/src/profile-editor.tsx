@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ModelPicker } from "./model-picker";
+import { CompatibilityNotice } from "./compatibility-notice";
 import {
   initialBindings,
   slots,
@@ -213,6 +214,12 @@ export function ProfileEditor({
                     </p>
                   )}
                 </div>
+                {connection && (
+                  <CompatibilityNotice
+                    connection={connection}
+                    model={b.target_model}
+                  />
+                )}
                 <details className="mapping-options">
                   <summary>
                     <SlidersHorizontal />
