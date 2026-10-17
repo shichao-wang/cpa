@@ -60,7 +60,7 @@ func TestModelControllerPauseResumeRetainsManagement(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &modelController{ctx: ctx, store: st, instanceID: "test-controller", mode: "paused"}
 	t.Cleanup(func() { cancel(); _ = c.Pause(context.Background()) })
-	h, err := webui.New(st, c.active, c, ctx)
+	h, err := webui.New(st, "[::1]:18317", c.active, c, ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,6 +90,15 @@ func TestModelControllerPauseResumeRetainsManagement(t *testing.T) {
 		if resp.StatusCode != want {
 			t.Fatalf("%s = %d，预期 %d", path, resp.StatusCode, want)
 		}
+	}
+	// 私有 SDK 端口不能绕过公开管理接口的令牌策略。
+	privateResponse, err := http.Get("http://" + c.address + "/admin/api/state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateResponse.Body.Close()
+	if privateResponse.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("私有管理接口无令牌状态 %d，预期 401", privateResponse.StatusCode)
 	}
 	request("/ui/", 200)
 	request("/v1/models", 401)

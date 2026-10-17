@@ -29,20 +29,23 @@ import (
 var assets embed.FS
 
 type Handler struct {
-	store     *store.Store
-	tokenHash [32]byte
-	active    func() (uint64, bool)
-	mux       *http.ServeMux
-	oauth     *oauthManager
+	store      *store.Store
+	tokenHash  [32]byte
+	localAdmin bool
+	active     func() (uint64, bool)
+	mux        *http.ServeMux
+	oauth      *oauthManager
 }
 
 // New 使用公开状态操作，active 返回模型网关实际生效的修订及就绪状态。
-func New(st *store.Store, active func() (uint64, bool), control GatewayControl, ctx context.Context) (*Handler, error) {
+func New(st *store.Store, listen string, active func() (uint64, bool), control GatewayControl, ctx context.Context) (*Handler, error) {
+	host, _, listenErr := net.SplitHostPort(listen)
+	localAdmin := listenErr == nil && host == "127.0.0.1"
 	token, err := Token(st)
 	if err != nil {
 		return nil, err
 	}
-	h := &Handler{store: st, tokenHash: sha256.Sum256([]byte(token)), active: active, mux: http.NewServeMux()}
+	h := &Handler{store: st, localAdmin: localAdmin, tokenHash: sha256.Sum256([]byte(token)), active: active, mux: http.NewServeMux()}
 	if control != nil {
 		h.oauth = newOAuthManager(ctx, st, control)
 	}
@@ -147,6 +150,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			nonce := base64.RawStdEncoding.EncodeToString(random[:])
 			w.Header().Set("Content-Security-Policy", strings.Replace(policy, "style-src 'self'", "style-src 'self' 'nonce-"+nonce+"'", 1))
+			if h.localAdmin {
+				data = bytes.Replace(data, []byte("</head>"), []byte(`<meta name="cpa-local-admin" content="true"></head>`), 1)
+			}
 			data = bytes.Replace(data, []byte("</head>"), []byte(`<meta name="cpa-style-nonce" content="`+nonce+`"></head>`), 1)
 		}
 		w.Header().Set("Content-Type", contentType)
@@ -155,6 +161,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodHead {
 			_, _ = w.Write(data)
 		}
+		return
+	}
+	if h.localAdmin && len(r.Header.Values("Authorization")) == 0 {
+		h.mux.ServeHTTP(w, r)
 		return
 	}
 	auth := r.Header.Get("Authorization")

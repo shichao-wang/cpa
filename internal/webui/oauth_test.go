@@ -66,7 +66,7 @@ func setupOAuth(t *testing.T) (*store.Store, *Handler, string, *testControl) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	h, err := New(st, func() (uint64, bool) {
+	h, err := New(st, "[::1]:18317", func() (uint64, bool) {
 		s, e := st.Read()
 		if e != nil {
 			return 0, false

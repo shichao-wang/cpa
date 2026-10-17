@@ -1167,3 +1167,40 @@ td .hint {
   max-height: calc(100dvh - 40px);
   overflow-y: auto;
 }
+
+.model-count {
+  padding: 0;
+  height: auto;
+  gap: 6px;
+  font-weight: 500;
+}
+.model-count svg {
+  width: 13px;
+  height: 13px;
+  color: var(--muted-foreground);
+}
+.model-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.connection-model-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+.connection-model-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: min(440px, 50dvh);
+  overflow-y: auto;
+}
+.connection-model-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}

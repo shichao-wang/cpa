@@ -134,8 +134,8 @@ func TestWebUIThroughTunnel(t *testing.T) {
 		}
 	}
 	code, _ = request("GET", "/admin/api/state", "", nil, "")
-	if code != 401 {
-		t.Fatal("未认证管理必须拒绝")
+	if code != 200 {
+		t.Fatal("监听 127.0.0.1 时无需管理令牌")
 	}
 	code, _ = request("GET", "/v1/models", token, nil, "")
 	if code != 401 {
@@ -254,7 +254,7 @@ func TestWebUIThroughTunnel(t *testing.T) {
 	}
 	code, data = request("GET", "/v1/models", key, nil, base)
 	if code != 200 || !bytes.Contains(data, []byte("远端修改")) {
-		t.Fatalf("修改未对模型服务生效：HTTP %d，响应 %s",code,data)
+		t.Fatalf("修改未对模型服务生效：HTTP %d，响应 %s", code, data)
 	}
 	code, _ = request("DELETE", "/admin/api/connections/remote", token, nil, base)
 	if code != 409 {
@@ -284,6 +284,33 @@ func TestWebUIThroughTunnel(t *testing.T) {
 		conn.Close()
 		t.Fatal("停止后 WebUI 和模型 API 必须同时关闭")
 	}
+	// localhost 的解析结果不能将受令牌保护的配置变成免令牌。
+	_, port, err := net.SplitHostPort(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call("server", "start", "--listen", "localhost:"+port)
+	stopped = false
+	for _, withToken := range []bool{false, true} {
+		req, _ := http.NewRequest("GET", "http://localhost:"+port+"/admin/api/state", nil)
+		if withToken {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		response, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		want := http.StatusUnauthorized
+		if withToken {
+			want = http.StatusOK
+		}
+		if response.StatusCode != want {
+			t.Fatalf("localhost 管理接口状态 %d，预期 %d", response.StatusCode, want)
+		}
+	}
+	call("server", "stop")
+	stopped = true
 	_ = tunnel.Close()
 	<-acceptDone
 	forwards.Wait()

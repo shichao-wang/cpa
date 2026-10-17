@@ -210,7 +210,7 @@ func serveManaged(ctx context.Context, st *store.Store, id string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	control := &modelController{ctx: ctx, store: st, instanceID: id, mode: "paused"}
-	handler, err := webui.New(st, control.active, control, ctx)
+	handler, err := webui.New(st, state.Listen, control.active, control, ctx)
 	if err != nil {
 		return err
 	}
