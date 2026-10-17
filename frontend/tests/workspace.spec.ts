@@ -1098,11 +1098,9 @@ test("大量模型保持列表紧凑，完整目录可按名称与 ID 搜索", a
     });
   });
   await connect(page);
-  const row = page
-    .getByRole("row")
-    .filter({
-      has: page.getByRole("button", { name: "编辑连接 work-api", exact: true }),
-    });
+  const row = page.getByRole("row").filter({
+    has: page.getByRole("button", { name: "编辑连接 work-api", exact: true }),
+  });
   await expect(row).toContainText("92 个模型");
   await expect(row).not.toContainText("测试模型 91");
   await expect(row.locator(".model-summary")).toHaveCSS(
@@ -1126,4 +1124,93 @@ test("大量模型保持列表紧凑，完整目录可按名称与 ID 搜索", a
     .getByRole("button", { name: "查看 work-api 的全部模型", exact: true })
     .click();
   await expect(page.getByRole("dialog").getByRole("listitem")).toHaveCount(92);
+});
+
+test("Responses 连接及 profile 显示模型能力，不承诺输出预算和 1M 容量", async ({
+  page,
+}) => {
+  const base = fixture();
+  const common = {
+    outputLimit: "not-enforced",
+    contextWindow: "unverified",
+    warnings: [
+      "输出预算不执行，不能用 max_tokens 控制消耗。",
+      "上下文容量未经上游验证，[1m] 不会扩容。",
+      "托管工具仅部分映射，不代表原生服务端执行。",
+    ],
+  };
+  const workspace = {
+    ...base,
+    connections: {
+      ...base.connections,
+      "codex-personal": {
+        ...base.connections["codex-personal"],
+        models: [{ id: "gpt-6.1-sol" }, { id: "unknown-model" }],
+        compatibility: {
+          "gpt-6.1-sol": {
+            ...common,
+            reasoning: "effort-mapping",
+            efforts: ["low", "high"],
+            thinkingOff: "lowest-effort",
+            warnings: [
+              ...common.warnings,
+              "关闭 thinking 会降到最低支持档，不能保证完全关闭内部推理。",
+            ],
+          },
+          "unknown-model": {
+            ...common,
+            reasoning: "unavailable",
+            efforts: [],
+            thinkingOff: "unverified",
+            warnings: [
+              ...common.warnings,
+              "SDK 未识别推理能力，显式 thinking 或 effort 会被拒绝。",
+            ],
+          },
+        },
+      },
+    },
+  };
+  let writes = 0;
+  await page.route("**/admin/api/**", async (route) => {
+    if (route.request().url().endsWith("/oauth/session")) {
+      await route.fulfill({ json: null });
+      return;
+    }
+    if (route.request().method() !== "GET") writes++;
+    await route.fulfill({ json: workspace });
+  });
+  await connect(page);
+  await page
+    .getByRole("button", {
+      name: "查看 codex-personal 的全部模型",
+      exact: true,
+    })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("输出上限不执行，上下文容量未验证");
+  const unknown = dialog
+    .locator(".connection-model-list > li")
+    .filter({ hasText: "unknown-model" });
+  await unknown.locator("summary").click();
+  await expect(unknown).toContainText(
+    "SDK 未识别推理能力，显式 thinking 或 effort 会被拒绝。",
+  );
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Profiles", exact: false }).click();
+  await page.getByRole("button", { name: "编辑映射 daily" }).click();
+  const opus = page.getByRole("region", { name: "OPUS 映射" });
+  await opus
+    .getByLabel("上游连接", { exact: true })
+    .selectOption("codex-personal");
+  await opus.locator(".compatibility-notice summary").click();
+  await expect(opus).toContainText("关闭 thinking 会降到最低支持档");
+  await opus.getByRole("combobox", { name: "上游模型", exact: true }).click();
+  await page
+    .getByRole("option", { name: "unknown-model", exact: true })
+    .click();
+  await expect(opus).toContainText(
+    "SDK 未识别推理能力，显式 thinking 或 effort 会被拒绝。",
+  );
+  expect(writes).toBe(0);
 });

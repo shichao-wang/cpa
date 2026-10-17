@@ -49,6 +49,7 @@ type RuntimeState struct {
 }
 
 type modelRoute struct {
+	protocol    string
 	publicID    string
 	targetModel string
 	sdkModel    string
@@ -316,6 +317,7 @@ func compile(state *config.State, st *store.Store) (*snapshot, error) {
 			binding := profile.Models[slot]
 			info := connections[binding.Connection]
 			route := modelRoute{
+				protocol: info.protocol,
 				publicID: binding.PublicModel, targetModel: binding.TargetModel,
 				sdkModel: info.prefix + "/" + binding.TargetModel, prefix: info.prefix,
 				label: binding.Label, description: binding.Description, authType: info.authType,

@@ -182,6 +182,21 @@ add/create 默认不联网。check 仅尝试模型目录，不发送推理；目
 
 ## Profile 与 Claude Code
 
+### Responses 兼容性说明
+
+Responses 连接经当前锁定 SDK 的 Codex 转换路径执行。管理页面的连接模型清单与 profile 映射会显示每个模型的能力说明；`GET /v1/models` 的对应条目通过 `cpa_capabilities` 返回相同说明。这是派生能力信息，不写入状态，也不根据连接名称或公开 Claude 别名推断上游能力。
+
+- **输出预算不执行。** 此路径不把 `max_tokens` 变成上游输出上限。推理响应会带 `X-CPA-Output-Limit: not-enforced`；要求执行输出上限的调用方可发送 `X-CPA-Require-Output-Limit: true`，网关会在调用上游前返回 400。普通 Claude Code 调用仍保留，但不能依赖该参数控制消耗。标准 OpenAI Responses API 的预算说明不能直接当作此转换路径的能力承诺。
+- **推理是兼容映射。** effort 档位来自公开 SDK 的模型目录；未知推理能力的模型会拒绝显式启用 thinking 或 effort，普通对话仍可用。已知模型的 adaptive、预算和 thinking 关闭按 SDK 转换；没有 `none` 档位时，关闭会降到最低支持档。仅传 effort 而没有 thinking 时可能被 SDK 忽略。
+- **上下文容量未经实测。** 客户端显示的 200K / 1M 不是上游容量声明，`[1m]` 不会为连接扩容。
+- **托管工具不等同于同名函数。** web_fetch / code_execution 转为普通函数不代表 Anthropic 服务端执行，web_search 的调用次数上限不映射。
+
+`X-CPA-Compatibility-Warnings` 返回逗号分隔的机器可读代码，例如 `output-limit-not-enforced`、`thinking-disabled-mapped`、`adaptive-effort-mapping`、`thinking-budget-mapped`、`thinking-budget-overrides-effort`、`effort-without-thinking-ignored`、`context-window-unverified`。未知模型的关闭请求会标记 `thinking-off-unverified`，不承诺推理已关闭。
+
+此 Responses 入口会拒绝预算字符串、null、布尔、小数、溢出和重复参数。`max_tokens` 若提供，须为 1～2147483647 的 JSON 整数；`budget_tokens` 仅可用于 `thinking.type=enabled`，须为 1024～2147483647 的 JSON 整数且小于提供的 `max_tokens`。不提供 budget 时沿用 SDK 默认映射。adaptive / disabled 请移除预算字段。该检查只定义 Responses 兼容请求，不改变原生 Anthropic 连接的 interleaved thinking 语义；预算合规也不代表此路径执行 token 上限。
+
+### 应用与恢复
+
 绑定文件示例见 `examples/`。公开 model ID 需明确填写你希望 Claude Code 使用的官方 ID，不能填实际的非 Claude 上游 ID。三个档位 ID 必须唯一。
 
 ```sh

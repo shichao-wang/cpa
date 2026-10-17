@@ -43,6 +43,7 @@ import {
 import { OAuthDialog } from "./oauth-dialog";
 import { ConnectionEditor } from "./connection-editor";
 import { ProfileEditor } from "./profile-editor";
+import { CompatibilityNotice } from "./compatibility-notice";
 import {
   protocols,
   oauthStatusSchema,
@@ -138,6 +139,7 @@ function ConnectionModels({
             搜索；如需调整选择，请编辑连接。
           </DialogDescription>
         </DialogHeader>
+        <CompatibilityNotice connection={connection} />
         <Input
           aria-label="搜索可用模型"
           placeholder="搜索模型名称或 ID…"
@@ -156,6 +158,7 @@ function ConnectionModels({
               {model.name && model.name !== model.id && (
                 <code className="hint">{model.id}</code>
               )}
+              <CompatibilityNotice connection={connection} model={model.id} />
             </li>
           ))}
         </ul>

@@ -17,6 +17,7 @@ import (
 	cliproxy "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy"
 	"github.com/shichao-wang/cpa/internal/codexoauth"
 	"github.com/shichao-wang/cpa/internal/config"
+	"github.com/shichao-wang/cpa/internal/sdkmodels"
 	"github.com/shichao-wang/cpa/internal/store"
 	"github.com/shichao-wang/cpa/internal/webui"
 )
@@ -110,6 +111,12 @@ func (g *requestGate) middleware() gin.HandlerFunc {
 			writeRequestError(c, http.StatusServiceUnavailable, route.unavailable)
 			return
 		}
+		if c.Request.URL.Path == "/v1/messages" {
+			if err := checkRequestCompatibility(c.Request, route, c.Writer.Header()); err != nil {
+				writeRequestError(c, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
 		if route.authType == config.AuthCodexOAuth {
 			if g.oauth == nil || !g.oauth.Healthy(route.authID) || !cliproxy.GlobalModelRegistry().ClientSupportsModel(route.authID, route.sdkModel) {
 				writeRequestError(c, http.StatusServiceUnavailable, "该 OAuth 凭证或模型不可用，请重新登录")
@@ -199,11 +206,12 @@ func writeRequestError(c *gin.Context, status int, message string) {
 
 func (g *requestGate) writeCatalog(c *gin.Context, profile profileSnapshot) {
 	type catalogModel struct {
-		ID          string `json:"id"`
-		Type        string `json:"type"`
-		DisplayName string `json:"display_name"`
-		Description string `json:"description,omitempty"`
-		CreatedAt   string `json:"created_at"`
+		Compatibility *sdkmodels.ResponsesCompatibility `json:"cpa_capabilities,omitempty"`
+		ID            string                            `json:"id"`
+		Type          string                            `json:"type"`
+		DisplayName   string                            `json:"display_name"`
+		Description   string                            `json:"description,omitempty"`
+		CreatedAt     string                            `json:"created_at"`
 	}
 	data := make([]catalogModel, 0, len(profile.catalog))
 	for _, model := range profile.catalog {
@@ -213,8 +221,14 @@ func (g *requestGate) writeCatalog(c *gin.Context, profile profileSnapshot) {
 		if model.authType == config.AuthCodexOAuth && (g.oauth == nil || !g.oauth.Healthy(model.authID) || !cliproxy.GlobalModelRegistry().ClientSupportsModel(model.authID, model.sdkModel)) {
 			continue
 		}
+		var compatibility *sdkmodels.ResponsesCompatibility
+		if model.protocol == config.Responses {
+			capability := sdkmodels.ResponsesCapabilities(model.targetModel)
+			compatibility = &capability
+		}
 		data = append(data, catalogModel{
-			ID: model.publicID, Type: "model", DisplayName: model.label,
+			Compatibility: compatibility,
+			ID:            model.publicID, Type: "model", DisplayName: model.label,
 			Description: model.description, CreatedAt: time.Unix(0, 0).UTC().Format(time.RFC3339),
 		})
 	}
