@@ -24,7 +24,7 @@ func setup(t *testing.T) (*store.Store, *Handler, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h, err := New(st, func() (uint64, bool) {
+	h, err := New(st, "[::1]:18317", func() (uint64, bool) {
 		s, err := st.Read()
 		if err != nil {
 			return 0, false
@@ -238,7 +238,7 @@ func TestTokenPersistenceAndPermissions(t *testing.T) {
 }
 func TestNoActiveRevisionAcknowledgement(t *testing.T) {
 	st, _, token := setup(t)
-	h, err := New(st, func() (uint64, bool) { return 0, false }, nil, context.Background())
+	h, err := New(st, "[::1]:18317", func() (uint64, bool) { return 0, false }, nil, context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,5 +317,63 @@ func TestPageStyleNonce(t *testing.T) {
 	w := request(t, h, "GET", "/ui/app.js", "", "", nil)
 	if strings.Contains(w.Header().Get("Content-Security-Policy"), "nonce-") {
 		t.Fatal("静态脚本响应不应携带页面 nonce")
+	}
+}
+
+func TestLocalListenerManagement(t *testing.T) {
+	for _, listen := range []string{"127.0.0.1:8317", "[::1]:8317", "0.0.0.0:8317", "[::]:8317", "localhost:8317"} {
+		t.Run(listen, func(t *testing.T) {
+			st, _, token := setup(t)
+			h, err := New(st, listen, func() (uint64, bool) { return 0, true }, nil, context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			local := listen == "127.0.0.1:8317"
+			want := 401
+			if local {
+				want = 200
+			}
+			w := request(t, h, "GET", "/admin/api/state", "", "", nil)
+			if w.Code != want {
+				t.Fatalf("无令牌请求状态 %d，预期 %d", w.Code, want)
+			}
+			// 转发头和请求 Host 不能改变服务的认证策略。
+			w = request(t, h, "GET", "/admin/api/state", "", "", map[string]string{"X-Forwarded-For": "127.0.0.1", "X-Forwarded-Host": "127.0.0.1:8317"})
+			if w.Code != want {
+				t.Fatal("转发头改变了认证策略")
+			}
+			w = request(t, h, "GET", "/ui/", "", "", nil)
+			if strings.Contains(w.Body.String(), `name="cpa-local-admin"`) != local {
+				t.Fatal("页面认证模式与监听地址不一致")
+			}
+			for _, headers := range []map[string]string{{"Origin": "https://evil.example"}, {"Sec-Fetch-Site": "cross-site"}, {"Host": "evil.example"}} {
+				r := httptest.NewRequest("GET", "http://127.0.0.1:8317/admin/api/state", nil)
+				for k, v := range headers {
+					if k == "Host" {
+						r.Host = v
+					} else {
+						r.Header.Set(k, v)
+					}
+				}
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				if w.Code != 403 {
+					t.Fatal("免令牌模式也必须拒绝跨站或恶意 Host")
+				}
+			}
+			if w := request(t, h, "GET", "/admin/api/state", token, "", nil); w.Code != 200 {
+				t.Fatal("显式管理令牌仍应有效")
+			}
+			if local {
+				w := request(t, h, "POST", "/admin/api/connections", "", `{"name":"local","protocol":"responses","baseURL":"https://example.com","models":[{"id":"model"}],"apiKey":"mock-key"}`, nil)
+				if w.Code != 202 {
+					t.Fatalf("免令牌保存失败：%d", w.Code)
+				}
+				s, err := st.Read()
+				if err != nil || len(s.Connections) != 1 {
+					t.Fatal("连接未保存")
+				}
+			}
+		})
 	}
 }

@@ -111,11 +111,89 @@ function Empty({
   );
 }
 
+function ConnectionModels({
+  connection,
+  onClose,
+}: {
+  connection: Connection;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const search = query.trim().toLowerCase();
+  const models = connection.models.filter((model) =>
+    (model.id + " " + (model.name || "")).toLowerCase().includes(search),
+  );
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="connection-model-dialog">
+        <DialogHeader>
+          <DialogTitle>{connection.name} · 可用模型</DialogTitle>
+          <DialogDescription>
+            已启用 {connection.models.length} 个模型。可按名称或模型 ID
+            搜索；如需调整选择，请编辑连接。
+          </DialogDescription>
+        </DialogHeader>
+        <Input
+          aria-label="搜索可用模型"
+          placeholder="搜索模型名称或 ID…"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <p className="hint" role="status">
+          {search
+            ? `找到 ${models.length} / ${connection.models.length} 个模型`
+            : `共 ${models.length} 个模型`}
+        </p>
+        <ul className="connection-model-list" aria-label="可用模型列表">
+          {models.map((model) => (
+            <li key={model.id}>
+              <strong>{model.name || model.id}</strong>
+              {model.name && model.name !== model.id && (
+                <code className="hint">{model.id}</code>
+              )}
+            </li>
+          ))}
+        </ul>
+        {!models.length && (
+          <p className="muted">没有匹配的模型，试试其他关键词。</p>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function App() {
+  const localAdmin =
+    document
+      .querySelector('meta[name="cpa-local-admin"]')
+      ?.getAttribute("content") === "true";
   const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const loginRequest = useRef<AbortController | null>(null);
+  useEffect(() => {
+    if (!localAdmin) return;
+    const controller = new AbortController();
+    loginRequest.current = controller;
+    setBusy(true);
+    request("", controller.signal, "state", stateSchema)
+      .then((state) => {
+        if (!controller.signal.aborted) setSession({ token: "", state });
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted)
+          setError(err instanceof Error ? err.message : "连接失败。");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setBusy(false);
+      });
+    return () => controller.abort();
+  }, [localAdmin]);
   useEffect(() => () => loginRequest.current?.abort(), []);
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -169,36 +247,48 @@ export default function App() {
           管理当前服务器的上游连接和模型映射。通过 SSH
           隧道访问时，更改保存在远端。
         </p>
-        <form onSubmit={login}>
-          <div className="field">
-            <Label htmlFor="admin-token">管理令牌</Label>
-            <Input
-              id="admin-token"
-              name="token"
-              type="password"
-              autoComplete="off"
-              required
-              spellCheck={false}
-              autoFocus
-              placeholder="输入独立管理令牌"
-              disabled={busy}
-            />
+        {localAdmin ? (
+          <div role="status">
+            {error ? (
+              <Button onClick={() => location.reload()}>重试连接</Button>
+            ) : (
+              "正在连接本地网关…"
+            )}
           </div>
-          <Button className="login-submit" disabled={busy}>
-            {busy ? "正在连接…" : "连接网关"}
-            <ArrowRight />
-          </Button>
-        </form>
+        ) : (
+          <form onSubmit={login}>
+            <div className="field">
+              <Label htmlFor="admin-token">管理令牌</Label>
+              <Input
+                id="admin-token"
+                name="token"
+                type="password"
+                autoComplete="off"
+                required
+                spellCheck={false}
+                autoFocus
+                placeholder="输入独立管理令牌"
+                disabled={busy}
+              />
+            </div>
+            <Button className="login-submit" disabled={busy}>
+              {busy ? "正在连接…" : "连接网关"}
+              <ArrowRight />
+            </Button>
+          </form>
+        )}
         {error && (
           <p className="feedback error" role="alert">
             {error}
           </p>
         )}
-        <div className="login-help">
-          <p>在服务器上获取令牌</p>
-          <code>cpa server admin-token</code>
-          <p>令牌仅保留在当前页面内存中，刷新后需重新输入。</p>
-        </div>
+        {!localAdmin && (
+          <div className="login-help">
+            <p>在服务器上获取令牌</p>
+            <code>cpa server admin-token</code>
+            <p>令牌仅保留在当前页面内存中，刷新后需重新输入。</p>
+          </div>
+        )}
       </main>
       <footer className="login-footer">
         <span className="status-dot" />
@@ -219,6 +309,7 @@ function Workspace({
   const [page, setPage] = useState<Page>({ kind: "connections" });
   const [query, setQuery] = useState("");
   const [protocol, setProtocol] = useState("all");
+  const [viewingModels, setViewingModels] = useState<string | null>(null);
   const [editor, setEditor] = useState<{
     connection: Connection | null;
   } | null>(null);
@@ -553,23 +644,25 @@ function Workspace({
           </Badge>
           <p className="mono">{location.host}</p>
           <p className="hint">远端监听 {state.listen}</p>
-          <Button
-            variant="ghost"
-            className="logout"
-            onClick={() => {
-              if (
-                page.kind !== "profile-editor" ||
-                window.confirm("退出后将丢弃未保存的编辑，确定退出？")
-              ) {
-                controller.current.abort();
-                onLogout();
-              }
-            }}
-            disabled={busy}
-          >
-            <LogOut />
-            退出管理
-          </Button>
+          {session.token && (
+            <Button
+              variant="ghost"
+              className="logout"
+              onClick={() => {
+                if (
+                  page.kind !== "profile-editor" ||
+                  window.confirm("退出后将丢弃未保存的编辑，确定退出？")
+                ) {
+                  controller.current.abort();
+                  onLogout();
+                }
+              }}
+              disabled={busy}
+            >
+              <LogOut />
+              退出管理
+            </Button>
+          )}
         </div>
       </aside>
       <div className="workspace">
@@ -728,11 +821,23 @@ function Workspace({
                                 </div>
                               </td>
                               <td>
-                                <span>{c.models.length} 个</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="model-count"
+                                  aria-label={"查看 " + c.name + " 的全部模型"}
+                                  onClick={() => setViewingModels(c.name)}
+                                >
+                                  {c.models.length} 个模型{" "}
+                                  <Search aria-hidden="true" />
+                                </Button>
                                 <p className="hint model-summary">
                                   {c.models
+                                    .slice(0, 3)
                                     .map((m) => m.name || m.id)
                                     .join("、")}
+                                  {c.models.length > 3 &&
+                                    ` 等 ${c.models.length} 个`}
                                 </p>
                               </td>
                               <td>
@@ -979,6 +1084,13 @@ function Workspace({
           )}
         </main>
       </div>
+      {viewingModels && state.connections[viewingModels] && (
+        <ConnectionModels
+          key={viewingModels}
+          connection={state.connections[viewingModels]}
+          onClose={() => setViewingModels(null)}
+        />
+      )}
       {editor && (
         <ConnectionEditor
           connection={editor.connection}

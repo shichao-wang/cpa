@@ -134,8 +134,8 @@ func TestWebUIThroughTunnel(t *testing.T) {
 		}
 	}
 	code, _ = request("GET", "/admin/api/state", "", nil, "")
-	if code != 401 {
-		t.Fatal("未认证管理必须拒绝")
+	if code != 200 {
+		t.Fatal("监听 127.0.0.1 时无需管理令牌")
 	}
 	code, _ = request("GET", "/v1/models", token, nil, "")
 	if code != 401 {

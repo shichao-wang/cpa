@@ -689,7 +689,9 @@ test("保存选择后 profile 只能选择连接启用的模型", async ({ page 
   );
 });
 
-test("网页创建 OAuth、展示设备码并可取消，模型服务持续运行", async ({ page }) => {
+test("网页创建 OAuth、展示设备码并可取消，模型服务持续运行", async ({
+  page,
+}) => {
   const state = { ...fixture(), oauthAvailable: true };
   type Job = {
     id: string;
@@ -1040,4 +1042,88 @@ test("OAuth 模型在表单内选择，取消会放弃草稿而不保存 Connect
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(discarded).toBe(true);
   expect(creates).toBe(0);
+});
+
+test("本地免令牌自动连接并可编辑连接", async ({ page }) => {
+  await page.route("**/ui/", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({
+      response,
+      body: (await response.text()).replace(
+        "</head>",
+        '<meta name="cpa-local-admin" content="true"></head>',
+      ),
+    });
+  });
+  const writes: unknown[] = [];
+  await page.route("**/admin/api/**", async (route) => {
+    expect(route.request().headers().authorization).toBeUndefined();
+    if (route.request().url().endsWith("/oauth/session")) {
+      await route.fulfill({ json: null });
+    } else if (route.request().method() === "GET") {
+      await route.fulfill({ json: fixture() });
+    } else {
+      writes.push(route.request().postDataJSON());
+      await route.fulfill({
+        json: { saved: true, active: true, revision: 12 },
+      });
+    }
+  });
+  await page.goto("/ui/");
+  await expect(
+    page.getByRole("heading", { name: "上游连接", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("管理令牌", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "退出管理", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "编辑连接 work-api" }).click();
+  await page.getByRole("button", { name: "保存连接", exact: true }).click();
+  await expect.poll(() => writes.length).toBe(1);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "上游连接", exact: true }),
+  ).toBeVisible();
+});
+
+test("大量模型保持列表紧凑，完整目录可按名称与 ID 搜索", async ({ page }) => {
+  const state = fixture();
+  state.connections["work-api"].models = Array.from({ length: 92 }, (_, i) => ({
+    id: "model-" + i,
+    name: "测试模型 " + i,
+  }));
+  await page.route("**/admin/api/**", async (route) => {
+    await route.fulfill({
+      json: route.request().url().endsWith("/oauth/session") ? null : state,
+    });
+  });
+  await connect(page);
+  const row = page
+    .getByRole("row")
+    .filter({
+      has: page.getByRole("button", { name: "编辑连接 work-api", exact: true }),
+    });
+  await expect(row).toContainText("92 个模型");
+  await expect(row).not.toContainText("测试模型 91");
+  await expect(row.locator(".model-summary")).toHaveCSS(
+    "-webkit-line-clamp",
+    "2",
+  );
+  await page
+    .getByRole("button", { name: "查看 work-api 的全部模型", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("listitem")).toHaveCount(92);
+  await page.getByLabel("搜索可用模型").fill("MODEL-91");
+  await expect(dialog.getByRole("listitem")).toHaveCount(1);
+  await expect(dialog).toContainText("测试模型 91");
+  await page.getByLabel("搜索可用模型").fill("测试模型 87");
+  await expect(dialog.getByRole("listitem")).toHaveCount(1);
+  await page.getByLabel("搜索可用模型").fill("无此模型");
+  await expect(dialog).toContainText("没有匹配的模型");
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("button", { name: "查看 work-api 的全部模型", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").getByRole("listitem")).toHaveCount(92);
 });

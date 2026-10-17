@@ -60,7 +60,7 @@ func TestModelControllerPauseResumeRetainsManagement(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &modelController{ctx: ctx, store: st, instanceID: "test-controller", mode: "paused"}
 	t.Cleanup(func() { cancel(); _ = c.Pause(context.Background()) })
-	h, err := webui.New(st, c.active, c, ctx)
+	h, err := webui.New(st, "[::1]:18317", c.active, c, ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
