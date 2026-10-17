@@ -40,7 +40,8 @@ func runManagedService(ctx context.Context, st *store.Store, listen, token strin
 	manager := coreauth.NewManager(credentials, nil, credentials.Hook())
 	credentials.BindManager(manager)
 	gate := &requestGate{store: st, active: active, token: token, instanceID: runtimeState.InstanceID, oauth: credentials}
-	gate.webui, err = webui.New(st, listen, func() (uint64, bool) {
+	// SDK 的私有端口始终要求管理令牌；免令牌仅由公开监听器启用。
+	gate.webui, err = webui.New(st, "", func() (uint64, bool) {
 		current := active.Load()
 		if current == nil {
 			return 0, false
