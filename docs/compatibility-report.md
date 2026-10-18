@@ -45,8 +45,8 @@ Claude Code 的基本会话、模型绑定、工具调用、结构化输出、�
 | JSON Schema | 兼容映射 | 真实CLI的StructuredOutput工具流程通过，不代表Responses原生text.format透传 |
 | 图片 | 兼容映射 | 真实API合成PNG和CLI Read图片闭环通过；未测粘贴附件交互 |
 | 缓存usage | 兼容映射 | 真实上游出现非零cached_tokens；mock验证流式/非流式字段拆分；TTL、cache_control和稳定命中率证据不足 |
-| web_search | 部分兼容映射 | mock保留域过滤，未映射max_uses；未验收真实搜索 |
-| Anthropic web_fetch/code_execution | 不支持原生托管语义 | 转为同名function，不提供原生fetch或服务端沙箱生命周期 |
+| web_search | 部分兼容映射 | 当前实现仅在连接模型明确支持时保留，否则自动关闭；未映射max_uses，未验收真实搜索 |
+| Anthropic web_fetch/code_execution | 自动关闭 | 当前 Messages → Responses / Chat 实现移除这些服务端声明并修正 tool_choice；客户端同名普通工具保留。历史基线曾转为同名function，不提供原生服务端能力 |
 | Anthropic beta及专属流选项 | 被忽略或证据不足 | beta/version头未传到Responses；eager_input_streaming字段仍在不证明开关生效 |
 
 详细证据：[参数](compat-parameters.md)、[工具/流/错误](compat-tools-stream.md)、[Plan](compat-plan.md)、[专属能力](compat-extras.md)、[真实短请求](compat-real.md)。这些详细页中的修复前缺口以[CPA-16～18修复说明](compatibility-fixes.md)和本表为准。

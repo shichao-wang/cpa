@@ -21,9 +21,9 @@ func TestCompatAnthropicServerToolBoundaries(t *testing.T) {
 		tool         map[string]any
 		expectedType string
 	}{
-		{"web_search", map[string]any{"type": "web_search_20250305", "name": "web_search", "max_uses": 2, "allowed_domains": []string{"example.com"}}, "web_search"},
-		{"web_fetch", map[string]any{"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 2, "allowed_domains": []string{"example.com"}, "citations": map[string]any{"enabled": true}}, "function"},
-		{"code_execution", map[string]any{"type": "code_execution_20250825", "name": "code_execution"}, "function"},
+		{"web_search", map[string]any{"type": "web_search_20250305", "name": "web_search", "max_uses": 2, "allowed_domains": []string{"example.com"}}, ""},
+		{"web_fetch", map[string]any{"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 2, "allowed_domains": []string{"example.com"}, "citations": map[string]any{"enabled": true}}, ""},
+		{"code_execution", map[string]any{"type": "code_execution_20250825", "name": "code_execution"}, ""},
 		{"eager_input_streaming", map[string]any{"name": "make_file", "description": "兼容性探针", "input_schema": map[string]any{"type": "object", "properties": map[string]any{"content": map[string]any{"type": "string"}}}, "eager_input_streaming": true}, "function"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -66,18 +66,12 @@ func TestCompatAnthropicServerToolBoundaries(t *testing.T) {
 					break
 				}
 			}
-			if matching == nil || matching["type"] != tc.expectedType {
-				t.Fatalf("工具边界改变：case=%s tools=%v", tc.name, actual.Tools)
-			}
-			if tc.name == "web_search" {
-				filters, ok := matching["filters"].(map[string]any)
-				if !ok {
-					t.Fatalf("搜索域名过滤未映射：%v", matching)
+			if tc.expectedType == "" {
+				if matching != nil || resp.Header.Get("X-CPA-Disabled-Server-Tools") != tc.name {
+					t.Fatalf("不支持的服务端工具未关闭：case=%s tools=%v headers=%v", tc.name, actual.Tools, resp.Header)
 				}
-				domains, ok := filters["allowed_domains"].([]any)
-				if !ok || len(domains) != 1 || domains[0] != "example.com" {
-					t.Fatalf("搜索域名过滤改变：%v", matching)
-				}
+			} else if matching == nil || matching["type"] != tc.expectedType {
+				t.Fatalf("客户端工具边界改变：case=%s tools=%v", tc.name, actual.Tools)
 			}
 			if actual.Beta != "" || actual.Version != "" {
 				t.Fatalf("Anthropic专用header意外传入Responses：beta=%q version=%q", actual.Beta, actual.Version)

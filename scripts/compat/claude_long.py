@@ -148,8 +148,6 @@ def main():
                 chunk = os.read(terminal_fd, 65536)
             except OSError:
                 break
-            if args.mock:
-                Path(str(output) + '.terminal-live.txt').write_text(re.sub(r'sk-ant-[^\s\x1b]*', '[REDACTED]', terminal_capture.decode(errors='ignore').replace(os.environ.get('ANTHROPIC_API_KEY', ''), '[REDACTED]')))
             if not chunk:
                 break
             terminal_capture.extend(chunk)
@@ -265,8 +263,7 @@ def main():
                     break
             time.sleep(.2)
         else:
-            # 只保存合成终端内容，不保存任何上游凭证。
-            Path(str(output) + '.terminal.txt').write_text(re.sub(r'sk-ant-[^\s\x1b]*', '[REDACTED]', terminal_capture.decode(errors='ignore').replace(os.environ.get('ANTHROPIC_API_KEY', ''), '[REDACTED]')))
+            # TUI 可能包含凭证片段；超时时只报告错误，不保存原始终端内容。
             raise RuntimeError('交互终端等待验收结果超时')
         time.sleep(1)
         value = {'type': 'result', 'session_id': sid, 'result': result_text,
