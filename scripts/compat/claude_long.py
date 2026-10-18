@@ -138,6 +138,19 @@ def main():
     terminal = None
     terminal_fd = None
     terminal_capture = bytearray()
+    terminal_controls = bytearray()
+
+    def flush_terminal_controls():
+        while terminal_controls:
+            try:
+                written = os.write(terminal_fd, terminal_controls)
+            except BlockingIOError:
+                return
+            del terminal_controls[:written]
+
+    def queue_terminal_control(data):
+        terminal_controls.extend(data)
+        flush_terminal_controls()
 
     def terminal_records():
         return read_session_records(Path(os.environ['CLAUDE_CONFIG_DIR']), sid)
@@ -152,19 +165,20 @@ def main():
                 break
             terminal_capture.extend(chunk)
             if b'\x1b[6n' in chunk:
-                os.write(terminal_fd, b'\x1b[1;1R')
+                queue_terminal_control(b'\x1b[1;1R')
             if b'\x1b[c' in chunk:
-                os.write(terminal_fd, b'\x1b[?1;2c')
+                queue_terminal_control(b'\x1b[?1;2c')
             if len(terminal_capture) > 200000:
                 del terminal_capture[:-100000]
+        flush_terminal_controls()
 
     def stop_terminal():
         nonlocal terminal
         if terminal is not None:
             if terminal.poll() is None:
-                os.write(terminal_fd, b'\x04')
+                queue_terminal_control(b'\x04')
                 time.sleep(.3)
-                os.write(terminal_fd, b'\x04')
+                queue_terminal_control(b'\x04')
                 limit = time.monotonic() + 15
                 while terminal.poll() is None and time.monotonic() < limit:
                     drain_terminal()
@@ -199,6 +213,7 @@ def main():
                                         env=dict(os.environ, TERM='xterm-256color'), start_new_session=True)
             os.close(slave)
             terminal_capture.clear()
+            terminal_controls.clear()
             deadline = time.monotonic() + 40
             handled = set()
             while time.monotonic() < deadline:
@@ -206,19 +221,19 @@ def main():
                 text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', terminal_capture.decode(errors='ignore'))
                 plain = re.sub(r'\s+', '', text).lower()
                 if 'choosethetextstyle' in plain and 'theme' not in handled:
-                    os.write(terminal_fd, b'\r')
+                    queue_terminal_control(b'\r')
                     handled.add('theme')
                     time.sleep(.3)
                 elif 'doyouwanttousethisapikey' in plain and 'key' not in handled:
-                    os.write(terminal_fd, b'\x1b[A\r')
+                    queue_terminal_control(b'\x1b[A\r')
                     handled.add('key')
                     time.sleep(.3)
                 elif 'pressentertocontinue' in plain and 'security' not in handled:
-                    os.write(terminal_fd, b'\r')
+                    queue_terminal_control(b'\r')
                     handled.add('security')
                     time.sleep(.3)
                 elif ('trustthisfolder' in plain or 'trustthisworkspace' in plain or 'yes,itrustthisfolder' in plain) and 'trust' not in handled:
-                    os.write(terminal_fd, b'\x1b[B\r')
+                    queue_terminal_control(b'\x1b[B\r')
                     handled.add('trust')
                     time.sleep(.3)
                 elif 'forshortcuts' in plain or ('❯' in text and 'apiusagebilling' in plain and 'accepteditson' in plain):
@@ -233,13 +248,15 @@ def main():
         while offset < len(encoded):
             drain_terminal()
             try:
+                if terminal_controls:
+                    raise BlockingIOError()
                 offset += os.write(terminal_fd, encoded[offset:offset+2048])
             except BlockingIOError:
                 if time.monotonic() > write_deadline:
                     raise RuntimeError('交互终端输入阻塞')
                 time.sleep(.01)
         time.sleep(.5)
-        os.write(terminal_fd, b'\r')
+        queue_terminal_control(b'\r')
         deadline = time.monotonic() + 180
         result_text = ''
         while time.monotonic() < deadline:

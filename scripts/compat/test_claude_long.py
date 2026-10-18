@@ -57,8 +57,20 @@ class TerminalPrivacyTest(unittest.TestCase):
                 def start_process(command, **kwargs):
                     # 模拟真实 TUI 只显示部分 key，然后停在没有结果的会话中。
                     descriptors.append(os.dup(kwargs['stdout']))
-                    real_write(kwargs['stdout'], ('Do you want to use this API key? ' + fragment + '\nfor shortcuts\n').encode())
+                    real_write(kwargs['stdout'], ('Do you want to use this API key? ' + fragment + '\nfor shortcuts\n\x1b[c').encode())
                     return SimpleNamespace(poll=lambda: None)
+                controls = bytearray()
+                blocked = False
+                def write_terminal(fd, data):
+                    nonlocal blocked
+                    if isinstance(data, bytearray):
+                        if not blocked:
+                            blocked = True
+                            raise BlockingIOError()
+                        written = max(1, len(data) // 2)
+                        controls.extend(data[:written])
+                        return written
+                    return len(data)
                 args = ['claude_long.py', '--case', 'manual', '--interactive', '--output', str(output)]
                 if mock:
                     args.append('--mock')
@@ -69,12 +81,13 @@ class TerminalPrivacyTest(unittest.TestCase):
                     with patch('sys.argv', args), patch.dict(os.environ, {'ANTHROPIC_API_KEY': key, 'CLAUDE_CONFIG_DIR': str(root)}), \
                          patch.object(claude_long.pty, 'openpty', side_effect=openpty), \
                          patch.object(claude_long.subprocess, 'Popen', side_effect=start_process), \
-                         patch.object(claude_long.os, 'write', side_effect=lambda fd, data: len(data)), \
+                         patch.object(claude_long.os, 'write', side_effect=write_terminal), \
                          patch.object(claude_long.time, 'sleep'), \
                          patch.object(claude_long.time, 'monotonic', side_effect=lambda: next(ticks)), \
                          patch.object(claude_long.atexit, 'register'):
                         with self.assertRaisesRegex(RuntimeError, '交互终端等待验收结果超时'):
                             claude_long.main()
+                    self.assertIn(b'\x1b[?1;2c', controls)
                     self.assertEqual(output.stat().st_mode & 0o777, 0o600)
                     self.assertEqual(list(root.glob('*.terminal*.txt')), [])
                     for artifact in root.rglob('*'):
