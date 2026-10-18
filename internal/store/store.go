@@ -165,6 +165,13 @@ func (s *Store) Read() (*config.State, error) {
 		return nil, fmt.Errorf("状态文件含多份 JSON，拒绝覆盖")
 	}
 	if err := state.Validate(); err != nil {
+		if state.SchemaVersion == config.SchemaVersion {
+			for _, profile := range state.Profiles {
+				if _, exists := profile.Models["fable"]; !exists {
+					return nil, fmt.Errorf("状态缺少必填的 Fable 映射，拒绝读取和覆盖；旧状态不支持原地升级，请先使用原版本执行 profile restore 和 server stop，再使用新的 --state-dir 重新配置")
+				}
+			}
+		}
 		return nil, err
 	}
 	return state, nil
