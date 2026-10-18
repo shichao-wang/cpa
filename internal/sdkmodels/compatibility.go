@@ -37,7 +37,7 @@ func ResponsesCapabilities(model string) ResponsesCompatibility {
 		Warnings: []string{
 			"输出预算：当前 Responses 路径不执行 max_tokens / max_output_tokens 上限；这些参数不能用于控制消耗。",
 			"上下文：客户端的 200K / 1M 显示未经上游容量验证，[1m] 不会扩容。",
-			"托管工具：web_fetch / code_execution 会转为普通函数；web_search 的 max_uses 不映射，不代表 Anthropic 原生服务端能力。",
+			"托管工具：自动关闭 web_fetch / code_execution；web_search 仅在当前连接模型明确支持原生搜索时保留，其 max_uses 不映射。客户端 Bash / WebFetch 等普通工具不受影响。",
 		},
 	}
 	info := codexDefinitions()[model]

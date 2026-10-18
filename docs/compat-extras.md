@@ -1,5 +1,7 @@
 # Claude专属工具、缓存与结构化输出的兼容边界
 
+> 以下服务端工具映射记录属于历史基线。当前实现会自动关闭 Responses / Chat 路径不支持的服务端工具；策略见 [README](../README.md)。本地客户端工具不受影响。
+
 > 历史基线：下文保留修复前的实测记录。CPA-16～18 修复后的入口校验与能力提示见 [修复说明](compatibility-fixes.md)。
 本页记录CPA-14的协议转换测试。新增测试只使用临时状态和loopback Responses mock，没有真实模型调用、真实OAuth登录或真实凭证读取。测试入口是公开`/v1/messages`，连接使用API_KEY Responses协议，经过当前锁定SDK的Codex executor。
 

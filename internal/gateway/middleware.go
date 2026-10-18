@@ -117,6 +117,11 @@ func (g *requestGate) middleware() gin.HandlerFunc {
 				return
 			}
 		}
+		requestBody, err = filterUnsupportedServerTools(requestBody, route, c.Writer.Header())
+		if err != nil {
+			writeRequestError(c, http.StatusBadRequest, err.Error())
+			return
+		}
 		if route.authType == config.AuthCodexOAuth {
 			if g.oauth == nil || !g.oauth.Healthy(route.authID) || !cliproxy.GlobalModelRegistry().ClientSupportsModel(route.authID, route.sdkModel) {
 				writeRequestError(c, http.StatusServiceUnavailable, "该 OAuth 凭证或模型不可用，请重新登录")

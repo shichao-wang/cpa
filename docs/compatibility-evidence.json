@@ -1,0 +1,491 @@
+{
+  "schema": 1,
+  "date": "2026-10-17",
+  "versions": {
+    "claude_code": "2.1.293",
+    "sdk": "v8.0.10",
+    "cpa_base": "92c644600681b69c7e36de89caeb5da317170038",
+    "note": "基线之后的测试工具和报告尚未提交；生产网关未改动"
+  },
+  "long_cases": [
+    {
+      "case": "16-a",
+      "requests": 1,
+      "status": [
+        200
+      ],
+      "input_tokens": 16451,
+      "output_tokens": 41,
+      "recall_verified": true,
+      "source_artifact": "/private/tmp/cpa-long-real-16-a.json.gateway.json",
+      "compact_pre_post": []
+    },
+    {
+      "case": "16-b",
+      "requests": 1,
+      "status": [
+        200
+      ],
+      "input_tokens": 16452,
+      "output_tokens": 42,
+      "recall_verified": true,
+      "source_artifact": "/private/tmp/cpa-long-real-16-b.json.gateway.json",
+      "compact_pre_post": []
+    },
+    {
+      "case": "32-a",
+      "requests": 1,
+      "status": [
+        200
+      ],
+      "input_tokens": 32456,
+      "output_tokens": 47,
+      "recall_verified": true,
+      "source_artifact": "/private/tmp/cpa-long-real-32-a.json.gateway.json",
+      "compact_pre_post": []
+    },
+    {
+      "case": "32-b",
+      "requests": 1,
+      "status": [
+        200
+      ],
+      "input_tokens": 32457,
+      "output_tokens": 47,
+      "recall_verified": true,
+      "source_artifact": "/private/tmp/cpa-long-real-32-b.json.gateway.json",
+      "compact_pre_post": []
+    },
+    {
+      "case": "64-a",
+      "requests": 1,
+      "status": [
+        200
+      ],
+      "input_tokens": 64455,
+      "output_tokens": 45,
+      "recall_verified": true,
+      "source_artifact": "/private/tmp/cpa-long-real-64-a.json.gateway.json",
+      "compact_pre_post": []
+    },
+    {
+      "case": "64-b",
+      "requests": 1,
+      "status": [
+        200
+      ],
+      "input_tokens": 64451,
+      "output_tokens": 42,
+      "recall_verified": true,
+      "source_artifact": "/private/tmp/cpa-long-real-64-b.json.gateway.json",
+      "compact_pre_post": []
+    },
+    {
+      "case": "128-a-shortfill",
+      "requests": 1,
+      "status": [
+        200
+      ],
+      "input_tokens": 128452,
+      "output_tokens": 43,
+      "recall_verified": true,
+      "source_artifact": "/private/tmp/cpa-long-real-128-a-shortfill.json.gateway.json",
+      "compact_pre_post": []
+    },
+    {
+      "case": "128-b-shortfill",
+      "requests": 1,
+      "status": [
+        200
+      ],
+      "input_tokens": 128454,
+      "output_tokens": 45,
+      "recall_verified": true,
+      "source_artifact": "/private/tmp/cpa-long-real-128-b-shortfill.json.gateway.json",
+      "compact_pre_post": []
+    },
+    {
+      "case": "192-a",
+      "requests": 1,
+      "status": [
+        200
+      ],
+      "input_tokens": 192452,
+      "output_tokens": 43,
+      "recall_verified": true,
+      "source_artifact": "/private/tmp/cpa-long-real-192-a.json.gateway.json",
+      "compact_pre_post": []
+    },
+    {
+      "case": "auto",
+      "requests": 3,
+      "status": [
+        200,
+        200,
+        200
+      ],
+      "input_tokens": 387966,
+      "output_tokens": 1202,
+      "recall_verified": true,
+      "source_artifact": "/private/tmp/cpa-long-real-auto.json.gateway.json",
+      "compact_pre_post": [
+        {
+          "pre": 192502,
+          "post": 1555
+        }
+      ]
+    },
+    {
+      "case": "manual-a",
+      "requests": 9,
+      "input_tokens": 162637,
+      "output_tokens": 1567,
+      "file_edit_verified": true,
+      "protected_file_unchanged": true,
+      "compact_pre_post": [
+        {
+          "pre": 48729,
+          "post": 1630
+        }
+      ],
+      "source_artifact": "/private/tmp/cpa12-supplement-real-a.json"
+    },
+    {
+      "case": "manual-b",
+      "requests": 9,
+      "input_tokens": 163822,
+      "output_tokens": 1780,
+      "file_edit_verified": true,
+      "protected_file_unchanged": true,
+      "compact_pre_post": [
+        {
+          "pre": 48735,
+          "post": 1879
+        }
+      ],
+      "source_artifact": "/private/tmp/cpa12-supplement-real-b.json"
+    },
+    {
+      "case": "interactive-final",
+      "requests": 10,
+      "all_200": true,
+      "all_target_model": true,
+      "input_tokens": 213809,
+      "output_tokens": 1581,
+      "tool_calls": [
+        "Bash",
+        "Edit",
+        "Read"
+      ],
+      "steps": [
+        {
+          "step": "seed"
+        },
+        {
+          "step": "compact"
+        },
+        {
+          "step": "after_compact",
+          "recall_exact": true
+        },
+        {
+          "step": "continue_task",
+          "file_edit_verified": true,
+          "protected_file_unchanged": true
+        },
+        {
+          "step": "restart_resume",
+          "recall_exact": true
+        }
+      ],
+      "compact_pre_post": [
+        {
+          "pre": 49096,
+          "post": 1664
+        }
+      ],
+      "source_artifact": "/private/tmp/cpa12-interactive-final-real.json"
+    }
+  ],
+  "budgets": [
+    {
+      "name": "cpa-compat-real-ledger",
+      "snapshot": {
+        "used": 28
+      }
+    },
+    {
+      "name": "cpa-long-real-ledger",
+      "snapshot": {
+        "used": 20,
+        "input_tokens": 1455735,
+        "output_tokens": 4212,
+        "reserved_input": 0,
+        "stopped": false
+      }
+    },
+    {
+      "name": "cpa12-supplement-real-ledger",
+      "snapshot": {
+        "limits": {
+          "calls": 30,
+          "input": 800000,
+          "output": 20000
+        },
+        "used": 23,
+        "input_tokens": 524106,
+        "output_tokens": 4617,
+        "reserved_input": 5238,
+        "stopped": true
+      }
+    },
+    {
+      "name": "cpa12-interactive-final-real-ledger",
+      "snapshot": {
+        "limits": {
+          "calls": 12,
+          "input": 300000,
+          "output": 12000
+        },
+        "used": 10,
+        "input_tokens": 213809,
+        "output_tokens": 1581,
+        "reserved_input": 0,
+        "stopped": false
+      }
+    }
+  ],
+  "real_config_credentials_unchanged": true,
+  "local_context_boundary": {
+    "mode": "mock-only",
+    "threshold_test_tokens": 24000,
+    "cases": [
+      "16000-success",
+      "32000-rejection",
+      "16000-recovery"
+    ],
+    "stream": [
+      false,
+      true
+    ],
+    "body_preserved": true,
+    "retries_per_rejection": 0,
+    "downstream_status": 400,
+    "downstream_error_type": "invalid_request_error",
+    "upstream_error_code": "context_length_exceeded",
+    "real_capacity_claim": false,
+    "log": "/private/tmp/cpa11-context-mock-final.log"
+  },
+  "verification": {
+    "go_test": true,
+    "go_race": true,
+    "go_vet": true,
+    "go_build": true,
+    "python_session_regression": true,
+    "new_real_requests_this_turn": 0
+  },
+  "capacity_boundary": {
+    "authorization": {
+      "requests": 10,
+      "input_tokens": 8000000,
+      "output_warning": 20000,
+      "max_document_tokens": 896000
+    },
+    "samples": [
+      {
+        "order": 1,
+        "case": "capacity-256-a",
+        "status": 200,
+        "model": "gpt-6.1-sol",
+        "usage": {
+          "input_tokens": 256451,
+          "input_tokens_details": {
+            "cache_write_tokens": 0,
+            "cached_tokens": 0
+          },
+          "output_tokens": 44,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 256495
+        },
+        "user_prompt_sha256": "7666688b1f4b44ba129715d605d3faa612417ed413157335db9f9dfa5fb005bc",
+        "user_prompt_bytes": 512251,
+        "outbound_prompt_sha256": "97a1e468baef12051d92cf89f1b25c575dce299c630db8d6f7f552a6b86e2b69",
+        "outbound_full_input_bytes": 512433,
+        "full_prompt_verified": false,
+        "recall_exact": true,
+        "compacted": false,
+        "fully_verified_success": false,
+        "context_rejection": false,
+        "source_artifact": "/private/tmp/cpa11-capacity-real-256-a.json.gateway.json"
+      },
+      {
+        "order": 2,
+        "case": "capacity-256-b",
+        "status": 200,
+        "model": "gpt-6.1-sol",
+        "usage": {
+          "input_tokens": 256450,
+          "input_tokens_details": {
+            "cache_write_tokens": 0,
+            "cached_tokens": 0
+          },
+          "output_tokens": 40,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 256490
+        },
+        "user_prompt_sha256": "bcda987275fe56a1aaa9ddf1727c417030c46a3960d06be567c1ec6cd1a6165b",
+        "user_prompt_bytes": 512251,
+        "outbound_prompt_sha256": "bcda987275fe56a1aaa9ddf1727c417030c46a3960d06be567c1ec6cd1a6165b",
+        "outbound_full_input_bytes": 512434,
+        "full_prompt_verified": true,
+        "recall_exact": true,
+        "compacted": false,
+        "fully_verified_success": true,
+        "context_rejection": false,
+        "source_artifact": "/private/tmp/cpa11-capacity-real-256-b.json.gateway.json"
+      },
+      {
+        "order": 3,
+        "case": "capacity-288-a",
+        "status": 200,
+        "model": "gpt-6.1-sol",
+        "usage": {
+          "input_tokens": 288456,
+          "input_tokens_details": {
+            "cache_write_tokens": 0,
+            "cached_tokens": 0
+          },
+          "output_tokens": 45,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 288501
+        },
+        "user_prompt_sha256": "53b7df3c01c18ce05bf182fbe517d3639feb5a99a31b296e361cfdd1a39929a0",
+        "user_prompt_bytes": 576251,
+        "outbound_prompt_sha256": "53b7df3c01c18ce05bf182fbe517d3639feb5a99a31b296e361cfdd1a39929a0",
+        "outbound_full_input_bytes": 576434,
+        "full_prompt_verified": true,
+        "recall_exact": true,
+        "compacted": false,
+        "fully_verified_success": true,
+        "context_rejection": false,
+        "source_artifact": "/private/tmp/cpa11-capacity-real-288-a.json.gateway.json"
+      },
+      {
+        "order": 4,
+        "case": "capacity-512-a",
+        "status": 200,
+        "model": "gpt-6.1-sol",
+        "usage": {
+          "input_tokens": 512456,
+          "input_tokens_details": {
+            "cache_write_tokens": 0,
+            "cached_tokens": 0
+          },
+          "output_tokens": 45,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 512501
+        },
+        "user_prompt_sha256": "3c6e5b20cf9af3be4b3feb2a538afda2731a2e7dc708ff0376fbf113d8e4f69a",
+        "user_prompt_bytes": 1024251,
+        "outbound_prompt_sha256": "3c6e5b20cf9af3be4b3feb2a538afda2731a2e7dc708ff0376fbf113d8e4f69a",
+        "outbound_full_input_bytes": 1024434,
+        "full_prompt_verified": true,
+        "recall_exact": true,
+        "compacted": false,
+        "fully_verified_success": true,
+        "context_rejection": false,
+        "source_artifact": "/private/tmp/cpa11-capacity-real-512-a.json.gateway.json"
+      },
+      {
+        "order": 5,
+        "case": "capacity-768-a",
+        "status": 200,
+        "model": "gpt-6.1-sol",
+        "usage": {
+          "input_tokens": 768455,
+          "input_tokens_details": {
+            "cache_write_tokens": 0,
+            "cached_tokens": 0
+          },
+          "output_tokens": 45,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 768500
+        },
+        "user_prompt_sha256": "c622806b41eb019ff959da06ac70cbc238b1727eca7bcd00d45783c5084a7f82",
+        "user_prompt_bytes": 1536251,
+        "outbound_prompt_sha256": "c622806b41eb019ff959da06ac70cbc238b1727eca7bcd00d45783c5084a7f82",
+        "outbound_full_input_bytes": 1536433,
+        "full_prompt_verified": true,
+        "recall_exact": true,
+        "compacted": false,
+        "fully_verified_success": true,
+        "context_rejection": false,
+        "source_artifact": "/private/tmp/cpa11-capacity-real-768-a.json.gateway.json"
+      },
+      {
+        "order": 6,
+        "case": "capacity-896-a",
+        "status": 200,
+        "model": "gpt-6.1-sol",
+        "usage": {
+          "input_tokens": 896456,
+          "input_tokens_details": {
+            "cache_write_tokens": 0,
+            "cached_tokens": 0
+          },
+          "output_tokens": 45,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 896501
+        },
+        "user_prompt_sha256": "2773885af5b92cb98ac1e25447d4a366c521b8a40a310aca9494a6260107a389",
+        "user_prompt_bytes": 1792251,
+        "outbound_prompt_sha256": "2773885af5b92cb98ac1e25447d4a366c521b8a40a310aca9494a6260107a389",
+        "outbound_full_input_bytes": 1792434,
+        "full_prompt_verified": true,
+        "recall_exact": true,
+        "compacted": false,
+        "fully_verified_success": true,
+        "context_rejection": false,
+        "source_artifact": "/private/tmp/cpa11-capacity-real-896-a.json.gateway.json"
+      }
+    ],
+    "ledger": {
+      "limits": {
+        "calls": 10,
+        "input": 8000000,
+        "output": 20000
+      },
+      "used": 6,
+      "input_tokens": 2978724,
+      "output_tokens": 264,
+      "reserved_input": 0,
+      "stopped": false
+    },
+    "highest_fully_verified_success_input": 896456,
+    "upstream_rejection_boundary": "not-observed-within-authorized-range",
+    "status": "complete-official-specification-and-tested-compatibility-scope",
+    "first_sample_observer_assessment": "额外客户端身份/CWD/日期前缀混入哈希；首轮HTTP200和召回有效，但完整验收未通过，随后256K独立重复补证。",
+    "official_specification": {
+      "checked_date": "2026-10-17",
+      "model": "gpt-6.1-sol",
+      "context_window_tokens": 1050000,
+      "max_output_tokens": 128000,
+      "model_reference": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "context_budget_reference": "https://developers.openai.com/api/docs/guides/reasoning",
+      "scope_note": "官方API模型总窗口规格；Codex OAuth账户拒绝点未实测；不据此推断CPA输出硬上限已执行。"
+    },
+    "further_real_requests": "stopped-at-six; 1152K extension not authorized or executed"
+  }
+}

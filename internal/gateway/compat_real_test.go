@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -36,14 +37,17 @@ import (
 
 // 真实请求必须显式启用；观测只保留参数、状态及 usage，绝不保存授权 header。
 type compatRealTransport struct {
-	base         http.RoundTripper
-	count        atomic.Int32
-	failed       atomic.Bool
-	mu           sync.Mutex
-	observations []map[string]any
-	inbound      []map[string]any
-	currentCase  string
-	ledger       string
+	base          http.RoundTripper
+	timeout       time.Duration
+	captureText   bool
+	capacityProbe bool
+	count         atomic.Int32
+	failed        atomic.Bool
+	mu            sync.Mutex
+	observations  []map[string]any
+	inbound       []map[string]any
+	currentCase   string
+	ledger        string
 }
 
 func (r *compatRealTransport) RoundTripperFor(*coreauth.Auth) http.RoundTripper { return r }
@@ -92,8 +96,21 @@ func (r *compatRealTransport) RoundTrip(req *http.Request) (*http.Response, erro
 		}
 	}
 	entry := map[string]any{"available_tools": availableTools, "tool_results": toolResults, "case": name, "index": index, "model": payload["model"], "reasoning": payload["reasoning"], "stream": payload["stream"]}
+	if r.capacityProbe {
+		input, prompt := capacityInputText(payload)
+		sum := sha256.Sum256([]byte(prompt))
+		entry["input_sha256"] = fmt.Sprintf("%x", sum)
+		sum = sha256.Sum256([]byte(input))
+		entry["input_payload_sha256"] = fmt.Sprintf("%x", sum)
+		entry["input_bytes"] = len(input)
+		entry["document_prompt_bytes"] = len(prompt)
+	}
 	started := time.Now()
-	ctx, cancel := context.WithTimeout(req.Context(), 45*time.Second)
+	timeout := r.timeout
+	if timeout == 0 {
+		timeout = 45 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(req.Context(), timeout)
 	req = req.Clone(ctx)
 	response, err := r.base.RoundTrip(req)
 	entry["headers_ms"] = time.Since(started).Milliseconds()
@@ -106,6 +123,25 @@ func (r *compatRealTransport) RoundTrip(req *http.Request) (*http.Response, erro
 	}
 	entry["status"] = response.StatusCode
 	if response.StatusCode != http.StatusOK {
+		// 容量探测只允许显式context_length_exceeded作为计划内拒绝；不保存错误正文。
+		if r.capacityProbe && response.StatusCode == 400 {
+			data, readErr := io.ReadAll(io.LimitReader(response.Body, 65537))
+			response.Body.Close()
+			var failure struct {
+				Error struct {
+					Code string `json:"code"`
+					Type string `json:"type"`
+				} `json:"error"`
+			}
+			if readErr == nil && len(data) <= 65536 && json.Unmarshal(data, &failure) == nil && failure.Error.Code == "context_length_exceeded" {
+				entry["context_rejection"] = true
+				entry["error_code"] = failure.Error.Code
+				r.add(entry)
+				cancel()
+				response.Body = io.NopCloser(bytes.NewReader(data))
+				return response, nil
+			}
+		}
 		// 非200返回不交给SDK重试/刷新。实际状态仅作为本次短请求证据。
 		response.Body.Close()
 		cancel()
@@ -143,8 +179,9 @@ func (b *compatRealBody) Read(p []byte) (int, error) {
 		line := b.pending[:i]
 		if bytes.HasPrefix(line, []byte("data: ")) {
 			var e struct {
-				Type string `json:"type"`
-				Item struct {
+				Type  string `json:"type"`
+				Delta string `json:"delta"`
+				Item  struct {
 					Type string `json:"type"`
 					Name string `json:"name"`
 				} `json:"item"`
@@ -156,6 +193,12 @@ func (b *compatRealBody) Read(p []byte) (int, error) {
 						Name string `json:"name"`
 					} `json:"output"`
 				} `json:"response"`
+			}
+			if b.transport.captureText && json.Unmarshal(line[6:], &e) == nil && e.Type == "response.output_text.delta" {
+				text, _ := b.entry["text"].(string)
+				if len(text)+len(e.Delta) <= 32768 {
+					b.entry["text"] = text + e.Delta
+				}
 			}
 			if json.Unmarshal(line[6:], &e) == nil && e.Type == "response.output_item.done" && e.Item.Type == "function_call" {
 				tools, _ := b.entry["tool_calls"].([]string)
