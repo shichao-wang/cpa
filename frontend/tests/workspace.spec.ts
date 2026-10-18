@@ -53,6 +53,7 @@ function fixture() {
           opus: binding("opus"),
           sonnet: binding("sonnet"),
           haiku: binding("haiku"),
+          fable: binding("fable"),
         },
       },
     },
@@ -109,7 +110,7 @@ test("连接搜索、协议筛选和 OAuth 编辑边界", async ({ page }) => {
   expect(patch).toEqual({ models: [{ id: "coding-model", name: "" }] });
 });
 
-test("三档映射联动、模型搜索和实际保存字段", async ({ page }) => {
+test("四档映射联动、模型搜索和实际保存字段", async ({ page }) => {
   let patch: unknown;
   await page.route("**/admin/api/**", async (route) => {
     if (route.request().url().endsWith("/oauth/session")) {
@@ -1223,4 +1224,57 @@ test("Responses 连接及 profile 显示模型能力，不承诺输出预算和 
     "SDK 未识别推理能力，显式 thinking 或 effort 会被拒绝。",
   );
   expect(writes).toBe(0);
+});
+
+test("独立编辑必填 Fable 映射并保留已有四档", async ({ page }) => {
+  const state = fixture();
+  let patch: any;
+  await page.route("**/admin/api/**", async (route) => {
+    if (route.request().url().endsWith("/oauth/session")) {
+      await route.fulfill({ json: null });
+    } else if (route.request().method() === "GET") {
+      await route.fulfill({ json: state });
+    } else {
+      patch = route.request().postDataJSON();
+      Object.assign(state.profiles.daily.models, patch.models);
+      await route.fulfill({
+        json: { saved: true, active: true, revision: 12 },
+      });
+    }
+  });
+  await connect(page);
+  await page.getByRole("button", { name: "Profiles", exact: false }).click();
+  await page.getByRole("button", { name: "编辑映射 daily" }).click();
+  const fable = page.getByRole("region", { name: "FABLE 映射" });
+  await fable
+    .getByLabel("公开模型 ID", { exact: true })
+    .fill("claude-fable-test");
+  await fable
+    .getByLabel("上游连接", { exact: true })
+    .selectOption("team-messages");
+  await page.getByRole("button", { name: "保存映射", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "下游 Profiles" }),
+  ).toBeVisible();
+  expect(patch.models.fable).toEqual({
+    public_model: "claude-fable-test",
+    connection: "team-messages",
+    target_model: "coding",
+  });
+  expect(Object.keys(patch.models).sort()).toEqual([
+    "fable",
+    "haiku",
+    "opus",
+    "sonnet",
+  ]);
+  await expect(page.locator(".profile-summary")).toContainText(
+    "claude-fable-test",
+  );
+  await page.getByRole("button", { name: "编辑映射 daily" }).click();
+  await expect(fable.getByLabel("公开模型 ID", { exact: true })).toHaveValue(
+    "claude-fable-test",
+  );
+  await expect(
+    fable.getByRole("combobox", { name: "上游模型", exact: true }),
+  ).toHaveText("编程模型");
 });

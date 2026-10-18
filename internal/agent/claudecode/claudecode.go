@@ -96,7 +96,7 @@ func Apply(s *store.Store, profile config.Profile, settingsPath string) error {
 				return fmt.Errorf("profile 已不存在或 ID 已变化，拒绝应用")
 			}
 			profile = storedProfile
-			if err := validateProfileModels(profile); err != nil {
+			if err := config.ValidateProfileModels(profile.Models); err != nil {
 				return err
 			}
 			secret := state.Secrets[profile.KeyRef]
@@ -443,21 +443,6 @@ func validateCustomHeaders(root map[string]any) error {
 		if strings.Contains(normalized, marker) {
 			return fmt.Errorf("settings.env.ANTHROPIC_CUSTOM_HEADERS 可能覆盖认证信息，请移除认证类自定义头后重试")
 		}
-	}
-	return nil
-}
-
-func validateProfileModels(profile config.Profile) error {
-	if len(profile.Models) != len(config.Slots) {
-		return fmt.Errorf("profile 必须配置 opus、sonnet、haiku 三个模型档位")
-	}
-	seen := map[string]bool{}
-	for _, slot := range config.Slots {
-		binding, ok := profile.Models[slot]
-		if !ok || strings.TrimSpace(binding.PublicModel) == "" || seen[binding.PublicModel] {
-			return fmt.Errorf("profile 的 %s 档位缺少唯一的公开模型 ID", slot)
-		}
-		seen[binding.PublicModel] = true
 	}
 	return nil
 }

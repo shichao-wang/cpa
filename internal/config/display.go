@@ -33,6 +33,8 @@ func (s *State) DisplayBinding(slot string, binding Binding) Binding {
 		binding.Description = "Sonnet"
 	case "haiku":
 		binding.Description = "Haiku"
+	case "fable":
+		binding.Description = "Fable"
 	default:
 		binding.Description = ""
 	}

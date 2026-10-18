@@ -1,6 +1,8 @@
 package store
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -75,5 +77,50 @@ func TestUpdateRollback(t *testing.T) {
 	}
 	if after.Revision != before.Revision || after.Listen != before.Listen {
 		t.Fatal("失败事务不应影响持久状态")
+	}
+}
+
+func TestThreeSlotSchema3RequiresNewStateDirectory(t *testing.T) {
+	st := testStore(t)
+	data := []byte(`{
+		"schemaVersion":3,"revision":7,"listen":"127.0.0.1:8317",
+		"connections":{"mock":{"id":"connection-id","name":"mock","authType":"api-key","protocol":"anthropic-messages","baseURL":"https://mock.example","credentialRef":"upstream","models":[{"id":"actual"}]}},
+		"profiles":{"daily":{"name":"daily","id":"profile-id","agent":"claude-code","keyRef":"downstream","models":{
+			"opus":{"public_model":"claude-opus","connection":"mock","target_model":"actual"},
+			"sonnet":{"public_model":"claude-sonnet","connection":"mock","target_model":"actual"},
+			"haiku":{"public_model":"claude-haiku","connection":"mock","target_model":"actual"}
+		}}},"secrets":{"upstream":"mock-upstream","downstream":"mock-downstream"},"oauthCredentials":{}
+	}`)
+	if err := AtomicWrite(st.Path("state.json"), data); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Read(); err == nil || !strings.Contains(err.Error(), "新的 --state-dir") || !strings.Contains(err.Error(), "原版本") {
+		t.Fatalf("旧三档状态应明确提示使用原版本恢复并切换新目录：%v", err)
+	}
+	called := false
+	change := func(state *config.State) error { called = true; state.Listen = "127.0.0.1:9999"; return nil }
+	if st.Update(change) == nil || st.UpdateContext(context.Background(), change) == nil || called {
+		t.Fatal("旧三档状态不得进入更新事务或被覆盖")
+	}
+	got, err := os.ReadFile(st.Path("state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(data) {
+		t.Fatal("拒绝旧状态后原文件发生变化")
+	}
+	fresh := testStore(t)
+	if err := fresh.Update(func(state *config.State) error {
+		if err := json.Unmarshal(data, state); err != nil {
+			return err
+		}
+		state.Profiles["daily"].Models["fable"] = config.Binding{PublicModel: "claude-fable", Connection: "mock", TargetModel: "actual"}
+		return nil
+	}); err != nil {
+		t.Fatalf("新状态目录应可配置四档映射：%v", err)
+	}
+	state, err := fresh.Read()
+	if err != nil || len(state.Profiles["daily"].Models) != 4 {
+		t.Fatal("新状态目录未保存四档映射")
 	}
 }

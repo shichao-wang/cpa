@@ -25,7 +25,7 @@ func testStore(t *testing.T) *store.Store {
 		state.Connections["mock"] = config.Connection{
 			ID: "connection-mock", Name: "mock", AuthType: config.AuthAPIKey, Protocol: config.Anthropic, BaseURL: "https://example.com",
 			CredentialRef: "upstream-secret",
-			Models:        []config.Model{{ID: "target-opus"}, {ID: "target-sonnet"}, {ID: "target-haiku"}},
+			Models:        []config.Model{{ID: "target-opus"}, {ID: "target-sonnet"}, {ID: "target-haiku"}, {ID: "target-fable"}},
 		}
 		state.Profiles["alpha"] = testProfile("alpha", "profile-a", "secret-a", "alpha")
 		state.Profiles["first"] = testProfile("first", "profile-a", "secret-a", "first")
@@ -38,7 +38,7 @@ func testStore(t *testing.T) *store.Store {
 }
 
 func testProfile(name, id, keyRef, prefix string) config.Profile {
-	models := make(map[string]config.Binding, 3)
+	models := make(map[string]config.Binding, 4)
 	for _, slot := range config.Slots {
 		models[slot] = config.Binding{
 			PublicModel: "claude-" + prefix + "-" + slot,
@@ -127,7 +127,7 @@ func TestApplyAndRestoreNewSettings(t *testing.T) {
 	for _, slot := range config.Slots {
 		prefix := "ANTHROPIC_DEFAULT_" + strings.ToUpper(slot) + "_MODEL"
 		binding := profile.Models[slot]
-		if env[prefix] != binding.PublicModel || env[prefix+"_NAME"] != "target-"+slot || env[prefix+"_DESCRIPTION"] != map[string]string{"opus": "Opus", "sonnet": "Sonnet", "haiku": "Haiku"}[slot] {
+		if env[prefix] != binding.PublicModel || env[prefix+"_NAME"] != "target-"+slot || env[prefix+"_DESCRIPTION"] != map[string]string{"opus": "Opus", "sonnet": "Sonnet", "haiku": "Haiku", "fable": "Fable"}[slot] {
 			t.Fatalf("unexpected %s settings: %#v", slot, env)
 		}
 	}
@@ -145,7 +145,7 @@ func TestApplyAndRestoreNewSettings(t *testing.T) {
 		t.Fatalf("root API key helper was not cleared: %#v", root)
 	}
 	options, ok := picker["options"].([]any)
-	if !ok || len(options) != 3 {
+	if !ok || len(options) != 4 {
 		t.Fatalf("unexpected model picker options: %#v", picker["options"])
 	}
 	if !IsManagedProfile(s, "alpha") || IsManagedProfile(s, "other") {
@@ -678,4 +678,57 @@ func mustJournal(t *testing.T, s *store.Store) *journal {
 		t.Fatal("management journal is missing")
 	}
 	return j
+}
+
+func TestFableApplySwitchAndRestore(t *testing.T) {
+	s := testStore(t)
+	binding := config.Binding{PublicModel: "claude-fable-test", Connection: "mock", TargetModel: "target-opus", Label: "自选 Fable", Description: "Fable 映射说明"}
+	if err := s.Update(func(state *config.State) error {
+		p := state.Profiles["alpha"]
+		p.Models["fable"] = binding
+		state.Profiles["alpha"] = p
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "settings.json")
+	original := map[string]any{"env": map[string]any{"ANTHROPIC_DEFAULT_FABLE_MODEL": "original-fable", "ANTHROPIC_DEFAULT_FABLE_MODEL_NAME": "原展示名"}}
+	writeDoc(t, path, original, 0600)
+	if err := Apply(s, testProfile("alpha", "profile-a", "secret-a", "alpha"), path); err != nil {
+		t.Fatal(err)
+	}
+	root := readDoc(t, path)
+	env := readObject(t, root, "env")
+	if env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != binding.PublicModel || env["ANTHROPIC_DEFAULT_FABLE_MODEL_NAME"] != "target-opus" || env["ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION"] != "Fable" {
+		t.Fatal("Fable 别名或展示信息未应用")
+	}
+	picker := readObject(t, root, "modelPicker")
+	options := picker["options"].([]any)
+	if len(options) != 4 {
+		t.Fatal("模型菜单未包含四个档位")
+	}
+	found := false
+	for _, option := range options {
+		if item, ok := option.(map[string]any); ok && item["model"] == binding.PublicModel {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("模型菜单缺少 Fable")
+	}
+	if err := Apply(s, testProfile("second", "profile-b", "secret-b", "second"), path); err != nil {
+		t.Fatal(err)
+	}
+	env = readObject(t, readDoc(t, path), "env")
+	if env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != "claude-second-fable" || env["ANTHROPIC_DEFAULT_FABLE_MODEL_NAME"] != "target-fable" || env["ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION"] != "Fable" {
+		t.Fatal("切换 profile 后未更新 Fable 映射")
+	}
+	root = readDoc(t, path)
+	root["unrelated"] = true
+	writeDoc(t, path, root, 0600)
+	if err := Restore(s, path); err != nil {
+		t.Fatal(err)
+	}
+	original["unrelated"] = true
+	assertEqualJSON(t, readDoc(t, path), original)
 }

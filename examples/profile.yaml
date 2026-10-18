@@ -13,3 +13,7 @@ models:
     public_model: claude-REPLACE-WITH-OFFICIAL-PUBLIC-ID-HAIKU
     connection: example
     target_model: REPLACE-WITH-UPSTREAM-MODEL-ID
+  fable:
+    public_model: claude-REPLACE-WITH-OFFICIAL-PUBLIC-ID-FABLE
+    connection: example
+    target_model: REPLACE-WITH-UPSTREAM-MODEL-ID

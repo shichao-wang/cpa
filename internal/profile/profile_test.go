@@ -75,12 +75,14 @@ func TestCreateValidatesAllSlotsAndReferences(t *testing.T) {
 	if err := seedConnection(st); err != nil {
 		t.Fatal(err)
 	}
-	file := completeFile("demo")
-	delete(file.Models, "haiku")
-	if _, err := Create(st, file); err == nil {
-		t.Fatal("缺少 haiku 档位的 profile 不应创建")
+	for _, slot := range config.Slots {
+		file := completeFile("demo")
+		delete(file.Models, slot)
+		if _, err := Create(st, file); err == nil {
+			t.Fatalf("缺少 %s 档位的 profile 不应创建", slot)
+		}
 	}
-	file = completeFile("demo")
+	file := completeFile("demo")
 	b := file.Models["sonnet"]
 	b.TargetModel = "not-registered"
 	file.Models["sonnet"] = b
@@ -183,8 +185,44 @@ func completeFile(name string) File {
 			"opus":   {PublicModel: "claude-example-opus", Connection: "default", TargetModel: "model-a"},
 			"sonnet": {PublicModel: "claude-example-sonnet", Connection: "default", TargetModel: "model-a"},
 			"haiku":  {PublicModel: "claude-example-haiku", Connection: "default", TargetModel: "model-b"},
+			"fable":  {PublicModel: "claude-example-fable", Connection: "default", TargetModel: "model-a"},
 		},
 	}
 }
 
 func stringPointer(value string) *string { return &value }
+
+func TestUpdateFablePreservesExistingProfile(t *testing.T) {
+	st := testStore(t)
+	if err := seedConnection(st); err != nil {
+		t.Fatal(err)
+	}
+	key, err := Create(st, completeFile("demo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := st.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := ParseFile(strings.NewReader("models:\n  fable:\n    public_model: claude-fable\n    connection: default\n    target_model: model-b\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Update(st, "demo", file); err != nil {
+		t.Fatal(err)
+	}
+	after, err := st.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := after.Profiles["demo"]
+	if len(p.Models) != 4 || p.Models["fable"] != file.Models["fable"] || p.ID != before.Profiles["demo"].ID || after.Secrets[p.KeyRef] != key {
+		t.Fatal("更新 Fable 未保存或改变了 profile 身份")
+	}
+	for _, slot := range []string{"opus", "sonnet", "haiku"} {
+		if p.Models[slot] != before.Profiles["demo"].Models[slot] {
+			t.Fatalf("更新 Fable 改变了 %s", slot)
+		}
+	}
+}

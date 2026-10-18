@@ -1069,7 +1069,7 @@ function Workspace({
                         profiles.length
                           ? "试试其他名称。"
                           : connections.length
-                            ? "为 opus、sonnet、haiku 三个档位设置模型映射。"
+                            ? "为 opus、sonnet、haiku、fable 四个档位设置模型映射。"
                             : "请先添加至少一个上游连接。"
                       }
                     />

@@ -77,7 +77,7 @@ func TestBinaryFlow(t *testing.T) {
 	bindings := filepath.Join(tmp, "bindings.yaml")
 	var yaml strings.Builder
 	yaml.WriteString("models:\n")
-	for _, slot := range []string{"opus", "sonnet", "haiku"} {
+	for _, slot := range []string{"opus", "sonnet", "haiku", "fable"} {
 		fmt.Fprintf(&yaml, "  %s:\n    public_model: claude-%s-test\n    connection: anth\n    target_model: actual\n", slot, slot)
 	}
 	if err := os.WriteFile(bindings, []byte(yaml.String()), 0600); err != nil {

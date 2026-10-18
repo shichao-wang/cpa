@@ -155,18 +155,7 @@ func validateDraft(p config.Profile) error {
 	if p.Agent != "claude-code" {
 		return fmt.Errorf("首期仅支持 claude-code")
 	}
-	if len(p.Models) != len(config.Slots) {
-		return fmt.Errorf("必须配置 opus、sonnet、haiku 三个档位")
-	}
-	seen := make(map[string]bool, len(config.Slots))
-	for _, slot := range config.Slots {
-		binding, ok := p.Models[slot]
-		if !ok || !strings.HasPrefix(binding.PublicModel, "claude-") || seen[binding.PublicModel] {
-			return fmt.Errorf("%s 缺少唯一的公开 Claude 模型 ID", slot)
-		}
-		seen[binding.PublicModel] = true
-	}
-	return nil
+	return config.ValidateProfileModels(p.Models)
 }
 
 func deleteIfUnreferenced(s *config.State, ref string) {

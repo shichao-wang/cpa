@@ -151,3 +151,40 @@ func TestConnectionRequiresNonEmptyModelCatalog(t *testing.T) {
 		}
 	}
 }
+
+func TestRequiredFableValidation(t *testing.T) {
+	s := NewState()
+	s.Secrets["k"] = "valid-key"
+	s.Connections["c"] = Connection{ID: "c-id", Name: "c", AuthType: AuthAPIKey, Protocol: Chat, BaseURL: "https://api.example.test", CredentialRef: "k", Models: []Model{{ID: "upstream"}}}
+	base := map[string]Binding{}
+	for _, slot := range []string{"opus", "sonnet", "haiku"} {
+		base[slot] = Binding{PublicModel: "claude-" + slot, Connection: "c", TargetModel: "upstream"}
+	}
+	for _, tc := range []struct {
+		name    string
+		slot    string
+		binding Binding
+		valid   bool
+	}{
+		{name: "缺少 Fable"},
+		{name: "完整四档", slot: "fable", binding: Binding{PublicModel: "claude-fable", Connection: "c", TargetModel: "upstream"}, valid: true},
+		{name: "空 Fable", slot: "fable"},
+		{name: "重复公开 ID", slot: "fable", binding: base["opus"]},
+		{name: "未登记模型", slot: "fable", binding: Binding{PublicModel: "claude-fable", Connection: "c", TargetModel: "missing"}},
+		{name: "未知档位", slot: "unknown", binding: Binding{PublicModel: "claude-extra", Connection: "c", TargetModel: "upstream"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			models := map[string]Binding{}
+			for slot, binding := range base {
+				models[slot] = binding
+			}
+			if tc.slot != "" {
+				models[tc.slot] = tc.binding
+			}
+			err := s.ValidateProfile(Profile{Agent: "claude-code", Models: models})
+			if (err == nil) != tc.valid {
+				t.Fatalf("校验结果错误：%v", err)
+			}
+		})
+	}
+}
