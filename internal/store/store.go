@@ -159,7 +159,7 @@ func (s *Store) Read() (*config.State, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err = decoder.Decode(state); err != nil {
-		return nil, fmt.Errorf("状态文件不兼容、损坏或包含未知字段，拒绝覆盖；旧状态请使用新的 --state-dir 重新配置")
+		return nil, fmt.Errorf("状态文件不兼容、损坏或包含未知字段，拒绝覆盖；旧状态请先使用原版本执行 profile restore 和 server stop，再将旧状态目录移至备份位置后重新配置")
 	}
 	if decoder.Decode(new(any)) != io.EOF {
 		return nil, fmt.Errorf("状态文件含多份 JSON，拒绝覆盖")
@@ -168,7 +168,7 @@ func (s *Store) Read() (*config.State, error) {
 		if state.SchemaVersion == config.SchemaVersion {
 			for _, profile := range state.Profiles {
 				if _, exists := profile.Models["fable"]; !exists {
-					return nil, fmt.Errorf("状态缺少必填的 Fable 映射，拒绝读取和覆盖；旧状态不支持原地升级，请先使用原版本执行 profile restore 和 server stop，再使用新的 --state-dir 重新配置")
+					return nil, fmt.Errorf("状态缺少必填的 Fable 映射，拒绝读取和覆盖；旧状态不支持原地升级，请先使用原版本执行 profile restore 和 server stop，再将旧状态目录移至备份位置后重新配置")
 				}
 			}
 		}

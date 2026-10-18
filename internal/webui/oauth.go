@@ -59,7 +59,7 @@ type oauthManager struct {
 	status     *OAuthStatus
 	cancel     context.CancelFunc
 	done       chan struct{}
-	login      func(context.Context, string, string, func(string)) error
+	login      func(context.Context, string, func(string)) error
 	discover   func(context.Context, config.OAuthCredential) ([]config.Model, error)
 }
 
@@ -143,7 +143,7 @@ func (m *oauthManager) run(ctx context.Context, cancel context.CancelFunc, name 
 	if err == nil && !create {
 		switch action {
 		case "login":
-			err = m.login(ctx, m.store.Dir, name, func(code string) {
+			err = m.login(ctx, name, func(code string) {
 				if ctx.Err() != nil {
 					return
 				}

@@ -161,7 +161,7 @@ func Start(ctx context.Context, s *store.Store) error {
 		}
 		logFile := os.NewFile(uintptr(fd), logPath)
 		defer logFile.Close()
-		cmd := exec.Command(exe, "--state-dir", s.Dir, "server", "start", "--foreground")
+		cmd := exec.Command(exe, "server", "start", "--foreground")
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
 		cmd.Stdin = nil

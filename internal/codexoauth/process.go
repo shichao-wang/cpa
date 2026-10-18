@@ -58,12 +58,12 @@ func LoginDraftProcess(ctx context.Context, publish func(string)) (config.OAuthC
 
 // LoginProcess 在独立进程调用公开 SDK，避免重定向主服务的全局 stdout。
 // 只发布设备码；SDK 的其他输出及错误正文均不进入管理响应或日志。
-func LoginProcess(ctx context.Context, stateDir, name string, publish func(string)) error {
+func LoginProcess(ctx context.Context, name string, publish func(string)) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("无法启动 OAuth 登录进程")
 	}
-	cmd := exec.CommandContext(ctx, exe, "--state-dir", stateDir, "connection", "login", name, "--no-browser")
+	cmd := exec.CommandContext(ctx, exe, "connection", "login", name, "--no-browser")
 	return runLoginProcess(ctx, cmd, publish)
 }
 

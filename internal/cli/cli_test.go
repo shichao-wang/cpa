@@ -18,8 +18,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func testStateDir(t *testing.T) string {
+	t.Helper()
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	dir := filepath.Join(configHome, "cpa")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func TestListAndShowNeverPrintSecretsOrReferences(t *testing.T) {
-	dir := t.TempDir()
+	dir := testStateDir(t)
 	if err := os.Chmod(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +68,7 @@ func TestListAndShowNeverPrintSecretsOrReferences(t *testing.T) {
 		var output, stderr bytes.Buffer
 		root.SetOut(&output)
 		root.SetErr(&stderr)
-		root.SetArgs(append([]string{"--state-dir", dir}, args...))
+		root.SetArgs(args)
 		if err := root.Execute(); err != nil {
 			t.Fatalf("%v 执行失败：%v (%s)", args, err, stderr.String())
 		}
@@ -78,6 +89,19 @@ func TestLegacyProviderCommandIsRejected(t *testing.T) {
 	}
 }
 
+func TestStateDirFlagIsRejected(t *testing.T) {
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	root := NewAppCommand()
+	root.SetArgs([]string{"--state-dir", filepath.Join(t.TempDir(), "state"), "connection", "list"})
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "unknown flag: --state-dir") {
+		t.Fatalf("已移除的状态目录参数应被拒绝：%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(configHome, "cpa")); !os.IsNotExist(err) {
+		t.Fatalf("参数被拒绝时不应创建状态目录：%v", err)
+	}
+}
+
 func TestConnectionAddScriptModeRequiresAllFieldsAndExplicitStdin(t *testing.T) {
 	root := NewCommand()
 	root.SetArgs([]string{"connection", "add", "demo"})
@@ -88,7 +112,7 @@ func TestConnectionAddScriptModeRequiresAllFieldsAndExplicitStdin(t *testing.T) 
 }
 
 func TestConnectionUpdatePreservesKeyUnlessRotated(t *testing.T) {
-	dir := t.TempDir()
+	dir := testStateDir(t)
 	if err := os.Chmod(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +129,7 @@ func TestConnectionUpdatePreservesKeyUnlessRotated(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := NewCommand()
-	root.SetArgs([]string{"--state-dir", dir, "connection", "update", "demo", "--base-url", "https://new.example.test", "--models", modelPath})
+	root.SetArgs([]string{"connection", "update", "demo", "--base-url", "https://new.example.test", "--models", modelPath})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("不带 key 更新失败：%v", err)
 	}
@@ -120,7 +144,7 @@ func TestConnectionUpdatePreservesKeyUnlessRotated(t *testing.T) {
 
 	root = NewCommand()
 	root.SetIn(strings.NewReader("rotated-api-secret\n"))
-	root.SetArgs([]string{"--state-dir", dir, "connection", "update", "demo", "--api-key-stdin"})
+	root.SetArgs([]string{"connection", "update", "demo", "--api-key-stdin"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("key 轮换失败：%v", err)
 	}
@@ -135,7 +159,7 @@ func TestConnectionUpdatePreservesKeyUnlessRotated(t *testing.T) {
 }
 
 func TestConnectionAuthTypeSwitchRequiresExplicitAPIKey(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "state")
+	dir := testStateDir(t)
 	st, err := store.New(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +169,7 @@ func TestConnectionAuthTypeSwitchRequiresExplicitAPIKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := NewCommand()
-	root.SetArgs([]string{"--state-dir", dir, "connection", "update", "switch", "--auth-type", config.AuthCodexOAuth})
+	root.SetArgs([]string{"connection", "update", "switch", "--auth-type", config.AuthCodexOAuth})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("切换到 OAuth 失败：%v", err)
 	}
@@ -159,13 +183,13 @@ func TestConnectionAuthTypeSwitchRequiresExplicitAPIKey(t *testing.T) {
 	}
 
 	root = NewCommand()
-	root.SetArgs([]string{"--state-dir", dir, "connection", "update", "switch", "--auth-type", config.AuthAPIKey})
+	root.SetArgs([]string{"connection", "update", "switch", "--auth-type", config.AuthAPIKey})
 	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "必须显式提供 API key") {
 		t.Fatalf("切回 API key 未要求显式 key：%v", err)
 	}
 	root = NewCommand()
 	root.SetIn(strings.NewReader("new-api-secret\n"))
-	root.SetArgs([]string{"--state-dir", dir, "connection", "update", "switch", "--auth-type", config.AuthAPIKey, "--api-key-stdin"})
+	root.SetArgs([]string{"connection", "update", "switch", "--auth-type", config.AuthAPIKey, "--api-key-stdin"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("显式提供 key 后切换失败：%v", err)
 	}
@@ -180,7 +204,7 @@ func TestConnectionAuthTypeSwitchRequiresExplicitAPIKey(t *testing.T) {
 }
 
 func TestCodexOAuthAddLoginCheckAndLogout(t *testing.T) {
-	dir := t.TempDir()
+	dir := testStateDir(t)
 	if err := os.Chmod(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +213,7 @@ func TestCodexOAuthAddLoginCheckAndLogout(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := NewCommand()
-	root.SetArgs([]string{"--state-dir", dir, "connection", "add", "codex", "--auth-type", config.AuthCodexOAuth, "--protocol", config.Responses, "--models", modelsPath})
+	root.SetArgs([]string{"connection", "add", "codex", "--auth-type", config.AuthCodexOAuth, "--protocol", config.Responses, "--models", modelsPath})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("OAuth 连接创建失败：%v", err)
 	}
@@ -218,7 +242,7 @@ func TestCodexOAuthAddLoginCheckAndLogout(t *testing.T) {
 	root = NewCommandWithOptions(opts)
 	root.SetOut(&output)
 	root.SetErr(&output)
-	root.SetArgs([]string{"--state-dir", dir, "connection", "login", "codex", "--no-browser"})
+	root.SetArgs([]string{"connection", "login", "codex", "--no-browser"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("OAuth 登录失败：%v", err)
 	}
@@ -243,7 +267,7 @@ func TestCodexOAuthAddLoginCheckAndLogout(t *testing.T) {
 	root = NewCommand()
 	root.SetOut(&output)
 	root.SetErr(&output)
-	root.SetArgs([]string{"--state-dir", dir, "connection", "check", "codex"})
+	root.SetArgs([]string{"connection", "check", "codex"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("OAuth 本地 check 失败：%v", err)
 	}
@@ -252,7 +276,7 @@ func TestCodexOAuthAddLoginCheckAndLogout(t *testing.T) {
 	}
 
 	root = NewCommand()
-	root.SetArgs([]string{"--state-dir", dir, "connection", "logout", "codex", "--yes"})
+	root.SetArgs([]string{"connection", "logout", "codex", "--yes"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("OAuth logout 失败：%v", err)
 	}
@@ -267,7 +291,7 @@ func TestCodexOAuthAddLoginCheckAndLogout(t *testing.T) {
 }
 
 func TestConnectionAddScriptModeKeepsSecretsOutOfOutput(t *testing.T) {
-	dir := t.TempDir()
+	dir := testStateDir(t)
 	if err := os.Chmod(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +304,7 @@ func TestConnectionAddScriptModeKeepsSecretsOutOfOutput(t *testing.T) {
 	root.SetOut(&output)
 	root.SetErr(&stderr)
 	root.SetIn(strings.NewReader("script-api-secret\n"))
-	root.SetArgs([]string{"--state-dir", dir, "connection", "add", "demo", "--protocol", config.Chat, "--base-url", "https://api.example.test", "--models", modelPath, "--api-key-stdin"})
+	root.SetArgs([]string{"connection", "add", "demo", "--protocol", config.Chat, "--base-url", "https://api.example.test", "--models", modelPath, "--api-key-stdin"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("脚本模式添加失败：%v (%s)", err, stderr.String())
 	}
@@ -558,7 +582,7 @@ func TestFormatVersion(t *testing.T) {
 }
 
 func TestOAuthLoginWorkerDoesNotCreateConnectionOrPrintCredentials(t *testing.T) {
-	dir := t.TempDir()
+	dir := testStateDir(t)
 	result := filepath.Join(t.TempDir(), "credential.json")
 	var output bytes.Buffer
 	root := NewCommandWithOptions(Options{Login: func(_ context.Context, noBrowser bool) (config.OAuthCredential, error) {
@@ -569,7 +593,7 @@ func TestOAuthLoginWorkerDoesNotCreateConnectionOrPrintCredentials(t *testing.T)
 	}})
 	root.SetOut(&output)
 	root.SetErr(&output)
-	root.SetArgs([]string{"--state-dir", dir, "connection", "oauth-login-worker", result})
+	root.SetArgs([]string{"connection", "oauth-login-worker", result})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}

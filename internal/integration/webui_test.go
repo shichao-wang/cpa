@@ -29,7 +29,9 @@ func TestWebUIThroughTunnel(t *testing.T) {
 	}
 	tmp := t.TempDir()
 	binary := filepath.Join(tmp, "cpa")
-	dir := filepath.Join(tmp, "state")
+	configHome := filepath.Join(tmp, "config")
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	dir := filepath.Join(configHome, "cpa")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/cpa")
 	build.Dir = filepath.Join("..", "..")
 	if out, err := build.CombinedOutput(); err != nil {
@@ -37,7 +39,7 @@ func TestWebUIThroughTunnel(t *testing.T) {
 	}
 	call := func(args ...string) string {
 		t.Helper()
-		out, err := exec.Command(binary, append([]string{"--state-dir", dir}, args...)...).CombinedOutput()
+		out, err := exec.Command(binary, args...).CombinedOutput()
 		if err != nil {
 			t.Fatalf("命令 %v 失败：%v", args, err)
 		}
@@ -53,7 +55,7 @@ func TestWebUIThroughTunnel(t *testing.T) {
 	stopped := false
 	t.Cleanup(func() {
 		if !stopped {
-			_ = exec.Command(binary, "--state-dir", dir, "server", "stop").Run()
+			_ = exec.Command(binary, "server", "stop").Run()
 		}
 	})
 	token := call("server", "admin-token")

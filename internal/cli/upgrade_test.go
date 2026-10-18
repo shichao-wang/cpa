@@ -160,7 +160,9 @@ func TestUpgradeCommandRejectsArguments(t *testing.T) {
 }
 
 func TestRootUpgradeDoesNotUseStateOrRuntimeCallbacks(t *testing.T) {
-	stateDir := filepath.Join(t.TempDir(), "state")
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	stateDir := filepath.Join(configHome, "cpa")
 	callbackCalled := false
 	root := NewCommandWithOptions(Options{
 		OnChange: func() error {
@@ -185,7 +187,7 @@ func TestRootUpgradeDoesNotUseStateOrRuntimeCallbacks(t *testing.T) {
 	}))
 	var output bytes.Buffer
 	root.SetOut(&output)
-	root.SetArgs([]string{"--state-dir", stateDir, "upgrade"})
+	root.SetArgs([]string{"upgrade"})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("根命令 upgrade 执行失败：%v", err)

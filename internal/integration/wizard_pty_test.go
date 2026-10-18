@@ -52,7 +52,7 @@ func TestWizardTerminal(t *testing.T) {
 
 	newState := func(t *testing.T) (string, []byte) {
 		t.Helper()
-		dir := filepath.Join(t.TempDir(), "state")
+		dir := filepath.Join(t.TempDir(), "cpa")
 		st, err := store.New(dir)
 		if err != nil {
 			t.Fatal(err)
@@ -210,9 +210,9 @@ func startWizardTerminal(t *testing.T, binary, dir string) *wizardTerminal {
 		slave.Close()
 		t.Fatal(err)
 	}
-	cmd := exec.Command(binary, "--state-dir", dir, "connection", "add")
+	cmd := exec.Command(binary, "connection", "add")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
-	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "TERM=xterm-256color", "NO_COLOR=1")
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "XDG_CONFIG_HOME="+filepath.Dir(dir), "TERM=xterm-256color", "NO_COLOR=1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
 	terminal := &wizardTerminal{cmd: cmd, master: master, slave: slave, fd: int(master.Fd()), initial: initial, done: make(chan error, 1), readerEnd: make(chan struct{}), stop: make(chan struct{})}
 	if err := unix.SetNonblock(terminal.fd, true); err != nil {

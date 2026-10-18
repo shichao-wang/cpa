@@ -22,9 +22,10 @@ func TestEmptyBinaryStartsFailClosed(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	dir := filepath.Join(tmp, "state")
+	configHome := filepath.Join(tmp, "config")
+	t.Setenv("XDG_CONFIG_HOME", configHome)
 	call := func(args ...string) (string, error) {
-		out, err := exec.Command(binary, append([]string{"--state-dir", dir}, args...)...).CombinedOutput()
+		out, err := exec.Command(binary, args...).CombinedOutput()
 		return string(out), err
 	}
 	socket, err := net.Listen("tcp", "127.0.0.1:0")

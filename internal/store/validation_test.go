@@ -42,8 +42,8 @@ func TestLegacyStateIsNeverOverwritten(t *testing.T) {
 		if err := AtomicWrite(s.Path("state.json"), original); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.Read(); err == nil || !strings.Contains(err.Error(), "新的 --state-dir") {
-			t.Fatalf("旧状态错误应提示使用新的 --state-dir：%v", err)
+		if _, err := s.Read(); err == nil || !strings.Contains(err.Error(), "将旧状态目录移至备份位置") {
+			t.Fatalf("旧状态错误应提示将旧状态目录移至备份位置：%v", err)
 		}
 		if err := s.Update(func(st *config.State) error { return nil }); err == nil {
 			t.Fatal("旧格式状态不得被覆盖")
@@ -94,7 +94,7 @@ func TestThreeSlotSchema3RequiresNewStateDirectory(t *testing.T) {
 	if err := AtomicWrite(st.Path("state.json"), data); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.Read(); err == nil || !strings.Contains(err.Error(), "新的 --state-dir") || !strings.Contains(err.Error(), "原版本") {
+	if _, err := st.Read(); err == nil || !strings.Contains(err.Error(), "将旧状态目录移至备份位置") || !strings.Contains(err.Error(), "原版本") {
 		t.Fatalf("旧三档状态应明确提示使用原版本恢复并切换新目录：%v", err)
 	}
 	called := false

@@ -252,7 +252,7 @@ func ValidateOAuthCredential(c OAuthCredential) error {
 
 func (s *State) Validate() error {
 	if s.SchemaVersion != SchemaVersion || s.Connections == nil || s.Profiles == nil || s.Secrets == nil || s.OAuthCredentials == nil {
-		return fmt.Errorf("不支持或无效的状态格式；旧状态不会被修改，请使用新的 --state-dir 重新配置")
+		return fmt.Errorf("不支持或无效的状态格式；旧状态不会被修改，请先使用原版本执行 profile restore 和 server stop，再将旧状态目录移至备份位置后重新配置")
 	}
 	connectionIDs := map[string]bool{}
 	oauthRefs := map[string]bool{}

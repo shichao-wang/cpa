@@ -160,7 +160,7 @@ def main():
         summary['cpa_build_info'] = [line for line in build_info.splitlines()
                                      if any(key in line for key in ('go1.', 'CLIProxyAPI', 'vcs.'))]
         def cpa(*commands, stdin=None):
-            return run([binary, '--state-dir', str(root / 'state'), *commands], env, work, stdin)
+            return run([binary, *commands], env, work, stdin)
         with server(handler(recorder)) as upstream_port:
             models = root / 'models.yaml'
             models.write_text('models:\n  - id: ' + json.dumps(args.target_model) + '\n')

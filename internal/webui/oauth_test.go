@@ -77,7 +77,7 @@ func setupOAuth(t *testing.T) (*store.Store, *Handler, string, *testControl) {
 		t.Fatal(err)
 	}
 	h.oauth.loginDraft = func(context.Context, func(string)) (config.OAuthCredential, error) { return testCredential(), nil }
-	h.oauth.login = func(_ context.Context, _, name string, _ func(string)) error {
+	h.oauth.login = func(_ context.Context, name string, _ func(string)) error {
 		session, err := connection.BeginOAuth(st, name)
 		if err != nil {
 			return err
