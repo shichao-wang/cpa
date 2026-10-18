@@ -247,13 +247,13 @@ func TestWebUIThroughTunnel(t *testing.T) {
 	if code != 200 || !bytes.Contains(data, []byte(`"model":"claude-sonnet"`)) {
 		t.Fatalf("WebUI 保存后模型路由不可用：%d", code)
 	}
-	models["sonnet"] = config.Binding{PublicModel: "claude-sonnet", Connection: "remote", TargetModel: "actual", Label: "远端修改"}
+	models["sonnet"] = config.Binding{PublicModel: "claude-sonnet-updated", Connection: "remote", TargetModel: "actual"}
 	code, data = request("PATCH", "/admin/api/profiles/daily", token, map[string]any{"models": models}, base)
 	if code != 200 {
 		t.Fatalf("更新失败：%d %s", code, data)
 	}
 	code, data = request("GET", "/v1/models", key, nil, base)
-	if code != 200 || !bytes.Contains(data, []byte("远端修改")) {
+	if code != 200 || !bytes.Contains(data, []byte("claude-sonnet-updated")) {
 		t.Fatalf("修改未对模型服务生效：HTTP %d，响应 %s", code, data)
 	}
 	code, _ = request("DELETE", "/admin/api/connections/remote", token, nil, base)

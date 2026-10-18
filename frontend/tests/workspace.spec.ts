@@ -5,8 +5,8 @@ function fixture() {
     public_model: "claude-" + model,
     connection: "work-api",
     target_model: "large",
-    label: model === "opus" ? "深度思考" : "",
-    description: model === "opus" ? "保留原说明" : "",
+    label: "推理模型",
+    description: model[0].toUpperCase() + model.slice(1),
   });
   return {
     oauthAvailable: false,
@@ -129,6 +129,9 @@ test("三档映射联动、模型搜索和实际保存字段", async ({ page }) 
   await page.getByRole("button", { name: "Profiles", exact: false }).click();
   await page.getByRole("button", { name: "编辑映射 daily" }).click();
   await page.getByLabel("公开模型 ID", { exact: true }).first().fill("my-opus");
+  await expect(page.getByText("展示名与说明", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("展示名（可选）")).toHaveCount(0);
+  await expect(page.getByLabel("说明（可选）")).toHaveCount(0);
   const opus = page.getByRole("region", { name: "OPUS 映射" });
   await opus
     .getByLabel("上游连接", { exact: true })
@@ -147,7 +150,14 @@ test("三档映射联动、模型搜索和实际保存字段", async ({ page }) 
   await expect(
     page.getByRole("heading", { name: "下游 Profiles" }),
   ).toBeVisible();
-  const expected = fixture().profiles.daily.models;
+  const expected = Object.fromEntries(
+    Object.entries(fixture().profiles.daily.models).map(
+      ([slot, { public_model, connection, target_model }]) => [
+        slot,
+        { public_model, connection, target_model },
+      ],
+    ),
+  );
   expect(patch).toEqual({
     models: {
       ...expected,

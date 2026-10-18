@@ -241,7 +241,11 @@ func (h *Handler) state(w http.ResponseWriter, r *http.Request) {
 	}
 	profiles := map[string]profileView{}
 	for name, p := range s.Profiles {
-		profiles[name] = profileView{name, p.Agent, p.Models, claudecode.IsManagedProfile(h.store, name)}
+		models := make(map[string]config.Binding, len(p.Models))
+		for slot, binding := range p.Models {
+			models[slot] = s.DisplayBinding(slot, binding)
+		}
+		profiles[name] = profileView{name, p.Agent, models, claudecode.IsManagedProfile(h.store, name)}
 	}
 	revision, ready := h.active()
 	mode := "running"
@@ -412,14 +416,28 @@ func (h *Handler) deleteConnection(w http.ResponseWriter, r *http.Request) {
 	h.saved(w, r, connection.Remove(h.store, r.PathValue("name")))
 }
 
+// profileBindingInput 只接受路由绑定，展示名与说明由上游模型和档位派生。
+type profileBindingInput struct {
+	PublicModel string `json:"public_model"`
+	Connection  string `json:"connection"`
+	TargetModel string `json:"target_model"`
+}
+
 type profileInput struct {
-	Name   *string                   `json:"name"`
-	Agent  *string                   `json:"agent"`
-	Models map[string]config.Binding `json:"models"`
+	Name   *string                        `json:"name"`
+	Agent  *string                        `json:"agent"`
+	Models map[string]profileBindingInput `json:"models"`
 }
 
 func (in profileInput) file() profile.File {
-	return profile.File{Name: in.Name, Agent: in.Agent, Models: in.Models}
+	var models map[string]config.Binding
+	if in.Models != nil {
+		models = make(map[string]config.Binding, len(in.Models))
+		for slot, binding := range in.Models {
+			models[slot] = config.Binding{PublicModel: binding.PublicModel, Connection: binding.Connection, TargetModel: binding.TargetModel}
+		}
+	}
+	return profile.File{Name: in.Name, Agent: in.Agent, Models: models}
 }
 func (h *Handler) createProfile(w http.ResponseWriter, r *http.Request) {
 	var in profileInput

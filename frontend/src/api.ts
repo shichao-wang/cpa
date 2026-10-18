@@ -38,8 +38,6 @@ const bindingSchema = z.object({
   public_model: z.string(),
   connection: z.string(),
   target_model: z.string(),
-  label: z.string(),
-  description: z.string(),
 });
 const profileSchema = z.object({
   name: z.string(),
@@ -169,8 +167,6 @@ export function initialBindings(
           public_model: "claude-" + slot,
           connection: connections[0]?.name || "",
           target_model: connections[0]?.models[0]?.id || "",
-          label: "",
-          description: "",
         };
   return { opus: make("opus"), sonnet: make("sonnet"), haiku: make("haiku") };
 }

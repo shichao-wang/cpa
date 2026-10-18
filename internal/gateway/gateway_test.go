@@ -446,7 +446,13 @@ func assertCatalog(t *testing.T, client *http.Client, listen, header, key, profi
 		t.Fatalf("catalog returned %d models, want exactly 3", len(payload.Data))
 	}
 	for _, model := range payload.Data {
-		if !strings.HasSuffix(model.ID, "-test") || !strings.HasPrefix(strings.ToLower(model.DisplayName), profilePrefix+" ") || !strings.HasPrefix(strings.ToLower(model.Description), profilePrefix+" ") {
+		want := map[string][2]string{
+			"claude-opus-test":   {"Shared target", "Opus"},
+			"claude-sonnet-test": {"Anthropic target", "Sonnet"},
+			"claude-haiku-test":  {"Responses target", "Haiku"},
+		}
+		metadata, exists := want[model.ID]
+		if !exists || model.DisplayName != metadata[0] || model.Description != metadata[1] {
 			t.Errorf("profile %s catalog model leaked or lacks metadata: %+v", profilePrefix, model)
 		}
 	}

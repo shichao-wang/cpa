@@ -78,7 +78,7 @@ func TestBinaryFlow(t *testing.T) {
 	var yaml strings.Builder
 	yaml.WriteString("models:\n")
 	for _, slot := range []string{"opus", "sonnet", "haiku"} {
-		fmt.Fprintf(&yaml, "  %s:\n    public_model: claude-%s-test\n    connection: anth\n    target_model: actual\n    label: mock-%s\n    description: mock 路由\n", slot, slot, slot)
+		fmt.Fprintf(&yaml, "  %s:\n    public_model: claude-%s-test\n    connection: anth\n    target_model: actual\n", slot, slot)
 	}
 	if err := os.WriteFile(bindings, []byte(yaml.String()), 0600); err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestBinaryFlow(t *testing.T) {
 		return resp.StatusCode, data
 	}
 	code, body := request("GET", "/v1/models?limit=1000", "")
-	if code != 200 || !bytes.Contains(body, []byte("mock-sonnet")) {
+	if code != 200 || !bytes.Contains(body, []byte(`"display_name":"实际模型"`)) || !bytes.Contains(body, []byte(`"description":"Sonnet"`)) {
 		t.Fatalf("模型目录：%d %s", code, body)
 	}
 	code, body = request("POST", "/v1/messages", `{"model":"claude-sonnet-test","max_tokens":20,"messages":[{"role":"user","content":"Hi"}]}`)

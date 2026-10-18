@@ -12,6 +12,8 @@ import (
 func TestParseFileRejectsUnknownFieldsAndExtraDocuments(t *testing.T) {
 	for _, input := range []string{
 		"name: demo\nkeyRef: secret-ref\n",
+		"name: demo\nmodels:\n  sonnet:\n    label: 自定义名称\n",
+		"name: demo\nmodels:\n  sonnet:\n    description: 自定义说明\n",
 		"name: demo\nmodels: {}\nunknown: value\n",
 		"name: demo\n---\nname: second\n",
 		"name: demo\nmodels:\n  sonnet:\n    public_model: claude-test\n    provider: p\n    connection: c\n    target_model: m\n",
@@ -50,7 +52,6 @@ func TestCreateGeneratesPrivateKeyAndUpdatePreservesUnspecifiedFields(t *testing
 		PublicModel: "claude-updated-sonnet",
 		Connection:  "default",
 		TargetModel: "model-a",
-		Label:       "Updated sonnet",
 	}
 	update := File{Models: map[string]config.Binding{"sonnet": newSonnet}}
 	if err := Update(st, "demo", update); err != nil {

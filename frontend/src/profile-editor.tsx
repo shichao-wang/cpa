@@ -1,15 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
-import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  SlidersHorizontal,
-} from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { ModelPicker } from "./model-picker";
 import { CompatibilityNotice } from "./compatibility-notice";
 import {
@@ -220,34 +214,6 @@ export function ProfileEditor({
                     model={b.target_model}
                   />
                 )}
-                <details className="mapping-options">
-                  <summary>
-                    <SlidersHorizontal />
-                    展示名与说明
-                    {(b.label || b.description) && (
-                      <span className="hint">已设置</span>
-                    )}
-                  </summary>
-                  <div className="field">
-                    <Label htmlFor={slot + "-label"}>展示名（可选）</Label>
-                    <Input
-                      id={slot + "-label"}
-                      value={b.label}
-                      onChange={(e) => change(slot, { label: e.target.value })}
-                    />
-                  </div>
-                  <div className="field">
-                    <Label htmlFor={slot + "-description"}>说明（可选）</Label>
-                    <Textarea
-                      id={slot + "-description"}
-                      value={b.description}
-                      onChange={(e) =>
-                        change(slot, { description: e.target.value })
-                      }
-                      rows={2}
-                    />
-                  </div>
-                </details>
               </section>
             );
           })}

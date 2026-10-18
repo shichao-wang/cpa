@@ -314,7 +314,7 @@ func compile(state *config.State, st *store.Store) (*snapshot, error) {
 		out.keyIndex[keyHash] = name
 		ps := profileSnapshot{name: name, id: profile.ID, models: make(map[string]modelRoute, len(profile.Models))}
 		for _, slot := range config.Slots {
-			binding := profile.Models[slot]
+			binding := state.DisplayBinding(slot, profile.Models[slot])
 			info := connections[binding.Connection]
 			route := modelRoute{
 				protocol: info.protocol,
