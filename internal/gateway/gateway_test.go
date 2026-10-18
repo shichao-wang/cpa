@@ -134,6 +134,9 @@ func TestGatewayRoutesByProfileAndUpstreamProtocol(t *testing.T) {
 	state.Connections["anthropic-b"] = config.Connection{ID: "anthropic-b-id", Name: "anthropic-b", AuthType: config.AuthAPIKey, Protocol: config.Anthropic, BaseURL: anthropicB.URL, CredentialRef: "anthropic-b", Models: []config.Model{{ID: "anthropic-target", Name: "Anthropic target"}}}
 	state.Connections["responses-b"] = config.Connection{ID: "responses-b-id", Name: "responses-b", AuthType: config.AuthAPIKey, Protocol: config.Responses, BaseURL: responsesB.URL, CredentialRef: "responses-b", Models: []config.Model{{ID: "responses-target", Name: "Responses target"}}}
 	beta := state.Profiles["beta"]
+	fable := beta.Models["fable"]
+	fable.PublicModel = "claude-beta-fable-test"
+	beta.Models["fable"] = fable
 	sonnet := beta.Models["sonnet"]
 	sonnet.Connection = "anthropic-b"
 	beta.Models["sonnet"] = sonnet
@@ -165,8 +168,8 @@ func TestGatewayRoutesByProfileAndUpstreamProtocol(t *testing.T) {
 	defer client.CloseIdleConnections()
 	for _, header := range []string{"X-Api-Key", "Authorization"} {
 		t.Run("catalog/"+header, func(t *testing.T) {
-			assertCatalog(t, client, listen, header, "alpha-client-secret", "alpha")
-			assertCatalog(t, client, listen, header, "beta-client-secret", "beta")
+			assertCatalog(t, client, listen, header, "alpha-client-secret", "alpha", "claude-fable-test")
+			assertCatalog(t, client, listen, header, "beta-client-secret", "beta", "claude-beta-fable-test")
 		})
 	}
 	for _, test := range []struct {
@@ -220,6 +223,8 @@ func TestGatewayRoutesByProfileAndUpstreamProtocol(t *testing.T) {
 		upModel string
 		upURL   string
 	}{
+		{profile: "alpha", key: "alpha-client-secret", model: "claude-fable-test", kind: "chat", upKey: "chat-key-a", upModel: "shared-target", upURL: chatA.URL},
+		{profile: "beta", key: "beta-client-secret", model: "claude-beta-fable-test", kind: "chat", upKey: "chat-key-b", upModel: "shared-target", upURL: chatB.URL},
 		{profile: "alpha", key: "alpha-client-secret", model: "claude-opus-test", kind: "chat", upKey: "chat-key-a", upModel: "shared-target", upURL: chatA.URL},
 		{profile: "beta", key: "beta-client-secret", model: "claude-opus-test", kind: "chat", upKey: "chat-key-b", upModel: "shared-target", upURL: chatB.URL},
 		{profile: "alpha", key: "alpha-client-secret", model: "claude-sonnet-test", kind: "anthropic", upKey: "anthropic-key", upModel: "anthropic-target", upURL: anthropic.URL},
@@ -255,6 +260,17 @@ func TestGatewayRoutesByProfileAndUpstreamProtocol(t *testing.T) {
 				t.Fatal("mock upstream did not receive a request")
 			}
 		})
+	}
+
+	deniedFable := postMessages(t, client, listen, "beta-client-secret", "claude-fable-test")
+	_ = deniedFable.Body.Close()
+	if deniedFable.StatusCode != http.StatusBadRequest {
+		t.Fatalf("未授权该 Fable 模型的 profile 必须拒绝调用：%d", deniedFable.StatusCode)
+	}
+	select {
+	case <-observedRequests:
+		t.Fatal("未授权的 Fable 请求到达上游")
+	default:
 	}
 
 	unauthorized, err := http.NewRequest(http.MethodPost, "http://"+listen+"/v1/messages", strings.NewReader(`{"model":"claude-opus-test"}`))
@@ -309,6 +325,7 @@ func testState(listen, chatA, chatB, anthropic, responses string) *config.State 
 				"opus":   {PublicModel: "claude-opus-test", Connection: "chat-a", TargetModel: "shared-target", Label: "Alpha Opus", Description: "Alpha chat route"},
 				"sonnet": {PublicModel: "claude-sonnet-test", Connection: "anthropic", TargetModel: "anthropic-target", Label: "Alpha Sonnet", Description: "Alpha Anthropic route"},
 				"haiku":  {PublicModel: "claude-haiku-test", Connection: "responses", TargetModel: "responses-target", Label: "Alpha Haiku", Description: "Alpha Responses route"},
+				"fable":  {PublicModel: "claude-fable-test", Connection: "chat-a", TargetModel: "shared-target", Label: "Alpha Fable", Description: "Alpha Fable route"},
 			},
 		},
 		"beta": {
@@ -317,6 +334,7 @@ func testState(listen, chatA, chatB, anthropic, responses string) *config.State 
 				"opus":   {PublicModel: "claude-opus-test", Connection: "chat-b", TargetModel: "shared-target", Label: "Beta Opus", Description: "Beta chat route"},
 				"sonnet": {PublicModel: "claude-sonnet-test", Connection: "anthropic", TargetModel: "anthropic-target", Label: "Beta Sonnet", Description: "Beta Anthropic route"},
 				"haiku":  {PublicModel: "claude-haiku-test", Connection: "responses", TargetModel: "responses-target", Label: "Beta Haiku", Description: "Beta Responses route"},
+				"fable":  {PublicModel: "claude-fable-test", Connection: "chat-b", TargetModel: "shared-target", Label: "Beta Fable", Description: "Beta Fable route"},
 			},
 		},
 	}
@@ -340,6 +358,7 @@ func TestConnectionsWithSameEndpointAndKeyKeepDistinctIdentity(t *testing.T) {
 			"opus":   {PublicModel: "claude-opus-test", Connection: "same-a", TargetModel: "shared-model"},
 			"sonnet": {PublicModel: "claude-sonnet-test", Connection: "same-b", TargetModel: "shared-model"},
 			"haiku":  {PublicModel: "claude-haiku-test", Connection: "same-a", TargetModel: "shared-model"},
+			"fable":  {PublicModel: "claude-fable-test", Connection: "same-a", TargetModel: "shared-model"},
 		},
 	}
 	compiled, err := compile(state, st)
@@ -408,7 +427,7 @@ func waitForReady(t *testing.T, st *store.Store) RuntimeState {
 	}
 }
 
-func assertCatalog(t *testing.T, client *http.Client, listen, header, key, profilePrefix string) {
+func assertCatalog(t *testing.T, client *http.Client, listen, header, key, profilePrefix string, extraModels ...string) {
 	t.Helper()
 	request, err := http.NewRequest(http.MethodGet, "http://"+listen+"/v1/models", nil)
 	if err != nil {
@@ -442,14 +461,27 @@ func assertCatalog(t *testing.T, client *http.Client, listen, header, key, profi
 	if err := json.Unmarshal(data, &payload); err != nil {
 		t.Fatalf("模型目录必须是单个 JSON：%v", err)
 	}
-	if len(payload.Data) != 3 {
-		t.Fatalf("catalog returned %d models, want exactly 3", len(payload.Data))
+	if len(payload.Data) != 4 {
+		t.Fatalf("模型目录数量错误：%d", len(payload.Data))
+	}
+	for _, id := range extraModels {
+		found := false
+		for _, model := range payload.Data {
+			if model.ID == id {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("模型目录缺少 %s", id)
+		}
 	}
 	for _, model := range payload.Data {
 		want := map[string][2]string{
-			"claude-opus-test":   {"Shared target", "Opus"},
-			"claude-sonnet-test": {"Anthropic target", "Sonnet"},
-			"claude-haiku-test":  {"Responses target", "Haiku"},
+			"claude-opus-test":       {"Shared target", "Opus"},
+			"claude-sonnet-test":     {"Anthropic target", "Sonnet"},
+			"claude-haiku-test":      {"Responses target", "Haiku"},
+			"claude-fable-test":      {"Shared target", "Fable"},
+			"claude-beta-fable-test": {"Shared target", "Fable"},
 		}
 		metadata, exists := want[model.ID]
 		if !exists || model.DisplayName != metadata[0] || model.Description != metadata[1] {

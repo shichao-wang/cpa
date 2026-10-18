@@ -205,7 +205,7 @@ func TestCompatibilityParametersThroughMessages(t *testing.T) {
 		var result struct {
 			Data []map[string]any `json:"data"`
 		}
-		if status != 200 || json.Unmarshal(data, &result) != nil || len(result.Data) != 3 {
+		if status != 200 || json.Unmarshal(data, &result) != nil || len(result.Data) != 4 {
 			t.Fatalf("模型目录异常：%d %s", status, data)
 		}
 		for _, model := range result.Data {

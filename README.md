@@ -6,10 +6,10 @@
 
 ```text
 connection：独立上游连接（稳定 ID、协议、认证方式、API 根地址、专属凭证、模型清单）
-profile：下游 Agent 的专属 key、三档 connection/实际模型绑定与展示
+profile：下游 Agent 的专属 key、四档 connection/实际模型绑定与展示
 ```
 
-接入只需创建一个 connection，不需要先创建 provider。每个连接独立选择协议和凭证，名称不决定协议。每个 profile 的 Opus、Sonnet、Haiku 档位直接选择 connection 和实际模型 ID；多个档位可以使用同一连接。
+接入只需创建一个 connection，不需要先创建 provider。每个连接独立选择协议和凭证，名称不决定协议。每个 profile 的 Opus、Sonnet、Haiku、Fable 四个必填档位直接选择 connection 和实际模型 ID；多个档位可以使用同一连接。
 
 **这是不兼容旧配置的结构调整。** 当前只支持 schema 3，不保留 `provider` 命令、旧 profile 的 `provider` 字段或旧状态迁移。schema 1，以及旧 provider 版和独立 API-key 版 schema 2，均明确拒绝且不会被覆盖。已有配置的用户应先用原版本执行 restore、停止旧服务，再用新的 `--state-dir` 重新接入；OAuth 连接需要重新登录。不要让旧、新版本共享状态目录。
 
@@ -156,7 +156,7 @@ cpa connection add codex \
   --protocol responses \
   --models codex-models.yaml
 cpa connection login codex --no-browser
-# bindings.yaml 的 opus/sonnet/haiku 均设置 connection: codex、target_model: gpt-5.5
+# bindings.yaml 的 opus/sonnet/haiku/fable 均设置 connection: codex、target_model: gpt-5.5
 cpa profile create codex --agent claude-code --file bindings.yaml
 cpa server start
 cpa profile apply codex
@@ -197,7 +197,7 @@ Responses 连接经当前锁定 SDK 的 Codex 转换路径执行。管理页面�
 
 ### 应用与恢复
 
-绑定文件示例见 `examples/`。公开 model ID 需明确填写你希望 Claude Code 使用的官方 ID，不能填实际的非 Claude 上游 ID。三个档位 ID 必须唯一。
+绑定文件示例见 `examples/`。公开 model ID 需明确填写你希望 Claude Code 使用的官方 ID，不能填实际的非 Claude 上游 ID。四个档位 ID 必须唯一。
 
 ```sh
 cpa profile create daily --agent claude-code --file bindings.yaml
@@ -247,7 +247,9 @@ ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18317:127.0.0.1:8317 user@remote
 
 管理页面支持 API key 连接的创建、地址与模型清单更新、凭证轮换和删除，以及 profile 的创建、映射更新和删除。新增连接时填写地址与 API key，点击「测试连接并获取模型」，成功后自动展示可勾选的模型目录。新发现的模型默认勾选，可按需取消后再保存连接，无需手填模型清单。连接协议创建后固定。页面显示已保存和实际生效的修订，等待加载时可以刷新确认。CLI 与 WebUI 共用状态事务、引用检查和热更新流程。
 
-侧栏切换连接与 Profiles。连接列表可按名称搜索、按协议筛选。每个连接最多预览 3 个模型名称，摘要最多两行；点击模型数量可查看完整清单，并按名称或模型 ID 搜索。右侧抽屉可重新获取已有 API key 连接的模型目录，并提供模型搜索、全选当前结果和清空选择。保存时只写入勾选模型，至少保留一个；profile 只能绑定已保存到连接的模型，下游请求仍受 profile 模型授权限制。重新测试时保留已有选择，新发现的模型默认勾选；被 profile 引用的模型需先调整映射后再取消。OAuth 连接使用相同的模型搜索和勾选界面，无需手工录入模型 ID。profile 编辑页并列展示 opus、sonnet、haiku 三个档位，支持搜索上游模型、预览映射，展示名和说明由上游模型与档位自动生成；窄屏下按档位纵向排列。
+Fable 是必填档位，profile YAML 必须包含 `models.fable`，字段与其他档位相同，示例见 `examples/profile.yaml`。创建、更新、加载及应用 profile 时，缺少任一档位都会报错；已有三档 profile 需先补齐 Fable。应用 profile 后会写入 `ANTHROPIC_DEFAULT_FABLE_MODEL` 及其展示名、说明变量，配置方式见 [Claude Code 模型配置](https://code.claude.com/docs/en/model-config#environment-variables)。在 Claude Code 中使用 `/model fable` 选择该映射，restore 会恢复应用前的配置。
+
+侧栏切换连接与 Profiles。连接列表可按名称搜索、按协议筛选。每个连接最多预览 3 个模型名称，摘要最多两行；点击模型数量可查看完整清单，并按名称或模型 ID 搜索。右侧抽屉可重新获取已有 API key 连接的模型目录，并提供模型搜索、全选当前结果和清空选择。保存时只写入勾选模型，至少保留一个；profile 只能绑定已保存到连接的模型，下游请求仍受 profile 模型授权限制。重新测试时保留已有选择，新发现的模型默认勾选；被 profile 引用的模型需先调整映射后再取消。OAuth 连接使用相同的模型搜索和勾选界面，无需手工录入模型 ID。profile 编辑页展示 opus、sonnet、haiku、fable 四个必填档位。各档位支持搜索上游模型、预览映射，展示名和说明由上游模型与档位自动生成；窄屏下按档位纵向排列。
 
 测试连接只发送模型目录 GET 请求，不发送推理请求，也不保存输入或修改 revision。Chat Completions 和 API key Responses 连接请求 API 根地址下的 `/models`；Anthropic Messages 请求 `/v1/models`，并自动读取后续分页。完整发现最多等待 8 秒、接收 4 MiB；空目录、无效响应或不完整分页会明确报错。目录访问成功不代表每个模型都已验证推理能力。测试不会跟随上游重定向或返回错误正文。测试已有连接时可留空 API key，使用此连接的保存凭证；修改地址后必须显式填写新地址对应的 key。修改地址、协议或 key 后，需重新测试再保存。
 

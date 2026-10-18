@@ -396,7 +396,7 @@ func TestCompatLongContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	profile := config.Profile{Name: "long-test", ID: "long-test", Agent: "claude-code", KeyRef: "downstream", Models: map[string]config.Binding{}}
-	for slot, public := range map[string]string{"sonnet": "claude-sonnet-4-6", "opus": "claude-opus-4-6", "haiku": "claude-haiku-4-5-20251001"} {
+	for slot, public := range map[string]string{"sonnet": "claude-sonnet-4-6", "opus": "claude-opus-4-6", "haiku": "claude-haiku-4-5-20251001", "fable": "claude-fable-5-1"} {
 		profile.Models[slot] = config.Binding{PublicModel: public, Connection: connection.Name, TargetModel: "gpt-6.1-sol", Label: slot}
 	}
 	state.Profiles[profile.Name] = profile

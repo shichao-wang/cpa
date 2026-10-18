@@ -116,7 +116,8 @@ export function ProfileEditor({
           <p className="eyebrow">PROFILE / 模型映射</p>
           <h1>{profile ? profile.name : "创建 profile"}</h1>
           <p className="muted">
-            为三个模型档位分别设置公开 ID、连接与上游模型。
+            为 Opus、Sonnet、Haiku、Fable 四个必填档位设置公开
+            ID、连接与上游模型。
           </p>
         </div>
         <Badge variant="outline">独立下游 key</Badge>
@@ -152,7 +153,7 @@ export function ProfileEditor({
                 <header>
                   <h2>{slot.toUpperCase()}</h2>
                   <p className="hint">
-                    {["深度推理", "日常编程", "快速任务"][i]}
+                    {["深度推理", "日常编程", "快速任务", "独立模型映射"][i]}
                   </p>
                 </header>
                 <div className="field">

@@ -11,7 +11,7 @@ python3 scripts/compat/claude_mock.py --output /private/tmp/cpa-compat-disabled 
 
 可使用 `--cpa /绝对路径/cpa`、`--model claude-sonnet-4-6`、`--target-model gpt-6.1-sol`、`--effort high` 或 `--settings-json` 组合构造实验。每次使用独立输出目录。运行环境需允许 Python、CPA、Claude Code 创建本机 loopback 监听及其子进程；受限沙箱可能需要本机执行权限。
 
-脚本创建临时 HOME、CLAUDE_CONFIG_DIR、settings、工作区及 CPA 状态。通过 CLI 创建 Responses API_KEY mock 连接和 profile，三个槽位默认绑定 SDK 已识别的 gpt-6.1-sol，应用后回读 settings。Claude 使用 `--bare --setting-sources '' --strict-mcp-config --tools '' --no-session-persistence`，禁用非必要网络流量；bare 模式不读取 keychain/OAuth。为适配 bare 的鉴权契约，脚本将 apply 生成的临时 profile token 转为子进程的 ANTHROPIC_API_KEY，并将 BASE_URL 指向观测代理。该差异写在脚本中，不改变 apply 产物。没有真实 OAuth 登录、账号能力或上游额度验证。
+脚本创建临时 HOME、CLAUDE_CONFIG_DIR、settings、工作区及 CPA 状态。通过 CLI 创建 Responses API_KEY mock 连接和 profile，四个槽位默认绑定 SDK 已识别的 gpt-6.1-sol，应用后回读 settings。Claude 使用 `--bare --setting-sources '' --strict-mcp-config --tools '' --no-session-persistence`，禁用非必要网络流量；bare 模式不读取 keychain/OAuth。为适配 bare 的鉴权契约，脚本将 apply 生成的临时 profile token 转为子进程的 ANTHROPIC_API_KEY，并将 BASE_URL 指向观测代理。该差异写在脚本中，不改变 apply 产物。没有真实 OAuth 登录、账号能力或上游额度验证。
 
 链路：真实 Claude → loopback 观测代理 → 真实 CPA → Responses mock。mock 始终回复 `CPA_COMPAT_OK`，因此这条基线证明客户端/协议/路由可以完成一轮对话，不证明模型真实推理或工具调用能力。脚本结束时 restore 并回读原设置、停止临时 CPA、删除临时状态及临时凭证。
 

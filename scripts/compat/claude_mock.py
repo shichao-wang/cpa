@@ -170,7 +170,7 @@ def main():
             bindings = root / 'bindings.yaml'
             bindings.write_text('models:\n' + ''.join(
                 f'  {slot}:\n    public_model: {model}\n    connection: mock\n    target_model: {json.dumps(args.target_model)}\n'
-                for slot, model in [('opus', 'claude-opus-4-6'), ('sonnet', 'claude-sonnet-4-6'), ('haiku', 'claude-haiku-4-5-20251001')]))
+                for slot, model in [('opus', 'claude-opus-4-6'), ('sonnet', 'claude-sonnet-4-6'), ('haiku', 'claude-haiku-4-5-20251001'), ('fable', 'claude-fable-5-1')]))
             cpa('profile', 'create', 'compat', '--file', str(bindings))
             port = free_port()
             started = False

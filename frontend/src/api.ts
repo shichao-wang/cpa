@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const slots = ["opus", "sonnet", "haiku"] as const;
+export const slots = ["opus", "sonnet", "haiku", "fable"] as const;
 export type Slot = (typeof slots)[number];
 export const protocols = {
   "chat-completions": "Chat Completions",
@@ -47,6 +47,7 @@ const profileSchema = z.object({
     opus: bindingSchema,
     sonnet: bindingSchema,
     haiku: bindingSchema,
+    fable: bindingSchema,
   }),
 });
 export const oauthStatusSchema = z.object({
@@ -168,5 +169,10 @@ export function initialBindings(
           connection: connections[0]?.name || "",
           target_model: connections[0]?.models[0]?.id || "",
         };
-  return { opus: make("opus"), sonnet: make("sonnet"), haiku: make("haiku") };
+  return {
+    opus: make("opus"),
+    sonnet: make("sonnet"),
+    haiku: make("haiku"),
+    fable: make("fable"),
+  };
 }

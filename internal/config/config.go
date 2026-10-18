@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -23,7 +24,7 @@ const (
 	CodexBaseURL   = "https://chatgpt.com/backend-api/codex"
 )
 
-var Slots = []string{"opus", "sonnet", "haiku"}
+var Slots = []string{"opus", "sonnet", "haiku", "fable"}
 var validName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 
 type Model struct {
@@ -148,17 +149,16 @@ func ValidateModels(models []Model) error {
 	return nil
 }
 
-// ValidateProfileStructure 校验 profile 的结构和模型引用，不要求 OAuth 凭证已登录。
-func (s *State) ValidateProfileStructure(p Profile) error {
-	if p.Agent != "claude-code" {
-		return fmt.Errorf("首期仅支持 claude-code")
-	}
-	if len(p.Models) != 3 {
-		return fmt.Errorf("必须配置 opus、sonnet、haiku 三个档位")
+// ValidateProfileModels 校验四个必填档位，拒绝未知档位和重复公开 ID。
+func ValidateProfileModels(models map[string]Binding) error {
+	for slot := range models {
+		if !slices.Contains(Slots, slot) {
+			return fmt.Errorf("未知模型档位：%s", slot)
+		}
 	}
 	seen := map[string]bool{}
 	for _, slot := range Slots {
-		b, ok := p.Models[slot]
+		b, ok := models[slot]
 		if !ok || !strings.HasPrefix(b.PublicModel, "claude-") || seen[b.PublicModel] {
 			return fmt.Errorf("%s 缺少唯一的公开 Claude 模型 ID", slot)
 		}
@@ -166,6 +166,19 @@ func (s *State) ValidateProfileStructure(p Profile) error {
 			return fmt.Errorf("profile 模型信息不能包含控制字符")
 		}
 		seen[b.PublicModel] = true
+	}
+	return nil
+}
+
+// ValidateProfileStructure 校验 profile 的结构和模型引用，不要求 OAuth 凭证已登录。
+func (s *State) ValidateProfileStructure(p Profile) error {
+	if p.Agent != "claude-code" {
+		return fmt.Errorf("首期仅支持 claude-code")
+	}
+	if err := ValidateProfileModels(p.Models); err != nil {
+		return err
+	}
+	for _, b := range p.Models {
 		c, ok := s.Connections[b.Connection]
 		if !ok {
 			return fmt.Errorf("连接不存在：%s", b.Connection)
