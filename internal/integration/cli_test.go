@@ -31,9 +31,11 @@ func TestBinaryFlow(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("构建 binary：%v\n%s", err, out)
 	}
-	dir := filepath.Join(tmp, "state")
+	configHome := filepath.Join(tmp, "config")
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	dir := filepath.Join(configHome, "cpa")
 	invoke := func(input string, args ...string) (string, error) {
-		cmd := exec.Command(binary, append([]string{"--state-dir", dir}, args...)...)
+		cmd := exec.Command(binary, args...)
 		cmd.Stdin = strings.NewReader(input)
 		out, err := cmd.CombinedOutput()
 		return string(out), err

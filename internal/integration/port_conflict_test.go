@@ -30,8 +30,10 @@ func TestBinaryPortConflictDoesNotDisturbExistingServer(t *testing.T) {
 	address := strings.TrimPrefix(existing.URL, "http://")
 	for _, mode := range []string{"background", "foreground"} {
 		t.Run(mode, func(t *testing.T) {
-			dir := filepath.Join(tmp, mode)
-			args := []string{"--state-dir", dir, "server", "start", "--listen", address}
+			configHome := filepath.Join(tmp, mode)
+			t.Setenv("XDG_CONFIG_HOME", configHome)
+			dir := filepath.Join(configHome, "cpa")
+			args := []string{"server", "start", "--listen", address}
 			if mode == "foreground" {
 				args = append(args, "--foreground")
 			}
@@ -94,8 +96,10 @@ func TestBinaryRejectsWildcardListenerOnSamePort(t *testing.T) {
 
 	for _, mode := range []string{"background", "foreground"} {
 		t.Run(mode, func(t *testing.T) {
-			dir := filepath.Join(tmp, "wildcard-"+mode)
-			args := []string{"--state-dir", dir, "server", "start", "--listen", address}
+			configHome := filepath.Join(tmp, "wildcard-"+mode)
+			t.Setenv("XDG_CONFIG_HOME", configHome)
+			dir := filepath.Join(configHome, "cpa")
+			args := []string{"server", "start", "--listen", address}
 			if mode == "foreground" {
 				args = append(args, "--foreground")
 			}

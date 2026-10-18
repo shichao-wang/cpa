@@ -19,13 +19,7 @@ import (
 // NewAppCommand 装配实际 binary 的服务管理和客户端配置功能。
 func NewAppCommand() *cobra.Command {
 	var root *cobra.Command
-	openStore := func() (*store.Store, error) {
-		dir, err := root.PersistentFlags().GetString("state-dir")
-		if err != nil {
-			return nil, err
-		}
-		return store.New(dir)
-	}
+	openStore := func() (*store.Store, error) { return store.New("") }
 	root = NewCommandWithOptions(Options{
 		Login: codexoauth.NewLogin().Login,
 		OnChange: func() error {

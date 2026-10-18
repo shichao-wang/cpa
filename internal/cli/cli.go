@@ -82,7 +82,6 @@ func NewCommand() *cobra.Command {
 
 // NewCommandWithOptions 构建带运行时集成回调的 cpa 命令树。
 func NewCommandWithOptions(opts Options) *cobra.Command {
-	var stateDir string
 	root := &cobra.Command{
 		Use:           "cpa",
 		Short:         "管理 CLIProxyAPI 网关配置",
@@ -91,11 +90,10 @@ func NewCommandWithOptions(opts Options) *cobra.Command {
 	}
 	// 不设置 root.Version：cobra 仅在 Version 非空时注册 --version/-v，
 	// 本工具只用 version 子命令，避免两套入口输出不一致。
-	root.PersistentFlags().StringVar(&stateDir, "state-dir", "", "状态目录（默认：$XDG_CONFIG_HOME/cpa 或 ~/.config/cpa）")
 	root.AddCommand(newVersionCommand())
 	root.AddCommand(newUpgradeCommand(upgrade.Run))
-	root.AddCommand(newConnectionCommand(func() (*store.Store, error) { return store.New(stateDir) }, opts))
-	root.AddCommand(newProfileCommand(func() (*store.Store, error) { return store.New(stateDir) }, opts))
+	root.AddCommand(newConnectionCommand(func() (*store.Store, error) { return store.New("") }, opts))
+	root.AddCommand(newProfileCommand(func() (*store.Store, error) { return store.New("") }, opts))
 	return root
 }
 

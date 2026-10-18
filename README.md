@@ -11,7 +11,7 @@ profile：下游 Agent 的专属 key、四档 connection/实际模型绑定与�
 
 接入只需创建一个 connection，不需要先创建 provider。每个连接独立选择协议和凭证，名称不决定协议。每个 profile 的 Opus、Sonnet、Haiku、Fable 四个必填档位直接选择 connection 和实际模型 ID；多个档位可以使用同一连接。
 
-**这是不兼容旧配置的结构调整。** 当前只支持 schema 3，不保留 `provider` 命令、旧 profile 的 `provider` 字段或旧状态迁移。schema 1、旧 provider 版和独立 API-key 版 schema 2，以及缺少 Fable 的三档 schema 3 状态，均明确拒绝且不会被覆盖。已有配置的用户应先用原版本执行 restore、停止旧服务，再用新的 `--state-dir` 重新接入；OAuth 连接需要重新登录。不要让旧、新版本共享状态目录。
+**这是不兼容旧配置的结构调整。** 当前只支持 schema 3，不保留 `provider` 命令、旧 profile 的 `provider` 字段或旧状态迁移。schema 1、旧 provider 版和独立 API-key 版 schema 2，以及缺少 Fable 的三档 schema 3 状态，均明确拒绝且不会被覆盖。已有配置的用户应先用原版本执行 restore、停止旧服务，再将旧状态目录移至备份位置后重新接入；OAuth 连接需要重新登录。不要让旧、新版本共享状态目录。
 
 下游公开模型 ID 保持为 Claude ID。不同 profile 可以使用相同公开 ID，但展示不同名称并路由到不同上游。
 
@@ -40,21 +40,21 @@ curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpa/main/scripts/insta
 
 本版本要求 Opus、Sonnet、Haiku、Fable 四个档位全部配置。缺少 Fable 的旧 schema 3 状态不支持原地升级，新版本会拒绝读取和覆盖，不能通过 `profile update` 或管理页面补填。升级前请保留原可执行文件，按以下步骤切换：
 
-1. 使用原版本及原 `--state-dir` 执行 `profile restore`，恢复已接管的 Claude Code 配置；没有应用过 profile 时可跳过。若使用自定义 settings，传入原 `--settings` 路径。
-2. 使用原版本及原状态目录执行 `server stop`。保留旧状态目录，勿复制或覆盖其内容。
-3. 安装新版本，后续每条命令都指定一个新的 `--state-dir`，重新创建连接，并用包含四个档位的 YAML 创建 profile。OAuth 连接需重新登录，下游 key 也会重新生成。
+1. 使用原版本及原状态目录执行 `profile restore`，恢复已接管的 Claude Code 配置；没有应用过 profile 时可跳过。若使用自定义 settings，传入原 `--settings` 路径。
+2. 使用原版本及原状态目录执行 `server stop`。将旧状态目录整体移至备份位置，保留其中内容。默认目录为 `$XDG_CONFIG_HOME/cpa`，未设置时为 `~/.config/cpa`。
+3. 安装新版本，在自动创建的默认状态目录中重新创建连接，并用包含四个档位的 YAML 创建 profile。OAuth 连接需重新登录，下游 key 也会重新生成。
 4. 在新状态目录中启动网关并应用 profile，随后新开 Claude Code 会话。
 
 例如，在已用原版本完成恢复和停服后执行：
 
 ```sh
-cpa --state-dir /path/to/new-state connection add example
-cpa --state-dir /path/to/new-state profile create daily --agent claude-code --file bindings-with-fable.yaml
-cpa --state-dir /path/to/new-state server start
-cpa --state-dir /path/to/new-state profile apply daily
+cpa connection add example
+cpa profile create daily --agent claude-code --file bindings-with-fable.yaml
+cpa server start
+cpa profile apply daily
 ```
 
-需要回退时，先用新版本及新状态目录执行 restore、停止新网关，再使用保留的原版本和旧状态目录启动服务、应用原 profile。
+需要回退时，先用新版本执行 restore、停止新网关，再将当前状态目录移至另一备份位置。将旧状态目录放回原位置后，使用保留的原版本启动服务、应用原 profile。
 
 ### 从改名前的版本切换
 
@@ -267,11 +267,11 @@ cpa server start
 ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18317:127.0.0.1:8317 user@remote-host
 ```
 
-在浏览器打开 [管理页面](http://127.0.0.1:18317/ui/)。服务监听 `127.0.0.1` 时自动进入管理页面，无需填写管理令牌；通过 SSH 隧道访问同样适用。远端网关仍只监听 loopback。本地端口可以不同于远端端口；如果远端使用其他监听端口，修改转发目标即可。使用自定义状态目录时，所有远端命令都需要指定相同的 `--state-dir`。
+在浏览器打开 [管理页面](http://127.0.0.1:18317/ui/)。服务监听 `127.0.0.1` 时自动进入管理页面，无需填写管理令牌；通过 SSH 隧道访问同样适用。远端网关仍只监听 loopback。本地端口可以不同于远端端口；如果远端使用其他监听端口，修改转发目标即可。远端命令使用远端用户的默认状态目录。
 
 管理页面支持 API key 连接的创建、地址与模型清单更新、凭证轮换和删除，以及 profile 的创建、映射更新和删除。新增连接时填写地址与 API key，点击「测试连接并获取模型」，成功后自动展示可勾选的模型目录。新发现的模型默认勾选，可按需取消后再保存连接，无需手填模型清单。连接协议创建后固定。页面显示已保存和实际生效的修订，等待加载时可以刷新确认。CLI 与 WebUI 共用状态事务、引用检查和热更新流程。
 
-Fable 是必填档位，profile YAML 必须包含 `models.fable`，字段与其他档位相同，示例见 `examples/profile.yaml`。创建、更新、加载及应用 profile 时，缺少任一档位都会报错；旧三档状态须按升级步骤改用新的 `--state-dir` 重新配置，不能在旧目录直接补填。应用 profile 后会写入 `ANTHROPIC_DEFAULT_FABLE_MODEL`，展示名和说明统一写入 `modelPicker.options`，配置方式见 [Claude Code 模型配置](https://code.claude.com/docs/en/model-config#environment-variables)。在 Claude Code 中使用 `/model fable` 选择该映射，restore 会恢复应用前的配置。
+Fable 是必填档位，profile YAML 必须包含 `models.fable`，字段与其他档位相同，示例见 `examples/profile.yaml`。创建、更新、加载及应用 profile 时，缺少任一档位都会报错；旧三档状态须按升级步骤备份旧状态目录后重新配置，不能在旧目录直接补填。应用 profile 后会写入 `ANTHROPIC_DEFAULT_FABLE_MODEL`，展示名和说明统一写入 `modelPicker.options`，配置方式见 [Claude Code 模型配置](https://code.claude.com/docs/en/model-config#environment-variables)。在 Claude Code 中使用 `/model fable` 选择该映射，restore 会恢复应用前的配置。
 
 侧栏切换连接与 Profiles。连接列表可按名称搜索、按协议筛选。每个连接最多预览 3 个模型名称，摘要最多两行；点击模型数量可查看完整清单，并按名称或模型 ID 搜索。右侧抽屉可重新获取已有 API key 连接的模型目录，并提供模型搜索、全选当前结果和清空选择。保存时只写入勾选模型，至少保留一个；profile 只能绑定已保存到连接的模型，下游请求仍受 profile 模型授权限制。重新测试时保留已有选择，新发现的模型默认勾选；被 profile 引用的模型需先调整映射后再取消。OAuth 连接使用相同的模型搜索和勾选界面，无需手工录入模型 ID。profile 编辑页展示 opus、sonnet、haiku、fable 四个必填档位。各档位支持搜索上游模型、预览映射，展示名和说明由上游模型与档位自动生成；窄屏下按档位纵向排列。
 
@@ -291,7 +291,7 @@ Fable 是必填档位，profile YAML 必须包含 `models.fable`，字段与其�
 
 ## 本地状态与安全
 
-- 状态目录默认为 `$XDG_CONFIG_HOME/cpa`，未设置时使用 `~/.config/cpa`；可用 `--state-dir` 隔离。
+- 状态目录使用 `$XDG_CONFIG_HOME/cpa`，未设置时使用 `~/.config/cpa`。命令行无需指定状态目录。
 - 状态目录 0700、敏感文件 0600；配置、secret 引用及 secret 数据以同一原子事务保存。上游 key、Codex OAuth 凭证和下游 profile key 分开管理，SDK 配置是私有派生数据。
 - 当前状态格式为 schema 3，仅接受显式认证方式、稳定连接 ID 与独立 OAuth 表的完整新格式；不存在 `state migrate` 或自动默认化。旧 schema 1/2 及 provider 结构会拒绝读取/覆盖，使用新状态目录重新配置，OAuth 连接重新登录。
 - 本地状态和 Claude Code 应用后的 settings 都可能含明文 key；文件权限保护不是加密保险箱。不要提交或分享这些文件。
