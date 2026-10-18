@@ -19,6 +19,15 @@ var managedRootNames = []string{"model", "apiKeyHelper"}
 var managedPickerNames = []string{"replaceBuiltInOptions"}
 var managedOptionNames = []string{"label", "description"}
 
+// 旧版 apply 接管的展示变量，仅用于恢复原值并解除管理。
+var retiredEnvNames = []string{
+	"ANTHROPIC_DEFAULT_OPUS_MODEL_NAME", "ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION",
+	"ANTHROPIC_DEFAULT_SONNET_MODEL_NAME", "ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION",
+	"ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME", "ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION",
+	"ANTHROPIC_DEFAULT_FABLE_MODEL_NAME", "ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION",
+	"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
+}
+
 // snapshot 是一次 settings 文件的完整状态；恢复时仍只回滚受管字段。
 type snapshot struct {
 	Exists bool           `json:"exists"`
@@ -178,7 +187,13 @@ func Apply(s *store.Store, profile config.Profile, settingsPath string) error {
 				change.Applied = fieldValue{}
 				fields.Root[name] = change
 			}
-			desiredEnv := profileEnvironment(state, profile, listen, secret)
+			desiredEnv := profileEnvironment(profile, listen, secret)
+			for _, key := range retiredEnvNames {
+				if change, ok := fields.Env[key]; ok {
+					change.Applied = change.Original
+					fields.Env[key] = change
+				}
+			}
 			for key, value := range desiredEnv {
 				if _, ok := fields.Env[key]; !ok {
 					fields.Env[key] = fieldChange{Original: valueAt(original.Data, "env", key)}
@@ -276,11 +291,7 @@ func Apply(s *store.Store, profile config.Profile, settingsPath string) error {
 			if !equalJSON(readback.Data, planned.Data) {
 				return fmt.Errorf("Claude Code settings 回读校验失败")
 			}
-			pending.Status = "committed"
-			pending.Prior = fieldSet{}
-			pending.Goal = fieldSet{}
-			pending.Applied = readback
-			return writeJournal(s, pending)
+			return finishApply(s, pending, readback)
 		})
 	})
 }
@@ -447,24 +458,20 @@ func validateCustomHeaders(root map[string]any) error {
 	return nil
 }
 
-func profileEnvironment(state *config.State, profile config.Profile, listen, secret string) map[string]fieldValue {
+func profileEnvironment(profile config.Profile, listen, secret string) map[string]fieldValue {
 	values := map[string]fieldValue{
-		"ANTHROPIC_BASE_URL":                         {Present: true, Value: "http://" + strings.TrimPrefix(listen, "http://")},
-		"ANTHROPIC_AUTH_TOKEN":                       {Present: true, Value: secret},
-		"ANTHROPIC_API_KEY":                          {Present: false},
-		"ANTHROPIC_MODEL":                            {Present: false},
-		"CLAUDE_CODE_USE_BEDROCK":                    {Present: false},
-		"CLAUDE_CODE_USE_VERTEX":                     {Present: false},
-		"CLAUDE_CODE_USE_FOUNDRY":                    {Present: false},
-		"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": {Present: true, Value: "1"},
-		"CLAUDE_CODE_SUBAGENT_MODEL":                 {Present: true, Value: profile.Models["haiku"].PublicModel},
+		"ANTHROPIC_BASE_URL":         {Present: true, Value: "http://" + strings.TrimPrefix(listen, "http://")},
+		"ANTHROPIC_AUTH_TOKEN":       {Present: true, Value: secret},
+		"ANTHROPIC_API_KEY":          {Present: false},
+		"ANTHROPIC_MODEL":            {Present: false},
+		"CLAUDE_CODE_USE_BEDROCK":    {Present: false},
+		"CLAUDE_CODE_USE_VERTEX":     {Present: false},
+		"CLAUDE_CODE_USE_FOUNDRY":    {Present: false},
+		"CLAUDE_CODE_SUBAGENT_MODEL": {Present: true, Value: profile.Models["haiku"].PublicModel},
 	}
 	for _, slot := range config.Slots {
-		binding := state.DisplayBinding(slot, profile.Models[slot])
 		prefix := "ANTHROPIC_DEFAULT_" + strings.ToUpper(slot) + "_MODEL"
-		values[prefix] = fieldValue{Present: true, Value: binding.PublicModel}
-		values[prefix+"_NAME"] = fieldValue{Present: true, Value: binding.Label}
-		values[prefix+"_DESCRIPTION"] = fieldValue{Present: true, Value: binding.Description}
+		values[prefix] = fieldValue{Present: true, Value: profile.Models[slot].PublicModel}
 	}
 	return values
 }
@@ -971,10 +978,7 @@ func recoverPending(s *store.Store, j *journal) error {
 		if j.Action == "restore" {
 			return finishRestore(s, j, current)
 		}
-		j.Status = "committed"
-		j.Prior, j.Goal = fieldSet{}, fieldSet{}
-		j.Applied = current
-		return writeJournal(s, j)
+		return finishApply(s, j, current)
 	}
 	if !matchesManaged(current.Data, j.Prior) {
 		return fmt.Errorf("发现中断的 Claude Code 操作且受管字段已变化；拒绝自动续写")
@@ -994,10 +998,7 @@ func recoverPending(s *store.Store, j *journal) error {
 		if !matchesManaged(readback.Data, j.Goal) || !equalJSON(readback.Data, data) {
 			return fmt.Errorf("中断恢复后的 settings 回读校验失败")
 		}
-		j.Applied = readback
-		j.Status = "committed"
-		j.Prior, j.Goal = fieldSet{}, fieldSet{}
-		return writeJournal(s, j)
+		return finishApply(s, j, readback)
 	}
 	if j.Action == "restore" {
 		if err := patchSettings(data, j.Managed, true, j.Original.Data); err != nil {
@@ -1006,6 +1007,20 @@ func recoverPending(s *store.Store, j *journal) error {
 		return finishRestore(s, j, current)
 	}
 	return fmt.Errorf("未知的中断操作类型")
+}
+
+func finishApply(s *store.Store, j *journal, current *snapshot) error {
+	// 写入并校验完成前仍保留旧字段的管理信息，确保中断后可续写或检测冲突。
+	// 旧版中断记录可能尚未恢复原值，此时继续保留管理，交由下次 apply 或 restore 清理。
+	for _, key := range retiredEnvNames {
+		if change, ok := j.Managed.Env[key]; ok && sameValue(change.Applied, change.Original) {
+			delete(j.Managed.Env, key)
+		}
+	}
+	j.Applied = current
+	j.Status = "committed"
+	j.Prior, j.Goal = fieldSet{}, fieldSet{}
+	return writeJournal(s, j)
 }
 
 func finishRestore(s *store.Store, j *journal, current *snapshot) error {

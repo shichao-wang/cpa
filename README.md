@@ -231,7 +231,11 @@ cpa server stop
 
 模型选择器展示需要支持 `modelPicker` 的 Claude Code 版本（v2.1.242 或更新版本）。
 
-apply 默认合并 `~/.claude/settings.json`，也可通过 `--settings` 指定文件。通过 env 和 modelPicker 设置网关认证、模型 ID、名称与描述，不修改订阅登录凭证。模型选择器左侧自动显示上游模型名称，GPT 模型 ID 会整理为 `GPT 6.1 Sol`、`GPT 6 Luna` 这样的名称。右侧固定显示对应的 `Opus`、`Sonnet`、`Haiku` 或 `Fable` 档位。名称与描述不可配置，profile YAML 和管理 API 不接受 `label`、`description` 字段。模型发现不会可靠地覆盖所有内置档位，因此展示配置也由 profile 应用。
+apply 默认合并 `~/.claude/settings.json`，也可通过 `--settings` 指定文件。env 设置网关地址、profile 认证、四档 `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL` 公开模型 ID，以及指向 haiku 档位的 `CLAUDE_CODE_SUBAGENT_MODEL`。apply 不修改订阅登录凭证。
+
+模型名称与描述统一写入 `modelPicker.options`，并设置 `modelPicker.replaceBuiltInOptions: true` 来替换内置列表。模型选择器左侧自动显示上游模型名称，GPT 模型 ID 会整理为 `GPT 6.1 Sol`、`GPT 6 Luna` 这样的名称。右侧固定显示对应的 `Opus`、`Sonnet`、`Haiku` 或 `Fable` 档位。名称与描述不可配置，profile YAML 和管理 API 不接受 `label`、`description` 字段。apply 不再写入四档 MODEL 的 `_NAME`、`_DESCRIPTION` 环境变量，也不再启用 `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`。
+
+已有旧版 apply 记录时，再次 apply 或切换 profile 会将上述九个旧受管变量恢复为首次接管前的值，原先不存在的变量会删除，然后解除对这些变量的管理。没有管理记录的同名变量保持原样。清理完成后，后续 apply 和 restore 会保留用户对这些变量的新修改。直接对旧版记录执行 restore 仍会恢复全部受管字段；旧受管字段在清理前已被手动修改时，apply 和 restore 都会拒绝覆盖。
 
 restore **仅对有有效 cpa 接管记录的配置执行**。它恢复首次接管前的受管字段，保留无关修改；受管字段发生冲突时拒绝整体恢复。没有记录、只有备份、路径不匹配或重复 restore 均不能恢复。当前 shell 环境变量及项目级设置可能覆盖用户配置，需自行检查这些优先级。
 
@@ -267,7 +271,7 @@ ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18317:127.0.0.1:8317 user@remote
 
 管理页面支持 API key 连接的创建、地址与模型清单更新、凭证轮换和删除，以及 profile 的创建、映射更新和删除。新增连接时填写地址与 API key，点击「测试连接并获取模型」，成功后自动展示可勾选的模型目录。新发现的模型默认勾选，可按需取消后再保存连接，无需手填模型清单。连接协议创建后固定。页面显示已保存和实际生效的修订，等待加载时可以刷新确认。CLI 与 WebUI 共用状态事务、引用检查和热更新流程。
 
-Fable 是必填档位，profile YAML 必须包含 `models.fable`，字段与其他档位相同，示例见 `examples/profile.yaml`。创建、更新、加载及应用 profile 时，缺少任一档位都会报错；旧三档状态须按升级步骤改用新的 `--state-dir` 重新配置，不能在旧目录直接补填。应用 profile 后会写入 `ANTHROPIC_DEFAULT_FABLE_MODEL` 及其展示名、说明变量，配置方式见 [Claude Code 模型配置](https://code.claude.com/docs/en/model-config#environment-variables)。在 Claude Code 中使用 `/model fable` 选择该映射，restore 会恢复应用前的配置。
+Fable 是必填档位，profile YAML 必须包含 `models.fable`，字段与其他档位相同，示例见 `examples/profile.yaml`。创建、更新、加载及应用 profile 时，缺少任一档位都会报错；旧三档状态须按升级步骤改用新的 `--state-dir` 重新配置，不能在旧目录直接补填。应用 profile 后会写入 `ANTHROPIC_DEFAULT_FABLE_MODEL`，展示名和说明统一写入 `modelPicker.options`，配置方式见 [Claude Code 模型配置](https://code.claude.com/docs/en/model-config#environment-variables)。在 Claude Code 中使用 `/model fable` 选择该映射，restore 会恢复应用前的配置。
 
 侧栏切换连接与 Profiles。连接列表可按名称搜索、按协议筛选。每个连接最多预览 3 个模型名称，摘要最多两行；点击模型数量可查看完整清单，并按名称或模型 ID 搜索。右侧抽屉可重新获取已有 API key 连接的模型目录，并提供模型搜索、全选当前结果和清空选择。保存时只写入勾选模型，至少保留一个；profile 只能绑定已保存到连接的模型，下游请求仍受 profile 模型授权限制。重新测试时保留已有选择，新发现的模型默认勾选；被 profile 引用的模型需先调整映射后再取消。OAuth 连接使用相同的模型搜索和勾选界面，无需手工录入模型 ID。profile 编辑页展示 opus、sonnet、haiku、fable 四个必填档位。各档位支持搜索上游模型、预览映射，展示名和说明由上游模型与档位自动生成；窄屏下按档位纵向排列。
 
