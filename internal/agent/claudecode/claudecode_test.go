@@ -2,6 +2,7 @@ package claudecode
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,8 +114,8 @@ func TestApplyAndRestoreNewSettings(t *testing.T) {
 	if _, ok := env["ANTHROPIC_API_KEY"]; ok {
 		t.Fatalf("legacy API key was not removed: %#v", env)
 	}
-	if env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] != "1" {
-		t.Fatalf("gateway model discovery is not enabled: %#v", env)
+	if _, exists := env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"]; exists {
+		t.Fatal("apply 不应设置模型发现开关")
 	}
 	if env["CLAUDE_CODE_SUBAGENT_MODEL"] != profile.Models["haiku"].PublicModel {
 		t.Fatalf("subagent model does not use the public Haiku ID: %#v", env)
@@ -127,8 +128,13 @@ func TestApplyAndRestoreNewSettings(t *testing.T) {
 	for _, slot := range config.Slots {
 		prefix := "ANTHROPIC_DEFAULT_" + strings.ToUpper(slot) + "_MODEL"
 		binding := profile.Models[slot]
-		if env[prefix] != binding.PublicModel || env[prefix+"_NAME"] != "target-"+slot || env[prefix+"_DESCRIPTION"] != map[string]string{"opus": "Opus", "sonnet": "Sonnet", "haiku": "Haiku", "fable": "Fable"}[slot] {
+		if env[prefix] != binding.PublicModel {
 			t.Fatalf("unexpected %s settings: %#v", slot, env)
+		}
+		for _, suffix := range []string{"_NAME", "_DESCRIPTION"} {
+			if _, exists := env[prefix+suffix]; exists {
+				t.Fatalf("apply 不应设置展示环境变量：%s", prefix+suffix)
+			}
 		}
 	}
 	picker := readObject(t, root, "modelPicker")
@@ -206,8 +212,8 @@ func TestApplyDerivesDisplayFromCurrentUpstreamAndSlot(t *testing.T) {
 		options := picker["options"].([]any)
 		for slot, display := range want {
 			prefix := "ANTHROPIC_DEFAULT_" + strings.ToUpper(slot) + "_MODEL"
-			if env[prefix+"_NAME"] != display[0] || env[prefix+"_DESCRIPTION"] != display[1] {
-				t.Fatalf("%s 环境变量展示不符：%v / %v", slot, env[prefix+"_NAME"], env[prefix+"_DESCRIPTION"])
+			if env[prefix] != profile.Models[slot].PublicModel {
+				t.Fatalf("%s 档位映射不符", slot)
 			}
 			found := false
 			for _, option := range options {
@@ -248,6 +254,245 @@ func TestApplyDerivesDisplayFromCurrentUpstreamAndSlot(t *testing.T) {
 	check(map[string][2]string{"opus": {"更新后的模型名称", "Opus"}, "sonnet": {"unknown-model", "Sonnet"}, "haiku": {"更新后的模型名称", "Haiku"}})
 	if err := Restore(s, path); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func legacyDisplayEnv() map[string]any {
+	return map[string]any{
+		"ANTHROPIC_DEFAULT_OPUS_MODEL_NAME":          "旧 Opus 名称",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION":   "旧 Opus 描述",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL_NAME":        "旧 Sonnet 名称",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION": "旧 Sonnet 描述",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME":         "旧 Haiku 名称",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION":  "旧 Haiku 描述",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL_NAME":         "旧 Fable 名称",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION":  "旧 Fable 描述",
+		"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
+	}
+}
+
+func installLegacyApply(t *testing.T, s *store.Store, profile config.Profile, path string) *journal {
+	t.Helper()
+	if err := Apply(s, profile, path); err != nil {
+		t.Fatal(err)
+	}
+	j := mustJournal(t, s)
+	env := readObject(t, j.Applied.Data, "env")
+	// 补回旧版实际写入的字段，保留原版管理记录格式和首次接管快照。
+	for key, value := range legacyDisplayEnv() {
+		j.Managed.Env[key] = fieldChange{
+			Original: valueAt(j.Original.Data, "env", key),
+			Applied:  fieldValue{Present: true, Value: value},
+		}
+		env[key] = value
+	}
+	writeDoc(t, path, j.Applied.Data, 0600)
+	if err := writeJournal(s, j); err != nil {
+		t.Fatal(err)
+	}
+	return j
+}
+
+func TestApplyPreservesUnmanagedDisplayEnv(t *testing.T) {
+	s := testStore(t)
+	path := filepath.Join(t.TempDir(), "settings.json")
+	baseline := map[string]any{"env": legacyDisplayEnv()}
+	writeDoc(t, path, baseline, 0600)
+	profile := testProfile("alpha", "profile-a", "secret-a", "alpha")
+	for range 2 {
+		if err := Apply(s, profile, path); err != nil {
+			t.Fatal(err)
+		}
+		liveEnv := readObject(t, readDoc(t, path), "env")
+		for key, value := range legacyDisplayEnv() {
+			assertEqualJSON(t, liveEnv[key], value)
+		}
+	}
+	if err := Restore(s, path); err != nil {
+		t.Fatal(err)
+	}
+	assertEqualJSON(t, readDoc(t, path), baseline)
+}
+
+func TestLegacyApplyCleanupAndRestore(t *testing.T) {
+	for _, originalPresent := range []bool{false, true} {
+		for _, operation := range []string{"reapply", "switch", "restore"} {
+			t.Run(fmt.Sprintf("original=%t/%s", originalPresent, operation), func(t *testing.T) {
+				s := testStore(t)
+				path := filepath.Join(t.TempDir(), "settings.json")
+				env := map[string]any{"KEEP": "原始值"}
+				if originalPresent {
+					for key := range legacyDisplayEnv() {
+						env[key] = "原始 " + key
+					}
+				}
+				baseline := map[string]any{"env": env, "other": true}
+				writeDoc(t, path, baseline, 0600)
+				first := testProfile("first", "profile-a", "secret-a", "first")
+				installLegacyApply(t, s, first, path)
+				before := readDoc(t, path)
+				readObject(t, before, "env")["KEEP"] = "用户编辑"
+				env["KEEP"] = "用户编辑"
+				writeDoc(t, path, before, 0600)
+				if operation == "restore" {
+					if err := Restore(s, path); err != nil {
+						t.Fatal(err)
+					}
+					assertEqualJSON(t, readDoc(t, path), baseline)
+					return
+				}
+				profile := first
+				if operation == "switch" {
+					profile = testProfile("second", "profile-b", "secret-b", "second")
+				}
+				if err := Apply(s, profile, path); err != nil {
+					t.Fatal(err)
+				}
+				live := readDoc(t, path)
+				liveEnv := readObject(t, live, "env")
+				for key := range legacyDisplayEnv() {
+					assertEqualJSON(t, fieldValueOf(liveEnv, key), fieldValueOf(env, key))
+					liveEnv[key] = "清理后用户修改 " + key
+				}
+				writeDoc(t, path, live, 0600)
+				// 重复 apply 和切换 profile 都不能再次接管已释放的变量。
+				for _, next := range []config.Profile{profile, first} {
+					if err := Apply(s, next, path); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := Restore(s, path); err != nil {
+					t.Fatal(err)
+				}
+				for key := range legacyDisplayEnv() {
+					env[key] = "清理后用户修改 " + key
+				}
+				assertEqualJSON(t, readDoc(t, path), baseline)
+			})
+		}
+	}
+}
+
+func TestLegacyDisplayEnvConflictRejectsEntireOperation(t *testing.T) {
+	for key := range legacyDisplayEnv() {
+		for _, operation := range []string{"apply", "restore"} {
+			t.Run(key+"/"+operation, func(t *testing.T) {
+				s := testStore(t)
+				path := filepath.Join(t.TempDir(), "settings.json")
+				profile := testProfile("alpha", "profile-a", "secret-a", "alpha")
+				installLegacyApply(t, s, profile, path)
+				live := readDoc(t, path)
+				readObject(t, live, "env")[key] = "用户修改"
+				writeDoc(t, path, live, 0600)
+				before := mustJournal(t, s)
+				var err error
+				if operation == "apply" {
+					err = Apply(s, profile, path)
+				} else {
+					err = Restore(s, path)
+				}
+				if err == nil {
+					t.Fatal("旧受管字段冲突时应拒绝整体操作")
+				}
+				assertEqualJSON(t, readDoc(t, path), live)
+				assertEqualJSON(t, mustJournal(t, s), before)
+			})
+		}
+	}
+}
+
+func TestLegacyCreatedSettingsRemovedAfterCleanupAndRestore(t *testing.T) {
+	s := testStore(t)
+	path := filepath.Join(t.TempDir(), "settings.json")
+	profile := testProfile("alpha", "profile-a", "secret-a", "alpha")
+	installLegacyApply(t, s, profile, path)
+	if err := Apply(s, profile, path); err != nil {
+		t.Fatal(err)
+	}
+	if err := Restore(s, path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("旧版创建的 settings 清理并恢复后应删除：%v", err)
+	}
+}
+
+func TestInterruptedLegacyApplyCleanup(t *testing.T) {
+	for _, phase := range []string{"legacy", "cleanup"} {
+		for _, written := range []bool{false, true} {
+			for _, operation := range []string{"apply", "restore", "conflict-apply", "conflict-restore"} {
+				t.Run(fmt.Sprintf("%s/written=%t/%s", phase, written, operation), func(t *testing.T) {
+					s := testStore(t)
+					path := filepath.Join(t.TempDir(), "settings.json")
+					baseline := map[string]any{"env": map[string]any{
+						"ANTHROPIC_DEFAULT_OPUS_MODEL_NAME":          "原始名称",
+						"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "0",
+					}}
+					writeDoc(t, path, baseline, 0600)
+					profile := testProfile("alpha", "profile-a", "secret-a", "alpha")
+					j := installLegacyApply(t, s, profile, path)
+					prior := j.Original.Data
+					j.Prior = originalValues(j.Managed)
+					if phase == "cleanup" {
+						prior = cloneMap(j.Applied.Data)
+						j.Prior = appliedValues(j.Managed)
+						for key := range legacyDisplayEnv() {
+							change := j.Managed.Env[key]
+							change.Applied = change.Original
+							j.Managed.Env[key] = change
+							delete(readObject(t, j.Applied.Data, "env"), key)
+						}
+						for key, value := range readObject(t, baseline, "env") {
+							readObject(t, j.Applied.Data, "env")[key] = value
+						}
+					}
+					j.Status = "pending"
+					j.Goal = appliedValues(j.Managed)
+					if written {
+						writeDoc(t, path, j.Applied.Data, 0600)
+					} else {
+						writeDoc(t, path, prior, 0600)
+					}
+					if err := writeJournal(s, j); err != nil {
+						t.Fatal(err)
+					}
+					if strings.HasPrefix(operation, "conflict-") {
+						live := readDoc(t, path)
+						readObject(t, live, "env")["ANTHROPIC_DEFAULT_OPUS_MODEL_NAME"] = "中断期间用户修改"
+						writeDoc(t, path, live, 0600)
+						var err error
+						if operation == "conflict-apply" {
+							err = Apply(s, profile, path)
+						} else {
+							err = Restore(s, path)
+						}
+						if err == nil {
+							t.Fatal("中断期间旧受管字段冲突时应拒绝续写")
+						}
+						assertEqualJSON(t, readDoc(t, path), live)
+						assertEqualJSON(t, mustJournal(t, s), j)
+						return
+					}
+					if operation == "apply" {
+						if err := Apply(s, profile, path); err != nil {
+							t.Fatal(err)
+						}
+						live := readDoc(t, path)
+						liveEnv := readObject(t, live, "env")
+						for key := range legacyDisplayEnv() {
+							assertEqualJSON(t, fieldValueOf(liveEnv, key), valueAt(baseline, "env", key))
+							liveEnv[key] = "恢复中断后用户修改 " + key
+							readObject(t, baseline, "env")[key] = liveEnv[key]
+						}
+						writeDoc(t, path, live, 0600)
+					}
+					if err := Restore(s, path); err != nil {
+						t.Fatal(err)
+					}
+					assertEqualJSON(t, readDoc(t, path), baseline)
+				})
+			}
+		}
 	}
 }
 
@@ -699,8 +944,11 @@ func TestFableApplySwitchAndRestore(t *testing.T) {
 	}
 	root := readDoc(t, path)
 	env := readObject(t, root, "env")
-	if env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != binding.PublicModel || env["ANTHROPIC_DEFAULT_FABLE_MODEL_NAME"] != "target-opus" || env["ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION"] != "Fable" {
-		t.Fatal("Fable 别名或展示信息未应用")
+	if env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != binding.PublicModel || env["ANTHROPIC_DEFAULT_FABLE_MODEL_NAME"] != "原展示名" {
+		t.Fatal("Fable 别名未应用或未受管的展示变量被修改")
+	}
+	if _, exists := env["ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION"]; exists {
+		t.Fatal("apply 不应写入 Fable 展示环境变量")
 	}
 	picker := readObject(t, root, "modelPicker")
 	options := picker["options"].([]any)
@@ -711,6 +959,9 @@ func TestFableApplySwitchAndRestore(t *testing.T) {
 	for _, option := range options {
 		if item, ok := option.(map[string]any); ok && item["model"] == binding.PublicModel {
 			found = true
+			if item["label"] != "target-opus" || item["description"] != "Fable" {
+				t.Fatal("模型菜单未应用 Fable 展示信息")
+			}
 		}
 	}
 	if !found {
@@ -720,7 +971,7 @@ func TestFableApplySwitchAndRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	env = readObject(t, readDoc(t, path), "env")
-	if env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != "claude-second-fable" || env["ANTHROPIC_DEFAULT_FABLE_MODEL_NAME"] != "target-fable" || env["ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION"] != "Fable" {
+	if env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != "claude-second-fable" || env["ANTHROPIC_DEFAULT_FABLE_MODEL_NAME"] != "原展示名" {
 		t.Fatal("切换 profile 后未更新 Fable 映射")
 	}
 	root = readDoc(t, path)
