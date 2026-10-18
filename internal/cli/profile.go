@@ -75,6 +75,7 @@ func profileShowCommand(openStore storeFactory) *cobra.Command {
 				if !ok {
 					continue
 				}
+				b = s.DisplayBinding(slot, b)
 				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  %s: %s -> %s/%s", slot, b.PublicModel, b.Connection, b.TargetModel); err != nil {
 					return err
 				}
@@ -84,7 +85,7 @@ func profileShowCommand(openStore storeFactory) *cobra.Command {
 					}
 				}
 				if b.Description != "" {
-					if _, err := fmt.Fprintf(cmd.OutOrStdout(), " — %s", b.Description); err != nil {
+					if _, err := fmt.Fprintf(cmd.OutOrStdout(), " / %s", b.Description); err != nil {
 						return err
 					}
 				}

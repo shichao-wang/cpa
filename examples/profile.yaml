@@ -5,14 +5,11 @@ models:
     public_model: claude-REPLACE-WITH-OFFICIAL-PUBLIC-ID-OPUS
     connection: example
     target_model: REPLACE-WITH-UPSTREAM-MODEL-ID
-    label: 主力模型映射
   sonnet:
     public_model: claude-REPLACE-WITH-OFFICIAL-PUBLIC-ID-SONNET
     connection: example
     target_model: REPLACE-WITH-UPSTREAM-MODEL-ID
-    label: 均衡模型映射
   haiku:
     public_model: claude-REPLACE-WITH-OFFICIAL-PUBLIC-ID-HAIKU
     connection: example
     target_model: REPLACE-WITH-UPSTREAM-MODEL-ID
-    label: 快速模型映射

@@ -178,7 +178,7 @@ func Apply(s *store.Store, profile config.Profile, settingsPath string) error {
 				change.Applied = fieldValue{}
 				fields.Root[name] = change
 			}
-			desiredEnv := profileEnvironment(profile, listen, secret)
+			desiredEnv := profileEnvironment(state, profile, listen, secret)
 			for key, value := range desiredEnv {
 				if _, ok := fields.Env[key]; !ok {
 					fields.Env[key] = fieldChange{Original: valueAt(original.Data, "env", key)}
@@ -195,7 +195,7 @@ func Apply(s *store.Store, profile config.Profile, settingsPath string) error {
 				fields.Picker[name] = fieldChange{Original: fields.Picker[name].Original, Applied: v}
 			}
 
-			activeOptions := profileOptions(profile)
+			activeOptions := profileOptions(state, profile)
 			for id, option := range fields.Options {
 				for _, key := range managedOptionNames {
 					change, ok := option.Fields[key]
@@ -462,7 +462,7 @@ func validateProfileModels(profile config.Profile) error {
 	return nil
 }
 
-func profileEnvironment(profile config.Profile, listen, secret string) map[string]fieldValue {
+func profileEnvironment(state *config.State, profile config.Profile, listen, secret string) map[string]fieldValue {
 	values := map[string]fieldValue{
 		"ANTHROPIC_BASE_URL":                         {Present: true, Value: "http://" + strings.TrimPrefix(listen, "http://")},
 		"ANTHROPIC_AUTH_TOKEN":                       {Present: true, Value: secret},
@@ -475,7 +475,7 @@ func profileEnvironment(profile config.Profile, listen, secret string) map[strin
 		"CLAUDE_CODE_SUBAGENT_MODEL":                 {Present: true, Value: profile.Models["haiku"].PublicModel},
 	}
 	for _, slot := range config.Slots {
-		binding := profile.Models[slot]
+		binding := state.DisplayBinding(slot, profile.Models[slot])
 		prefix := "ANTHROPIC_DEFAULT_" + strings.ToUpper(slot) + "_MODEL"
 		values[prefix] = fieldValue{Present: true, Value: binding.PublicModel}
 		values[prefix+"_NAME"] = fieldValue{Present: true, Value: binding.Label}
@@ -484,9 +484,10 @@ func profileEnvironment(profile config.Profile, listen, secret string) map[strin
 	return values
 }
 
-func profileOptions(profile config.Profile) map[string]map[string]any {
+func profileOptions(state *config.State, profile config.Profile) map[string]map[string]any {
 	options := make(map[string]map[string]any, len(profile.Models))
-	for _, binding := range profile.Models {
+	for slot, binding := range profile.Models {
+		binding = state.DisplayBinding(slot, binding)
 		options[binding.PublicModel] = map[string]any{"label": binding.Label, "description": binding.Description}
 	}
 	return options

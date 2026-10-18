@@ -629,29 +629,6 @@ td .hint {
   font-size: 11px;
   color: var(--muted-foreground);
 }
-.mapping-options {
-  border-top: 1px solid var(--border);
-  padding-top: 15px;
-  margin-top: 4px;
-}
-.mapping-options > summary {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11px;
-  color: var(--muted-foreground);
-  list-style: none;
-}
-.mapping-options > summary > svg {
-  width: 13px;
-  height: 13px;
-}
-.mapping-options[open] > summary {
-  margin-bottom: 17px;
-}
-.mapping-options .field:last-child {
-  margin-bottom: 0;
-}
 .mapping-preview {
   border: 1px solid var(--border);
   border-radius: 8px;

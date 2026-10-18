@@ -53,8 +53,9 @@ type Binding struct {
 	PublicModel string `json:"public_model" yaml:"public_model"`
 	Connection  string `json:"connection" yaml:"connection"`
 	TargetModel string `json:"target_model" yaml:"target_model"`
-	Label       string `json:"label" yaml:"label"`
-	Description string `json:"description" yaml:"description"`
+	// Label 和 Description 仅保留用于读取已有 schema 3 状态；展示时统一派生，不接受配置输入。
+	Label       string `json:"label,omitempty" yaml:"-"`
+	Description string `json:"description,omitempty" yaml:"-"`
 }
 type Profile struct {
 	Name   string             `json:"name"`

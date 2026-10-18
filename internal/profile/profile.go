@@ -80,21 +80,8 @@ func Create(st *store.Store, file File) (string, error) {
 			return err
 		}
 		for slot, binding := range p.Models {
-			if strings.TrimSpace(binding.Label) == "" {
-				binding.Label = binding.TargetModel
-				for _, model := range s.Connections[binding.Connection].Models {
-					if model.ID == binding.TargetModel && model.Name != "" {
-						binding.Label = model.Name
-					}
-				}
-			}
-			if strings.TrimSpace(binding.Description) == "" {
-				binding.Description = fmt.Sprintf("%s / %s", binding.Connection, binding.TargetModel)
-			}
+			binding.Label, binding.Description = "", ""
 			p.Models[slot] = binding
-		}
-		if err := s.ValidateProfileStructure(p); err != nil {
-			return err
 		}
 		s.Profiles[name] = p
 		s.Secrets[keyRef] = key
@@ -126,6 +113,7 @@ func Update(st *store.Store, name string, file File) error {
 				p.Models = make(map[string]config.Binding)
 			}
 			for slot, binding := range file.Models {
+				binding.Label, binding.Description = "", ""
 				p.Models[slot] = binding
 			}
 		}

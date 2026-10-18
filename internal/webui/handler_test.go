@@ -156,15 +156,27 @@ func TestConfigurationFlow(t *testing.T) {
 	if strings.Contains(body, profileKey) || strings.Contains(body, "keyRef") || strings.Contains(body, "rotated-test-secret") {
 		t.Fatal("状态视图不得导出 key")
 	}
+	if !strings.Contains(body, `"label":"actual"`) || !strings.Contains(body, `"description":"Opus"`) {
+		t.Fatal("状态视图应返回自动生成的模型名称和档位")
+	}
 	call("DELETE", "connections/local", "", 409)
 	call("PATCH", "connections/local", `{"models":[{"id":"other"}]}`, 409)
 	call("PATCH", "connections/local", `{"authType":"codex-oauth"}`, 400)
-	updated := call("PATCH", "profiles/daily", `{"models":{"sonnet":{"public_model":"claude-sonnet","connection":"local","target_model":"actual","label":"更新展示名"}}}`, 200)
+	for _, field := range []string{"label", "description"} {
+		for _, method := range []string{"POST", "PATCH"} {
+			path := "profiles"
+			if method == "PATCH" {
+				path += "/daily"
+			}
+			call(method, path, `{"models":{"sonnet":{"public_model":"claude-sonnet","connection":"local","target_model":"actual","`+field+`":"不允许配置"}}}`, 400)
+		}
+	}
+	updated := call("PATCH", "profiles/daily", `{"models":{"sonnet":{"public_model":"claude-sonnet-updated","connection":"local","target_model":"actual"}}}`, 200)
 	if strings.Contains(updated, profileKey) || strings.Contains(updated, "profileKey") {
 		t.Fatal("更新响应不得再次返回 key")
 	}
 	s, _ = st.Read()
-	if s.Profiles["daily"].Models["sonnet"].Label != "更新展示名" || s.Secrets[s.Profiles["daily"].KeyRef] != profileKey {
+	if s.Profiles["daily"].Models["sonnet"].PublicModel != "claude-sonnet-updated" || s.Secrets[s.Profiles["daily"].KeyRef] != profileKey {
 		t.Fatal("profile 更新应保留 key 与其他档位")
 	}
 	settings := filepath.Join(t.TempDir(), "settings.json")

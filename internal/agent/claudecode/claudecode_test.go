@@ -127,7 +127,7 @@ func TestApplyAndRestoreNewSettings(t *testing.T) {
 	for _, slot := range config.Slots {
 		prefix := "ANTHROPIC_DEFAULT_" + strings.ToUpper(slot) + "_MODEL"
 		binding := profile.Models[slot]
-		if env[prefix] != binding.PublicModel || env[prefix+"_NAME"] != binding.Label || env[prefix+"_DESCRIPTION"] != binding.Description {
+		if env[prefix] != binding.PublicModel || env[prefix+"_NAME"] != "target-"+slot || env[prefix+"_DESCRIPTION"] != map[string]string{"opus": "Opus", "sonnet": "Sonnet", "haiku": "Haiku"}[slot] {
 			t.Fatalf("unexpected %s settings: %#v", slot, env)
 		}
 	}
@@ -162,6 +162,92 @@ func TestApplyAndRestoreNewSettings(t *testing.T) {
 	}
 	if err := Restore(s, path); err == nil {
 		t.Fatal("repeated restore should be rejected")
+	}
+}
+
+func TestApplyDerivesDisplayFromCurrentUpstreamAndSlot(t *testing.T) {
+	s := testStore(t)
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := s.Update(func(state *config.State) error {
+		connection := state.Connections["mock"]
+		connection.Models = append(connection.Models, []config.Model{
+			{ID: "gpt-6.1-sol", Name: "GPT-6.1-Sol"},
+			{ID: "gpt-6-luna"},
+			{ID: "internal-model", Name: "团队模型"},
+			{ID: "unknown-model"},
+		}...)
+		state.Connections["mock"] = connection
+		profile := state.Profiles["alpha"]
+		for slot, target := range map[string]string{"opus": "gpt-6.1-sol", "sonnet": "internal-model", "haiku": "gpt-6-luna"} {
+			binding := profile.Models[slot]
+			binding.TargetModel = target
+			// 已有 schema 3 状态中的自定义值也不能覆盖自动展示。
+			binding.Label, binding.Description = "旧名称", "旧说明"
+			profile.Models[slot] = binding
+		}
+		state.Profiles["alpha"] = profile
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	state, err := s.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := state.Profiles["alpha"]
+	check := func(want map[string][2]string) {
+		t.Helper()
+		if err := Apply(s, profile, path); err != nil {
+			t.Fatal(err)
+		}
+		root := readDoc(t, path)
+		env := readObject(t, root, "env")
+		picker := readObject(t, root, "modelPicker")
+		options := picker["options"].([]any)
+		for slot, display := range want {
+			prefix := "ANTHROPIC_DEFAULT_" + strings.ToUpper(slot) + "_MODEL"
+			if env[prefix+"_NAME"] != display[0] || env[prefix+"_DESCRIPTION"] != display[1] {
+				t.Fatalf("%s 环境变量展示不符：%v / %v", slot, env[prefix+"_NAME"], env[prefix+"_DESCRIPTION"])
+			}
+			found := false
+			for _, option := range options {
+				item := option.(map[string]any)
+				if item["model"] == profile.Models[slot].PublicModel {
+					found = true
+					if item["label"] != display[0] || item["description"] != display[1] {
+						t.Fatalf("%s 选择器展示不符：%v", slot, item)
+					}
+				}
+			}
+			if !found {
+				t.Fatalf("选择器缺少 %s 档位", slot)
+			}
+		}
+	}
+	check(map[string][2]string{"opus": {"GPT 6.1 Sol", "Opus"}, "sonnet": {"团队模型", "Sonnet"}, "haiku": {"GPT 6 Luna", "Haiku"}})
+	if err := s.Update(func(state *config.State) error {
+		p := state.Profiles["alpha"]
+		binding := p.Models["opus"]
+		binding.TargetModel = "gpt-6-luna"
+		p.Models["opus"] = binding
+		binding = p.Models["sonnet"]
+		binding.TargetModel = "unknown-model"
+		p.Models["sonnet"] = binding
+		state.Profiles["alpha"] = p
+		connection := state.Connections["mock"]
+		for i := range connection.Models {
+			if connection.Models[i].ID == "gpt-6-luna" {
+				connection.Models[i].Name = "更新后的模型名称"
+			}
+		}
+		state.Connections["mock"] = connection
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	check(map[string][2]string{"opus": {"更新后的模型名称", "Opus"}, "sonnet": {"unknown-model", "Sonnet"}, "haiku": {"更新后的模型名称", "Haiku"}})
+	if err := Restore(s, path); err != nil {
+		t.Fatal(err)
 	}
 }
 
