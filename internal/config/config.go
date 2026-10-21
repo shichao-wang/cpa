@@ -170,10 +170,20 @@ func ValidateProfileModels(models map[string]Binding) error {
 	return nil
 }
 
+// ValidateAgent 校验支持的下游 Agent。
+func ValidateAgent(agent string) error {
+	switch agent {
+	case "claude-code", "claude-desktop":
+		return nil
+	default:
+		return fmt.Errorf("仅支持 claude-code 或 claude-desktop")
+	}
+}
+
 // ValidateProfileStructure 校验 profile 的结构和模型引用，不要求 OAuth 凭证已登录。
 func (s *State) ValidateProfileStructure(p Profile) error {
-	if p.Agent != "claude-code" {
-		return fmt.Errorf("首期仅支持 claude-code")
+	if err := ValidateAgent(p.Agent); err != nil {
+		return err
 	}
 	if err := ValidateProfileModels(p.Models); err != nil {
 		return err

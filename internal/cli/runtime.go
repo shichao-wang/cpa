@@ -7,7 +7,9 @@ import (
 	"net"
 	"strconv"
 
+	"github.com/shichao-wang/cpa/internal/agent"
 	"github.com/shichao-wang/cpa/internal/agent/claudecode"
+	"github.com/shichao-wang/cpa/internal/agent/claudedesktop"
 	"github.com/shichao-wang/cpa/internal/codexoauth"
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/server"
@@ -34,16 +36,7 @@ func NewAppCommand() *cobra.Command {
 			if err != nil {
 				return false, err
 			}
-			state, err := s.Read()
-			if err != nil {
-				return false, err
-			}
-			for name, p := range state.Profiles {
-				if p.ID == id {
-					return claudecode.IsManagedProfile(s, name), nil
-				}
-			}
-			return false, nil
+			return agent.ReferencesProfileID(s, id)
 		},
 	})
 	root.AddCommand(serverCommand(openStore))
@@ -141,8 +134,8 @@ func serverCommand(openStore storeFactory) *cobra.Command {
 	return parent
 }
 func applyCommand(openStore storeFactory) *cobra.Command {
-	var settings string
-	cmd := &cobra.Command{Use: "apply <name>", Short: "将 profile 持久应用到 Claude Code 用户配置", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	var settings, configDir string
+	cmd := &cobra.Command{Use: "apply <name>", Short: "按 profile 的 Agent 应用客户端配置", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		s, err := openStore()
 		if err != nil {
 			return err
@@ -155,29 +148,62 @@ func applyCommand(openStore storeFactory) *cobra.Command {
 		if !ok {
 			return fmt.Errorf("profile 不存在：%s", args[0])
 		}
-		if err = claudecode.Apply(s, p, settings); err != nil {
-			return err
+		switch p.Agent {
+		case "claude-code":
+			if cmd.Flags().Changed("config-dir") {
+				return fmt.Errorf("Claude Code 不接受 --config-dir，请使用 --settings")
+			}
+			if err = claudecode.Apply(s, p, settings); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "profile 已应用；请启动新的 Claude Code 会话。当前 shell 或项目配置可能覆盖用户设置。")
+		case "claude-desktop":
+			if cmd.Flags().Changed("settings") {
+				return fmt.Errorf("Claude Desktop 不接受 --settings，请使用 --config-dir")
+			}
+			if err = claudedesktop.Apply(s, p, configDir); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "profile 已应用；请启动 Claude Desktop。切换配置前须完整退出 App。")
+		default:
+			return config.ValidateAgent(p.Agent)
 		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), "profile 已应用；请启动新的 Claude Code 会话。当前 shell 或项目配置可能覆盖用户设置。")
 		return err
 	}}
 	cmd.Flags().StringVar(&settings, "settings", "", "Claude Code settings 路径（默认 ~/.claude/settings.json）")
+	cmd.Flags().StringVar(&configDir, "config-dir", "", "Desktop 的 Application Support 根目录（内含 Claude 和 Claude-3p；默认当前用户目录）")
 	return cmd
 }
 func restoreCommand(openStore storeFactory) *cobra.Command {
-	var settings string
+	var settings, configDir, targetAgent string
 	cmd := &cobra.Command{Use: "restore", Short: "仅恢复由 cpa 接管的配置", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		if err := config.ValidateAgent(targetAgent); err != nil {
+			return err
+		}
+		if targetAgent == "claude-code" && cmd.Flags().Changed("config-dir") {
+			return fmt.Errorf("Claude Code 不接受 --config-dir，请使用 --settings")
+		}
+		if targetAgent == "claude-desktop" && cmd.Flags().Changed("settings") {
+			return fmt.Errorf("Claude Desktop 不接受 --settings，请使用 --config-dir")
+		}
 		s, err := openStore()
 		if err != nil {
 			return err
 		}
-		if err = claudecode.Restore(s, settings); err != nil {
+		if targetAgent == "claude-desktop" {
+			err = claudedesktop.Restore(s, configDir)
+		} else {
+			err = claudecode.Restore(s, settings)
+		}
+		if err != nil {
 			return err
 		}
 		_, err = fmt.Fprintln(cmd.OutOrStdout(), "已恢复受管配置并解除 cpa 接管")
 		return err
 	}}
 	cmd.Flags().StringVar(&settings, "settings", "", "之前应用的 Claude Code settings 路径")
+	cmd.Flags().StringVar(&configDir, "config-dir", "", "之前应用的 Desktop Application Support 根目录")
+	cmd.Flags().StringVar(&targetAgent, "agent", "claude-code", "要恢复的 Agent（claude-code 或 claude-desktop）")
 	return cmd
 }
 

@@ -913,6 +913,75 @@ func TestIsManagedProfileUsesProfileIDWhenNamesAreReused(t *testing.T) {
 	}
 }
 
+func TestApplyRejectsStoredAgentChange(t *testing.T) {
+	s := testStore(t)
+	path := filepath.Join(t.TempDir(), "settings.json")
+	stale := testProfile("alpha", "profile-a", "secret-a", "alpha")
+	if err := s.Update(func(state *config.State) error {
+		p := state.Profiles["alpha"]
+		p.Agent = "claude-desktop"
+		state.Profiles["alpha"] = p
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Apply(s, stale, path); err == nil {
+		t.Fatal("存储中的 agent 已切换后，不应使用过期 profile 应用 Claude Code 设置")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("拒绝应用后不应产生 settings：%v", err)
+	}
+	if _, err := os.Stat(journalPath(s)); !os.IsNotExist(err) {
+		t.Fatalf("拒绝应用后不应产生管理记录：%v", err)
+	}
+}
+
+func TestReferencesProfileIDProtectsPendingSwitchAndFailsClosed(t *testing.T) {
+	s := testStore(t)
+	if referenced, err := ReferencesProfileID(s, "profile-a"); err != nil || referenced {
+		t.Fatalf("未接管配置不应有引用：%v %v", referenced, err)
+	}
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := Apply(s, testProfile("first", "profile-a", "secret-a", "first"), path); err != nil {
+		t.Fatal(err)
+	}
+	if err := Apply(s, testProfile("second", "profile-b", "secret-b", "second"), path); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		id   string
+		want bool
+	}{{"profile-a", false}, {"profile-b", true}, {"other-id", false}} {
+		got, err := ReferencesProfileID(s, test.id)
+		if err != nil || got != test.want {
+			t.Fatalf("已提交切换 %s 引用错误：%v %v", test.id, got, err)
+		}
+	}
+	j := mustJournal(t, s)
+	j.Status = "pending"
+	if err := writeJournal(s, j); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"profile-a", "profile-b"} {
+		if got, err := ReferencesProfileID(s, id); err != nil || !got {
+			t.Fatalf("待完成切换应同时保护新旧 profile %s：%v %v", id, got, err)
+		}
+	}
+	j.PriorProfileID = ""
+	if err := writeJournal(s, j); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReferencesProfileID(s, "other-id"); err == nil {
+		t.Fatal("旧 profile 引用损坏时必须返回错误")
+	}
+	if err := os.WriteFile(journalPath(s), []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReferencesProfileID(s, "other-id"); err == nil {
+		t.Fatal("管理记录无法解析时必须返回错误")
+	}
+}
+
 func mustJournal(t *testing.T, s *store.Store) *journal {
 	t.Helper()
 	j, err := readJournal(s)

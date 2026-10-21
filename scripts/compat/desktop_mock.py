@@ -24,10 +24,18 @@ MODELS = [('sonnet', 'claude-sonnet-4-6'), ('opus', 'claude-opus-4-6'),
 
 
 def private_json(path, value):
-    with open(path, 'w', opener=lambda p, f: os.open(p, f, 0o600)) as stream:
-        json.dump(value, stream, ensure_ascii=False, indent=2)
-        stream.write('\n')
-    path.chmod(0o600)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(value, stream, ensure_ascii=False, indent=2)
+            stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary and temporary.exists():
+            temporary.unlink()
 
 
 class ResponseEvidence:
@@ -157,7 +165,7 @@ class Evidence:
                     desktop_ui_verified=False)
 
 
-def upstream_handler(evidence, fixture):
+def upstream_handler(evidence, fixture, scenario_file=None):
     original = base.handler(evidence)
 
     class Handler(original):
@@ -165,6 +173,18 @@ def upstream_handler(evidence, fixture):
             body = self.rfile.read(int(self.headers.get('content-length', '0')))
             payload = json.loads(body)
             evidence.write('cpa-to-responses', self, body)
+            scenario = 'normal'
+            if scenario_file and scenario_file.exists():
+                scenario = json.loads(scenario_file.read_text()).get('mode', 'normal')
+            if scenario == 'error':
+                self.send_response(400)
+                self.send_header('content-type', 'application/json')
+                self.send_header('connection', 'close')
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': {'type': 'invalid_request_error',
+                    'message': 'CPA_DESKTOP_MOCK_ERROR'}}).encode())
+                self.close_connection = True
+                return
             inputs = payload.get('input', [])
             tool_case = TOOL_MARKER in json.dumps(inputs)
             has_result = any(isinstance(item, dict) and item.get('type') == 'function_call_output'
@@ -201,6 +221,21 @@ def upstream_handler(evidence, fixture):
             for event, data in events:
                 self.wfile.write(f'event: {event}\ndata: {json.dumps(data)}\n\n'.encode())
                 self.wfile.flush()
+                if scenario == 'slow' and event == 'response.output_text.delta':
+                    # 保持流式写入，供真实 UI 点击停止；不等待整段回复后再发送。
+                    interrupted = False
+                    try:
+                        for _ in range(80):
+                            time.sleep(0.25)
+                            tick = dict(data, delta=' .')
+                            self.wfile.write(f'event: {event}\ndata: {json.dumps(tick)}\n\n'.encode())
+                            self.wfile.flush()
+                    except OSError:
+                        interrupted = True
+                    evidence.write('mock-slow-stream', self, b'', interrupted=interrupted)
+                    if interrupted:
+                        self.close_connection = True
+                        return
             self.close_connection = True
     return Handler
 
@@ -291,7 +326,9 @@ class DesktopMock:
             self.fixture = self.work / 'fixture.txt'
             self.fixture.write_text(MARKER + '\n')
             self.fixture.chmod(0o600)
-            upstream = self.stack.enter_context(base.server(upstream_handler(self.evidence, self.fixture)))
+            self.scenario_file = self.root / 'scenario.json'
+            private_json(self.scenario_file, dict(mode='normal'))
+            upstream = self.stack.enter_context(base.server(upstream_handler(self.evidence, self.fixture, self.scenario_file)))
             model_file = self.root / 'models.yaml'
             model_file.write_text('models:\n  - id: gpt-6.1-sol\n')
             self.command('connection', 'add', 'desktop-mock', '--protocol', 'responses', '--base-url',
@@ -321,6 +358,7 @@ class DesktopMock:
             self.manifest = dict(run_id=self.evidence.run_id, temporary_root=str(self.root), user_data=str(self.user_data),
                                  workspace=str(self.work), fixture=str(self.fixture), gateway=self.endpoint,
                                  stop_file=str(self.root / 'STOP'),
+                                 scenario_file=str(self.scenario_file),
                                  chat_prompt=f'Reply exactly {MARKER}. Do not use tools.',
                                  code_prompt=f'{TOOL_MARKER}: Use Read to read fixture.txt, then reply exactly its contents.')
             private_json(self.output / 'session.json', self.manifest)

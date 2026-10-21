@@ -1,6 +1,6 @@
 # Claude Desktop 兼容性报告
 
-调查日期为 2026 年 10 月 21 日。已核实安装包配置契约，并用当前安装的 Desktop 完成 Chat 文本、本地 Code Read 工具往返和四档模型选择的本地 mock 验证。取消与错误恢复仍待补充。
+调查日期为 2026 年 10 月 21 日。已核实安装包配置契约，并用当前安装的 Desktop 完成 Chat 文本、本地 Code Read 工具往返和四档模型选择的本地 mock 验证。产品 apply/restore、Chat 取消与错误恢复也已完成真实 App 加本地 mock 验收。Cowork 不在首期交付范围。
 
 本报告属于 [Issue #17](https://github.com/shichao-wang/cpa/issues/17) 的 MR1 验证结果。需求以 Issue Desc 为准，实施 Plan 和后续进展在 Issue Discussion 中维护。
 
@@ -106,12 +106,20 @@ macOS 的内置清单提供应用 bundle，因此主文件偏移 `4114953` 的 `
 | HTTP loopback 配置校验 | `static_verified` | URL 校验逻辑接受三个明确主机名。 |
 | 受限沙箱下的独立 userData 启动 | `blocked` | Chromium helper 的嵌套沙箱初始化失败；改用用户授权的临时 Desktop 配置接管。 |
 | Chat 文本与 SSE | `passed` | 真实 Chat 界面显示 `CPA_DESKTOP_OK`，观测到 Messages → cpa → Responses mock 和 HTTP 200/SSE。 |
-| Chat 工具调用、取消与错误 | `not_run` | 尚无真实 Desktop 对应流程证据。 |
+| Chat 取消与错误 | `passed` | 真实界面显示 mock HTTP 400，恢复后重试成功；Stop 后界面显示 interrupted，上游 mock 流断开，后续对话成功。Chat 工具未作为独立验收项。 |
 | 本地 Code 文本与工具往返 | `passed` | 内嵌 Code `2.1.286` 执行 Read 读取临时 fixture，匹配 call ID 的结果经过双侧并显示预期文本。 |
 | 四档选择、默认模型与辅助请求 | `passed` | 默认 Sonnet；Code 选择 Opus、Haiku、Fable 后均返回预期文本。观察到四个完整公开 ID、Haiku 辅助请求和 count_tokens。 |
-| 配置切换、完整重启与恢复 | `partial` | 手工临时配置切换、完整启动和原配置恢复回读通过；产品 apply/restore 生命周期待 MR2。 |
-| Cowork | `not_run` | 尚未完成独立验收。 |
+| 配置切换、完整重启与恢复 | `passed` | 产品 apply 后完整启动，Chat 与 Code Read 通过；退出后产品 restore 并逐字段回读原值，管理记录移除。重复 apply、profile 切换及 Code/Desktop 并存由临时目录 CLI/API 测试覆盖。 |
+| Cowork | `out_of_scope` | 首期仅交付 Chat 与本地 Code，派生配置显式关闭 Cowork，不创建 MR4 或宣称兼容。 |
 
 真实客户端证据应同时记录版本、隔离方法、请求实际路径、模型 ID、认证方式和模拟响应结果。输出中不得保留认证 header 或凭证。只有完成目标界面的实际请求、预期输出和清理回读，才能把对应项目改为通过；HTTP 200、静态样本或测试驱动自测均不能替代客户端验收。
 
 本次实际 UI 验证的 run ID 为 `8cccfe07-9ab6-4c6e-aee1-906103f8bb75`。所有观测到的下游认证与临时 profile key 相符，所有记录的 HTTP 结果为 200。原始脱敏请求形状、UI 观察记录与恢复结果留在本机私有临时证据目录，不提交真实配置。旧版 harness 的摘要缺少请求响应关联，本次通过结论由真实 UI 与双侧记录共同确认；仓库中的新版 harness 另加请求 ID、完整响应和 Read 发出顺序检查，HTTP 自测始终不标记 Desktop UI 通过。
+
+## 产品接入补验
+
+MR2 的真实产品 run ID 为 `dc634162-00d2-40dc-aa25-38abc4f97b1e`。使用临时 cpa 状态，通过 `profile update` 把测试 profile 改为 Desktop，再执行真实 `profile apply`。App 正常沙箱启动，Code 的配置根仍为临时目录。Chat 显示预期文本，mock HTTP 400 在 UI 中可见，切回正常模式后点击 Try again 成功。慢流中点击 Stop 后界面显示 interrupted，mock 写入观察到断开；后续新消息成功。Code 在新的临时工作区执行 Read 并显示 fixture 标记，匹配的工具结果到达 Responses mock。
+
+产品配置直接使用状态派生的 cpa 监听地址，不经过观测代理，因此本轮自动摘要入站数为零，保持 `not_run` 和 `desktop_ui_verified: false`，不用于真实 UI 的通过判断。上述结论由 CUA 的实际界面和 Responses mock 记录共同确认。结束时确认主进程不存在，再调用产品 `restore --agent claude-desktop`，逐个对照日志中的原受管值回读通过，管理记录移除，临时服务停止及状态清理通过。没有修改真实 `~/.claude`，没有账户登录或真实模型调用。
+
+取消与错误的 mock 是专门的验收场景。会话摘要保留失败/断开的 HTTP 状态，不用后续成功覆盖历史错误。慢流断开本身不能区分点击 Stop 和网络断开，只有与本次实际 UI Stop 顺序结合时才构成取消证据。

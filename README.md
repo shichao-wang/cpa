@@ -239,6 +239,26 @@ apply 默认合并 `~/.claude/settings.json`，也可通过 `--settings` 指定�
 
 restore **仅对有有效 cpa 接管记录的配置执行**。它恢复首次接管前的受管字段，保留无关修改；受管字段发生冲突时拒绝整体恢复。没有记录、只有备份、路径不匹配或重复 restore 均不能恢复。当前 shell 环境变量及项目级设置可能覆盖用户配置，需自行检查这些优先级。
 
+### Claude Desktop（macOS）
+
+Claude Desktop 使用独立的 `claude-desktop` profile 和下游 key，可以与 Claude Code 同时接入同一网关。已验证 Desktop 2.19675.0 的 Chat 和本地 Code，内嵌 Code 版本为 2.1.286。Cowork 首期关闭。模型选择器的上下文和能力显示来自客户端，不代表上游已验证这些能力。兼容性证据见 [报告](docs/claude-desktop-compatibility.md)。
+
+```sh
+cpa profile create desktop --agent claude-desktop --file bindings.yaml
+cpa server start
+# 完整退出 Claude Desktop 后执行。
+cpa profile apply desktop
+# 重新启动 Claude Desktop，选择 Chat 或本地 Code。
+# 恢复前也必须完整退出 App。
+cpa profile restore --agent claude-desktop
+```
+
+Desktop 默认管理 `~/Library/Application Support/Claude/` 与 `Claude-3p/` 的模式文件，以及第三方配置库中的 cpa 独立项、活动指针和混合配置指针。`--config-dir` 指向同时包含这两个目录的 Application Support 父目录，不能传入 configLibrary 自身。Claude Code 的 `--settings` 与 Desktop 的 `--config-dir` 不可混用，显式空值也按已指定处理。默认 `profile restore` 仍恢复 Claude Code。
+
+apply 不启动或结束 App，不修改真实 `~/.claude`，也不管理会话历史。组织策略、运行中的 App、损坏配置、符号链接或受管字段冲突会阻止操作。重复 apply 和切换 Desktop profile 保留首次接管基线；写入中断后，在排除冲突并退出 App 后对同一目录重试 apply 或 restore。不要删除 cpa 的 Desktop 管理记录来绕过冲突。管理记录读取失败时，删除 profile 和切换 Agent 会被拒绝；当前受管及中断切换的前后双方均受保护。
+
+schema 3 的现有 Claude Code 状态继续有效。旧 binary 可能拒绝包含 Desktop profile 的状态；回退前先用支持 Desktop 的版本分别 restore Desktop 和 Claude Code，停止网关，再使用与旧 binary 匹配的独立状态目录或原有备份。不要让旧 binary 覆盖不兼容状态，也不要把未恢复的配置留给旧版本管理。
+
 ## 更新与删除
 
 ```sh
