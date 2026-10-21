@@ -7,10 +7,12 @@ import { Label } from "@/components/ui/label";
 import { ModelPicker } from "./model-picker";
 import { CompatibilityNotice } from "./compatibility-notice";
 import {
+  agents,
   initialBindings,
   slots,
   sorted,
   type Binding,
+  type Agent,
   type GatewayState,
   type Profile,
   type Slot,
@@ -29,12 +31,16 @@ export function ProfileEditor({
 }) {
   const connections = sorted(state.connections);
   const [name, setName] = useState(profile?.name || "");
+  const [agent, setAgent] = useState<Agent>(profile?.agent || "claude-code");
   const [bindings, setBindings] = useState(() =>
     initialBindings(connections, profile || undefined),
   );
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const commandName = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(name)
+    ? name
+    : "<profile>";
   useEffect(() => {
     if (!dirty) return;
     const prevent = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -89,7 +95,7 @@ export function ProfileEditor({
       await onSave(
         profile ? "profiles/" + encodeURIComponent(profile.name) : "profiles",
         profile ? "PATCH" : "POST",
-        { models, ...(!profile ? { name: name.trim() } : {}) },
+        { agent, models, ...(!profile ? { name: name.trim() } : {}) },
       );
       setDirty(false);
       onClose();
@@ -120,7 +126,7 @@ export function ProfileEditor({
             ID、连接与上游模型。
           </p>
         </div>
-        <Badge variant="outline">独立下游 key</Badge>
+        <Badge variant="outline">{agents[agent]} · 独立下游 key</Badge>
       </div>
       <fieldset disabled={busy} className="form-fields">
         <div className="field profile-name">
@@ -139,6 +145,33 @@ export function ProfileEditor({
             placeholder="例如 daily-coding"
             autoComplete="off"
           />
+        </div>
+        <div className="field profile-name">
+          <Label htmlFor="profile-agent">Agent</Label>
+          <select
+            id="profile-agent"
+            className="native-select"
+            value={agent}
+            disabled={!!profile?.managed}
+            aria-describedby={
+              profile?.managed ? "managed-agent-hint" : undefined
+            }
+            onChange={(event) => {
+              setAgent(event.target.value as Agent);
+              setDirty(true);
+            }}
+          >
+            {Object.entries(agents).map(([id, label]) => (
+              <option key={id} value={id}>
+                {label}
+              </option>
+            ))}
+          </select>
+          {profile?.managed && (
+            <p className="hint" id="managed-agent-hint">
+              此 profile 的服务器配置受管。先恢复对应配置，再更改 Agent。
+            </p>
+          )}
         </div>
         <div className="mapping-grid">
           {slots.map((slot, i) => {
@@ -236,6 +269,43 @@ export function ProfileEditor({
             </span>
           </div>
         ))}
+      </section>
+      <section
+        className="mapping-preview profile-cli-guide"
+        aria-label="本机 CLI 接入指引"
+      >
+        <h2>{agents[agent]} 接入与恢复</h2>
+        <p className="hint">
+          在运行 {agents[agent]} 的机器上使用该机器的 cpa 状态执行。
+          网页保存只更新当前服务器的 profile，不会应用到浏览器所在机器。
+          先保存 profile，再执行以下命令。
+        </p>
+        {agent === "claude-desktop" && (
+          <p className="hint">应用或恢复前请完全退出 Claude Desktop。</p>
+        )}
+        <p>应用配置</p>
+        <code className="cli-command">cpa profile apply {commandName}</code>
+        <p>恢复配置</p>
+        <code className="cli-command">
+          {agent === "claude-desktop"
+            ? "cpa profile restore --agent claude-desktop"
+            : "cpa profile restore"}
+        </code>
+        {agent === "claude-desktop" ? (
+          <p className="hint">
+            默认使用 macOS 的 Application Support 目录，无需额外参数。
+            自定义时，在上述两条命令后添加
+            <code> --config-dir '/path/to/Application Support'</code>。
+            该目录是包含 <code>Claude/</code> 和 <code>Claude-3p/</code>{" "}
+            的父目录。
+          </p>
+        ) : (
+          <p className="hint">
+            默认使用 Claude Code
+            配置，无需额外参数。自定义时，在上述两条命令后添加
+            <code> --settings '/path/to/settings.json'</code>。
+          </p>
+        )}
       </section>
       {error && (
         <p className="feedback error" role="alert">

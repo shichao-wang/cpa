@@ -45,6 +45,7 @@ import { ConnectionEditor } from "./connection-editor";
 import { ProfileEditor } from "./profile-editor";
 import { CompatibilityNotice } from "./compatibility-notice";
 import {
+  agents,
   protocols,
   oauthStatusSchema,
   oauthPending,
@@ -984,7 +985,7 @@ function Workspace({
                           <tr>
                             <th>Profile</th>
                             <th>模型映射</th>
-                            <th>远端配置</th>
+                            <th>服务器配置</th>
                             <th>
                               <span className="sr-only">操作</span>
                             </th>
@@ -995,7 +996,9 @@ function Workspace({
                             <tr key={p.name}>
                               <td>
                                 <strong>{p.name}</strong>
-                                <p className="hint">独立下游 key</p>
+                                <p className="hint">
+                                  {agents[p.agent]} · 独立下游 key
+                                </p>
                               </td>
                               <td>
                                 <div className="profile-summary">
@@ -1014,7 +1017,9 @@ function Workspace({
                               </td>
                               <td>
                                 {p.managed ? (
-                                  <Badge variant="outline">受管</Badge>
+                                  <Badge variant="outline">
+                                    {agents[p.agent]} 受管
+                                  </Badge>
                                 ) : (
                                   <span className="muted">未应用</span>
                                 )}

@@ -160,6 +160,7 @@ test("四档映射联动、模型搜索和实际保存字段", async ({ page }) 
     ),
   );
   expect(patch).toEqual({
+    agent: "claude-code",
     models: {
       ...expected,
       opus: {
@@ -213,6 +214,173 @@ test("一次性 key 在刷新失败后仍保留，明确关闭后清除", async 
   await expect(page.getByLabel("下游 key", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("alert")).toContainText("配置已保存，但刷新失败");
 });
+
+test("创建 Desktop profile 发送 Agent 并显示对应本机接入指引", async ({
+  page,
+}) => {
+  const state = fixture();
+  let created: any;
+  await page.route("**/admin/api/**", async (route) => {
+    const request = route.request();
+    if (request.url().endsWith("/oauth/session")) {
+      await route.fulfill({ json: null });
+    } else if (request.method() === "POST") {
+      created = request.postDataJSON();
+      Object.assign(state.profiles, {
+        desktop: { ...created, managed: false },
+      });
+      await route.fulfill({
+        json: { saved: true, active: true, revision: 12 },
+      });
+    } else await route.fulfill({ json: state });
+  });
+  await connect(page);
+  await page.getByRole("button", { name: "Profiles", exact: false }).click();
+  await page.getByRole("button", { name: "创建 profile", exact: true }).click();
+  await expect(page.getByLabel("Agent", { exact: true })).toHaveValue(
+    "claude-code",
+  );
+  await page.getByLabel("名称", { exact: true }).fill("desktop");
+  await page
+    .getByLabel("Agent", { exact: true })
+    .selectOption("claude-desktop");
+  const guide = page.getByRole("region", { name: "本机 CLI 接入指引" });
+  await expect(guide).toContainText("完全退出 Claude Desktop");
+  await expect(guide.locator(".cli-command").first()).toHaveText(
+    "cpa profile apply desktop",
+  );
+  await expect(guide.locator(".cli-command").last()).toHaveText(
+    "cpa profile restore --agent claude-desktop",
+  );
+  await expect(guide).toContainText(
+    "--config-dir '/path/to/Application Support'",
+  );
+  await expect(guide).toContainText("Claude/");
+  await expect(guide).toContainText("Claude-3p/");
+  await expect(guide).toContainText("父目录");
+  await expect(guide).not.toContainText("--settings");
+  await page.getByRole("button", { name: "创建 profile", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "下游 Profiles" }),
+  ).toBeVisible();
+  expect(created.agent).toBe("claude-desktop");
+  expect(created.name).toBe("desktop");
+  expect(Object.keys(created.models).sort()).toEqual([
+    "fable",
+    "haiku",
+    "opus",
+    "sonnet",
+  ]);
+  const row = page
+    .getByRole("row")
+    .filter({
+      has: page.getByRole("button", { name: "编辑映射 desktop", exact: true }),
+    });
+  await expect(row).toContainText("Claude Desktop · 独立下游 key");
+  await expect(row).toContainText("未应用");
+});
+
+test("编辑 Desktop 保留 Agent，未受管时可切换为 Code", async ({ page }) => {
+  const state = fixture();
+  state.profiles.daily.agent = "claude-desktop";
+  const patches: any[] = [];
+  await page.route("**/admin/api/**", async (route) => {
+    const request = route.request();
+    if (request.url().endsWith("/oauth/session")) {
+      await route.fulfill({ json: null });
+    } else if (request.method() === "PATCH") {
+      const patch = request.postDataJSON();
+      patches.push(patch);
+      Object.assign(state.profiles.daily, patch);
+      await route.fulfill({
+        json: { saved: true, active: true, revision: 12 },
+      });
+    } else await route.fulfill({ json: state });
+  });
+  await connect(page);
+  await page.getByRole("button", { name: "Profiles", exact: false }).click();
+  await page.getByRole("button", { name: "编辑映射 daily" }).click();
+  await expect(page.getByLabel("Agent", { exact: true })).toHaveValue(
+    "claude-desktop",
+  );
+  await page
+    .getByLabel("公开模型 ID", { exact: true })
+    .first()
+    .fill("desktop-opus");
+  await page.getByRole("button", { name: "保存映射", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "下游 Profiles" }),
+  ).toBeVisible();
+  expect(patches[0].agent).toBe("claude-desktop");
+  await page.getByRole("button", { name: "编辑映射 daily" }).click();
+  await expect(page.getByLabel("Agent", { exact: true })).toHaveValue(
+    "claude-desktop",
+  );
+  await page.getByLabel("Agent", { exact: true }).selectOption("claude-code");
+  const guide = page.getByRole("region", { name: "本机 CLI 接入指引" });
+  await expect(guide.locator(".cli-command").last()).toHaveText(
+    "cpa profile restore",
+  );
+  await expect(guide).toContainText("--settings '/path/to/settings.json'");
+  await expect(guide).not.toContainText("--config-dir");
+  await page.getByRole("button", { name: "保存映射", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "下游 Profiles" }),
+  ).toBeVisible();
+  expect(patches[1].agent).toBe("claude-code");
+});
+
+for (const [agent, label] of [
+  ["claude-code", "Claude Code"],
+  ["claude-desktop", "Claude Desktop"],
+]) {
+  test(`${label} 受管时禁止切换 Agent 和删除，仍可保存模型映射`, async ({
+    page,
+  }) => {
+    const state = fixture();
+    state.profiles.daily.agent = agent;
+    state.profiles.daily.managed = true;
+    let patch: any;
+    await page.route("**/admin/api/**", async (route) => {
+      const request = route.request();
+      if (request.url().endsWith("/oauth/session")) {
+        await route.fulfill({ json: null });
+      } else if (request.method() === "PATCH") {
+        patch = request.postDataJSON();
+        await route.fulfill({
+          json: { saved: true, active: true, revision: 12 },
+        });
+      } else await route.fulfill({ json: state });
+    });
+    await connect(page);
+    await page.getByRole("button", { name: "Profiles", exact: false }).click();
+    await expect(
+      page.getByText(`${label} 受管`, { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "删除 profile daily", exact: true }),
+    ).toBeDisabled();
+    await page.getByRole("button", { name: "编辑映射 daily" }).click();
+    await expect(page.getByLabel("Agent", { exact: true })).toBeDisabled();
+    await expect(page.getByLabel("Agent", { exact: true })).toHaveValue(agent);
+    await expect(
+      page.getByText(
+        "此 profile 的服务器配置受管。先恢复对应配置，再更改 Agent。",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await page
+      .getByLabel("公开模型 ID", { exact: true })
+      .first()
+      .fill("managed-opus");
+    await page.getByRole("button", { name: "保存映射", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "下游 Profiles" }),
+    ).toBeVisible();
+    expect(patch.agent).toBe(agent);
+    expect(patch.models.opus.public_model).toBe("managed-opus");
+  });
+}
 
 test("认证失效会清空工作区并返回登录页", async ({ page }) => {
   let denied = false;
