@@ -1,5 +1,18 @@
 # Claude Code 隔离兼容性测试
 
+Claude Desktop 的客户端配置契约与真实 mock 验收状态见 [Claude Desktop 兼容性报告](../../docs/claude-desktop-compatibility.md)。
+
+## Desktop 验证驱动
+
+```sh
+python3 scripts/compat/desktop_mock.py --cpa /绝对路径/cpa --output /private/tmp/cpa-desktop-evidence
+CPA_DESKTOP_TEST_BINARY=/绝对路径/cpa PYTHONDONTWRITEBYTECODE=1 python3 scripts/compat/test_desktop_mock.py -v
+```
+
+`desktop_mock.py` 只启动临时 cpa、Responses mock 和观测代理，生成临时 Desktop 配置及 fixture，不启动 App、不修改日常 Desktop 配置。终端和 `session.json` 提供测试路径、提示词与停止文件。真实 UI 验收需在隔离测试用户中运行；临时接管日常配置必须先取得用户授权，并在 App 退出后备份、写入和恢复。不能直接把临时配置复制到用户目录后留下。
+
+驱动只记录请求形状、模型、认证匹配布尔值和合成标记，不记录 key 或正文。HTTP 自测不证明 Desktop UI 通过，摘要始终包含 `desktop_ui_verified: false`。真实 UI 的预期输出、工具动作、版本和配置恢复需单独记录。创建 `session.json` 中的 `stop_file` 或等待时限会停止临时服务并清理状态；停止失败则保留目录和重试命令，不能先删除仍在使用的状态。
+
 `claude_mock.py` 使用安装在本机的真实 Claude Code 和指定 CPA binary，所有请求都发往临时 loopback mock，不读取已有连接、凭证或 Claude 登录。
 
 ```sh
