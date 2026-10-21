@@ -62,7 +62,7 @@ func TestCompatibilityParametersThroughMessages(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- Run(ctx, st, "compat-parameters", "") }()
+	go func() { done <- Run(ctx, st, "compat-parameters") }()
 	t.Cleanup(func() {
 		cancel()
 		select {

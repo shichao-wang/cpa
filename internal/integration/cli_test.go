@@ -33,6 +33,7 @@ func TestBinaryFlow(t *testing.T) {
 	}
 	configHome := filepath.Join(tmp, "config")
 	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("MANAGEMENT_PASSWORD", "mock-sdk-management")
 	dir := filepath.Join(configHome, "cpa")
 	invoke := func(input string, args ...string) (string, error) {
 		cmd := exec.Command(binary, args...)
@@ -47,6 +48,14 @@ func TestBinaryFlow(t *testing.T) {
 			t.Fatalf("%v: %v\n%s", args, err, out)
 		}
 		return out
+	}
+	for _, args := range [][]string{{"server", "admin-token"}, {"connection", "oauth-login-worker", filepath.Join(tmp, "credential.json")}} {
+		if out, err := invoke("", args...); err == nil || !strings.Contains(out, "unknown command") {
+			t.Fatalf("已移除的管理命令必须拒绝：%v %v %s", args, err, out)
+		}
+	}
+	if _, err := os.Stat(configHome); !os.IsNotExist(err) {
+		t.Fatalf("已移除的命令不得创建状态目录：%v", err)
 	}
 	var calls atomic.Int64
 	var upstreamKey atomic.Value
@@ -129,6 +138,43 @@ func TestBinaryFlow(t *testing.T) {
 			t.Fatal(err)
 		}
 		return resp.StatusCode, data
+	}
+	for _, route := range []struct{ method, path string }{
+		{"GET", "/ui"}, {"GET", "/ui/"}, {"GET", "/ui/app.js"}, {"GET", "/ui/style.css"},
+		{"GET", "/admin/api/state"}, {"POST", "/admin/api/connections"},
+		{"PATCH", "/admin/api/connections/anth"}, {"DELETE", "/admin/api/connections/anth"},
+		{"POST", "/admin/api/profiles"}, {"PATCH", "/admin/api/profiles/daily"}, {"DELETE", "/admin/api/profiles/daily"},
+		{"POST", "/admin/api/oauth/login"}, {"POST", "/admin/api/oauth/authorize"},
+		{"GET", "/admin/api/oauth/session"}, {"POST", "/admin/api/gateway/resume"},
+		{"GET", "/v8/management/config"}, {"GET", "/management.html"},
+	} {
+		if code, body := request(route.method, route.path, "{}"); code != http.StatusNotFound {
+			t.Fatalf("管理入口必须关闭：%s %s = %d %s", route.method, route.path, code, body)
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatal("已移除的管理入口不得触达上游")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "admin-token")); !os.IsNotExist(err) {
+		t.Fatalf("纯 CLI 服务不得生成管理令牌：%v", err)
+	}
+	// SDK 在 HTTP 中间件前分流 RESP，环境变量也不能启用该管理入口。
+	conn, err := net.DialTimeout("tcp", listen, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(conn, "*2\r\n$4\r\nAUTH\r\n$19\r\nmock-sdk-management\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	var reply [1]byte
+	if n, err := conn.Read(reply[:]); n != 0 || err == nil {
+		t.Fatal("SDK 的 RESP 管理入口必须关闭")
+	} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		t.Fatal("RESP 管理请求应断开连接，不能挂起")
 	}
 	code, body := request("GET", "/v1/models?limit=1000", "")
 	if code != 200 || !bytes.Contains(body, []byte(`"display_name":"实际模型"`)) || !bytes.Contains(body, []byte(`"description":"Sonnet"`)) {

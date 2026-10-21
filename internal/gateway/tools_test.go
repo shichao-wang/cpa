@@ -49,7 +49,7 @@ func TestToolCallsAcrossUpstreamProtocols(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- Run(ctx, s, "tools-instance", "") }()
+	go func() { done <- Run(ctx, s, "tools-instance") }()
 	t.Cleanup(func() {
 		cancel()
 		select {

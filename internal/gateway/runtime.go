@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"net"
 	"net/http"
+	"os"
 	"reflect"
 	"strconv"
 	"sync"
@@ -23,7 +23,6 @@ import (
 	"github.com/shichao-wang/cpa/internal/codexoauth"
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/store"
-	"github.com/shichao-wang/cpa/internal/webui"
 )
 
 type runtimeOptions struct {
@@ -32,6 +31,10 @@ type runtimeOptions struct {
 }
 
 func runManagedService(ctx context.Context, st *store.Store, listen, token string, active *atomic.Pointer[snapshot], initial *snapshot, runtimeState *RuntimeState, runtimeMu *sync.Mutex, options runtimeOptions) error {
+	// SDK 的 RESP 管理入口先于 HTTP 鉴权分流，不能由继承的环境变量启用。
+	if err := os.Unsetenv("MANAGEMENT_PASSWORD"); err != nil {
+		return fmt.Errorf("无法禁用 SDK 管理入口")
+	}
 	namespace, err := randomHex(16)
 	if err != nil {
 		return fmt.Errorf("生成认证实例标识失败")
@@ -40,17 +43,6 @@ func runManagedService(ctx context.Context, st *store.Store, listen, token strin
 	manager := coreauth.NewManager(credentials, nil, credentials.Hook())
 	credentials.BindManager(manager)
 	gate := &requestGate{store: st, active: active, token: token, instanceID: runtimeState.InstanceID, oauth: credentials}
-	// SDK 的私有端口始终要求管理令牌；免令牌仅由公开监听器启用。
-	gate.webui, err = webui.New(st, "", func() (uint64, bool) {
-		current := active.Load()
-		if current == nil {
-			return 0, false
-		}
-		return current.revision, gate.ready.Load()
-	}, nil, ctx)
-	if err != nil {
-		return err
-	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer func() {
@@ -184,7 +176,6 @@ func runManagedService(ctx context.Context, st *store.Store, listen, token strin
 			if !oauthHotUpdateAllowed(current, next) {
 				return fmt.Errorf("OAuth 认证配置已改变，请停止并重启网关")
 			}
-			setSnapshotListen(next, listen)
 			next.sdkKey = current.sdkKey
 			next.config.SDKConfig.APIKeys = []string{current.sdkKey}
 			added, retired, err := reconcileOAuth(runCtx, manager, credentials, current, next)
@@ -227,13 +218,6 @@ func runManagedService(ctx context.Context, st *store.Store, listen, token strin
 			current = next
 		}
 	}
-}
-
-// setSnapshotListen 只改变私有 SDK 的监听地址，不写入结构状态。
-func setSnapshotListen(next *snapshot, address string) {
-	host, port, _ := net.SplitHostPort(address)
-	next.config.Host = host
-	next.config.Port, _ = strconv.Atoi(port)
 }
 
 func staticAuthID(namespace, connectionID string) string {

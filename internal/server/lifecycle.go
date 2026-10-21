@@ -23,8 +23,6 @@ import (
 
 const startTimeout = 15 * time.Second
 
-var errMaintenance = errors.New("模型服务处于授权维护模式")
-
 type Info struct {
 	State    string `json:"state"`
 	PID      int    `json:"pid,omitempty"`
@@ -95,16 +93,12 @@ func probe(ctx context.Context, r gateway.RuntimeState) (uint64, error) {
 		return 0, fmt.Errorf("网关尚未就绪")
 	}
 	var body struct {
-		Ready       bool   `json:"ready"`
-		InstanceID  string `json:"instanceID"`
-		Revision    uint64 `json:"revision"`
-		Maintenance bool   `json:"maintenance"`
+		Ready      bool   `json:"ready"`
+		InstanceID string `json:"instanceID"`
+		Revision   uint64 `json:"revision"`
 	}
 	if err = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&body); err != nil {
 		return 0, fmt.Errorf("网关探测响应无效")
-	}
-	if body.InstanceID == r.InstanceID && body.Maintenance {
-		return body.Revision, errMaintenance
 	}
 	if !body.Ready || body.InstanceID != r.InstanceID {
 		return 0, fmt.Errorf("网关实例身份不匹配")
@@ -127,9 +121,7 @@ func Status(ctx context.Context, s *store.Store) (Info, error) {
 	if r.Ready {
 		info.State = "unresponsive"
 	}
-	if revision, err := probe(ctx, r); errors.Is(err, errMaintenance) {
-		info.State = "maintenance"
-	} else if err == nil {
+	if revision, err := probe(ctx, r); err == nil {
 		info.State = "running"
 		info.Revision = revision
 	}
@@ -205,7 +197,7 @@ func Foreground(ctx context.Context, s *store.Store) error {
 	if err != nil {
 		return err
 	}
-	err = serveManaged(ctx, s, id)
+	err = gateway.Run(ctx, s, id)
 	if errors.Is(err, context.Canceled) {
 		return nil
 	}
