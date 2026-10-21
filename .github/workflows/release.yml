@@ -51,6 +51,11 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: Desktop mock 验收驱动自检
+        run: |
+          go build -o "$RUNNER_TEMP/cpa-desktop" ./cmd/cpa
+          CPA_DESKTOP_TEST_BINARY="$RUNNER_TEMP/cpa-desktop" PYTHONDONTWRITEBYTECODE=1 python3 scripts/compat/test_desktop_mock.py -v
+
   tag:
     needs: test
     # 仅对合并进 main 的 push 打 tag；PR 事件只跑 test。

@@ -4,7 +4,10 @@ import json
 import os
 from pathlib import Path
 import stat
+import socket
+import struct
 import tempfile
+import time
 import unittest
 from unittest import mock
 import urllib.error
@@ -199,6 +202,23 @@ class UpstreamTests(unittest.TestCase):
             self.assertNotIn('private-reply-', evidence.path.read_text())
             self.assertNotIn('temporary-secret', evidence.path.read_text())
 
+    def test_mock_error_then_recovery_uses_only_local_scenario(self):
+        with tempfile.TemporaryDirectory() as temp:
+            evidence = harness.Evidence(Path(temp) / 'requests.jsonl')
+            scenario = Path(temp) / 'scenario.json'
+            harness.private_json(scenario, dict(mode='error'))
+            with harness.base.server(harness.upstream_handler(evidence, Path(temp) / 'fixture', scenario)) as port:
+                def request():
+                    return urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{port}/responses',
+                        b'{"model":"target","input":[]}', {'Content-Type': 'application/json'}), timeout=5)
+                with self.assertRaises(urllib.error.HTTPError) as caught:
+                    request()
+                self.assertEqual(caught.exception.code, 400)
+                self.assertIn(b'CPA_DESKTOP_MOCK_ERROR', caught.exception.read())
+                harness.private_json(scenario, dict(mode='normal'))
+                with request() as response:
+                    self.assertIn(b'response.completed', response.read())
+
     def test_unrelated_tool_result_still_emits_required_read(self):
         with tempfile.TemporaryDirectory() as temp:
             evidence = harness.Evidence(Path(temp) / 'requests.jsonl')
@@ -223,6 +243,59 @@ class UpstreamTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get('CPA_DESKTOP_TEST_BINARY'), '显式设置临时 CPA binary 才运行 loopback 自检')
 class HTTPIntegrationTests(unittest.TestCase):
+    def test_disconnect_slow_stream_is_incomplete_and_next_request_recovers(self):
+        with tempfile.TemporaryDirectory() as output_root:
+            with harness.DesktopMock(os.environ['CPA_DESKTOP_TEST_BINARY'], Path(output_root) / 'evidence') as session:
+                session.summary['client_identity'] = 'http-disconnect-self-test'
+                harness.private_json(session.scenario_file, dict(mode='slow'))
+                payload = json.dumps(dict(model=harness.MODELS[0][1], max_tokens=512, stream=True,
+                    messages=[dict(role='user', content='Reply exactly ' + harness.MARKER)])).encode()
+                key = session.evidence.key
+                port = int(session.endpoint.rsplit(':', 1)[1])
+                with socket.create_connection(('127.0.0.1', port), timeout=5) as client:
+                    # 用真实 TCP 断开模拟取消；不把它标记为 Desktop UI 验证。
+                    client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
+                    headers = (f'POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n'
+                        f'Authorization: Bearer {key}\r\nContent-Type: application/json\r\n'
+                        f'Content-Length: {len(payload)}\r\nConnection: close\r\n\r\n').encode()
+                    client.sendall(headers + payload)
+                    received = b''
+                    while harness.MARKER.encode() not in received:
+                        chunk = client.recv(4096)
+                        self.assertTrue(chunk, '慢流在首个文本标记之前已断开')
+                        received += chunk
+                    self.assertNotIn(b'message_stop', received)
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    with session.evidence.lock:
+                        records = list(session.evidence.records)
+                    interrupted = any(r['stage'] == 'mock-slow-stream' and r.get('interrupted') for r in records)
+                    results = [r for r in records if r['stage'] == 'cpa-to-claude-result']
+                    if interrupted and results:
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(interrupted, 'mock 未观察到下游连接断开')
+                self.assertEqual(len(results), 1)
+                inbound = next(r for r in records if r['stage'] == 'claude-to-cpa')
+                self.assertEqual(results[0]['request_id'], inbound['request_id'])
+                self.assertFalse(results[0]['response_complete'])
+                snapshot = session.evidence.snapshot()
+                self.assertFalse(snapshot['chat_request_chain_observed'])
+                self.assertEqual(snapshot['workflow_status'], 'failed')
+                self.assertFalse(snapshot['desktop_ui_verified'])
+                harness.private_json(session.scenario_file, dict(mode='normal'))
+                request = urllib.request.Request(session.endpoint + '/v1/messages', payload,
+                    {'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    self.assertIn(b'message_stop', response.read())
+                snapshot = session.evidence.snapshot()
+                self.assertTrue(snapshot['chat_request_chain_observed'])
+                # 恢复成功不能抹去本场已记录的中断，也不能充当 UI 取消证据。
+                self.assertEqual(snapshot['workflow_status'], 'failed')
+                self.assertFalse(snapshot['desktop_ui_verified'])
+                for path in session.output.iterdir():
+                    self.assertNotIn(key, path.read_text())
+
     def test_real_cpa_roundtrip_cleanup_and_no_desktop_claim(self):
         with tempfile.TemporaryDirectory() as output_root:
             output = Path(output_root) / 'evidence'

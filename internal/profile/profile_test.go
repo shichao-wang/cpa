@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -8,6 +9,104 @@ import (
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/store"
 )
+
+func TestCreateDesktopProfileAndRejectUnknownAgent(t *testing.T) {
+	st := testStore(t)
+	if err := seedConnection(st); err != nil {
+		t.Fatal(err)
+	}
+	for _, agent := range []string{"claude-code", "claude-desktop"} {
+		file := completeFile(agent)
+		file.Agent = stringPointer(agent)
+		if _, err := Create(st, file); err != nil {
+			t.Fatalf("合法 agent %s 创建失败：%v", agent, err)
+		}
+	}
+	file := completeFile("unknown")
+	file.Agent = stringPointer("unknown")
+	if _, err := Create(st, file); err == nil {
+		t.Fatal("未知 agent 不应创建")
+	}
+	state, err := st.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Profiles["claude-code"].KeyRef == state.Profiles["claude-desktop"].KeyRef {
+		t.Fatal("不同 agent 必须拥有独立的 profile key")
+	}
+}
+
+func TestAgentChangeRequiresUnreferencedStableID(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		check func(string) (bool, error)
+	}{
+		{"missing-check", nil},
+		{"referenced", func(string) (bool, error) { return true, nil }},
+		{"read-error", func(string) (bool, error) { return false, fmt.Errorf("管理记录损坏") }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			st := testStore(t)
+			if err := seedConnection(st); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Create(st, completeFile("demo")); err != nil {
+				t.Fatal(err)
+			}
+			before, err := st.Read()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := Update(st, "demo", File{Agent: stringPointer("claude-desktop")}, test.check); err == nil {
+				t.Fatal("无法确认未受引用时必须拒绝切换 agent")
+			}
+			after, err := st.Read()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if after.Profiles["demo"].Agent != "claude-code" || after.Revision != before.Revision {
+				t.Fatal("拒绝切换后状态发生变化")
+			}
+		})
+	}
+	st := testStore(t)
+	if err := seedConnection(st); err != nil {
+		t.Fatal(err)
+	}
+	key, err := Create(st, completeFile("demo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := st.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := before.Profiles["demo"]
+	called := false
+	if err := Update(st, "demo", File{Agent: stringPointer("claude-desktop")}, func(id string) (bool, error) {
+		called = true
+		if id != old.ID {
+			t.Fatalf("应按稳定 ID 查询引用，实际为 %q", id)
+		}
+		return false, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := st.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := after.Profiles["demo"]
+	if !called || p.Agent != "claude-desktop" || p.ID != old.ID || p.KeyRef != old.KeyRef || after.Secrets[p.KeyRef] != key {
+		t.Fatal("未受引用 profile 未切换 agent 或丢失身份凭证")
+	}
+	if err := Update(st, "demo", File{Agent: stringPointer("claude-desktop")}, func(string) (bool, error) {
+		t.Fatal("相同 agent 的更新不应查询配置引用")
+		return false, fmt.Errorf("不可读取")
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestParseFileRejectsUnknownFieldsAndExtraDocuments(t *testing.T) {
 	for _, input := range []string{
@@ -54,7 +153,7 @@ func TestCreateGeneratesPrivateKeyAndUpdatePreservesUnspecifiedFields(t *testing
 		TargetModel: "model-a",
 	}
 	update := File{Models: map[string]config.Binding{"sonnet": newSonnet}}
-	if err := Update(st, "demo", update); err != nil {
+	if err := Update(st, "demo", update, nil); err != nil {
 		t.Fatal(err)
 	}
 	s, err = st.Read()
@@ -209,7 +308,7 @@ func TestUpdateFablePreservesExistingProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Update(st, "demo", file); err != nil {
+	if err := Update(st, "demo", file, nil); err != nil {
 		t.Fatal(err)
 	}
 	after, err := st.Read()

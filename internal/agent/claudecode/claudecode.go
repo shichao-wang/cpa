@@ -105,6 +105,9 @@ func Apply(s *store.Store, profile config.Profile, settingsPath string) error {
 				return fmt.Errorf("profile 已不存在或 ID 已变化，拒绝应用")
 			}
 			profile = storedProfile
+			if profile.Agent != "claude-code" {
+				return fmt.Errorf("profile 的 agent 不是 claude-code，拒绝应用")
+			}
 			if err := config.ValidateProfileModels(profile.Models); err != nil {
 				return err
 			}
@@ -385,13 +388,14 @@ func Restore(s *store.Store, settingsPath string) error {
 	})
 }
 
-// IsManagedProfile 判断 profileName 是否由有效管理记录保护；切换过程会同时保护新旧 profile。
-func IsManagedProfile(s *store.Store, profileName string) bool {
-	if s == nil || profileName == "" {
-		return false
+// ReferencesProfileID 按稳定 ID 查询管理记录；切换过程中同时保护新旧 profile。
+// 调用方可以持有状态锁，本函数只持有 Claude Code 管理记录锁。
+func ReferencesProfileID(s *store.Store, profileID string) (bool, error) {
+	if s == nil || strings.TrimSpace(profileID) == "" {
+		return false, fmt.Errorf("状态存储或 profile ID 无效")
 	}
 	protected := false
-	if err := withJournalLock(s, func() error {
+	err := withJournalLock(s, func() error {
 		j, err := readJournal(s)
 		if err != nil {
 			return err
@@ -400,25 +404,29 @@ func IsManagedProfile(s *store.Store, profileName string) bool {
 			return nil
 		}
 		if err := validateJournal(j); err != nil {
-			protected = true
-			return nil
-		}
-		state, err := s.Read()
-		if err != nil {
 			return err
 		}
-		profile, exists := state.Profiles[profileName]
-		if !exists {
-			return nil
-		}
-		protected = (j.ProfileName == profileName && profile.ID == j.ProfileID) ||
-			(j.Status == "pending" && j.PriorProfileName == profileName && profile.ID == j.PriorProfileID)
+		protected = j.ProfileID == profileID || (j.Status == "pending" && j.PriorProfileID == profileID)
 		return nil
-	}); err != nil {
-		// 读取管理记录失败时按受保护处理，避免 CLI 删除可能正在使用的 profile。
+	})
+	return protected, err
+}
+
+// IsManagedProfile 判断 profileName 是否由有效管理记录保护；读取失败时按受保护处理。
+func IsManagedProfile(s *store.Store, profileName string) bool {
+	if s == nil || profileName == "" {
+		return false
+	}
+	state, err := s.Read()
+	if err != nil {
 		return true
 	}
-	return protected
+	profile, exists := state.Profiles[profileName]
+	if !exists {
+		return false
+	}
+	protected, err := ReferencesProfileID(s, profile.ID)
+	return err != nil || protected
 }
 
 func resolveSettingsPath(path string) (string, error) {
@@ -959,6 +967,9 @@ func recordIsManaged(j *journal) bool {
 func validateJournal(j *journal) error {
 	if !recordIsManaged(j) || (j.Status != "pending" && j.Status != "committed") || (j.Action != "apply" && j.Action != "restore") {
 		return fmt.Errorf("cpa Claude Code 管理记录无效，拒绝操作")
+	}
+	if (j.PriorProfileID == "") != (j.PriorProfileName == "") {
+		return fmt.Errorf("cpa Claude Code 管理记录中的旧 profile 引用无效")
 	}
 	if !filepath.IsAbs(j.SettingsPath) {
 		return fmt.Errorf("cpa 管理记录中的 settings 路径无效")

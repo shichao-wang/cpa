@@ -93,7 +93,8 @@ func Create(st *store.Store, file File) (string, error) {
 }
 
 // Update 合并 YAML 中显式给出的字段；ID、key 及未指定的档位保持不变。
-func Update(st *store.Store, name string, file File) error {
+// 仅切换 agent 时在状态锁下调用 isReferenced；无法确认未受引用则拒绝切换。
+func Update(st *store.Store, name string, file File, isReferenced func(string) (bool, error)) error {
 	if err := config.ValidateName(name); err != nil {
 		return err
 	}
@@ -106,7 +107,23 @@ func Update(st *store.Store, name string, file File) error {
 			return fmt.Errorf("profile 文件 name 必须与目标名称一致")
 		}
 		if file.Agent != nil {
-			p.Agent = strings.TrimSpace(*file.Agent)
+			agent := strings.TrimSpace(*file.Agent)
+			if err := config.ValidateAgent(agent); err != nil {
+				return err
+			}
+			if agent != p.Agent {
+				if isReferenced == nil || p.ID == "" {
+					return fmt.Errorf("无法确认 agent 配置引用，拒绝切换 profile agent")
+				}
+				referenced, err := isReferenced(p.ID)
+				if err != nil {
+					return fmt.Errorf("无法确认 agent 配置引用，拒绝切换 profile agent")
+				}
+				if referenced {
+					return fmt.Errorf("profile 仍被 agent 配置引用，拒绝切换 agent：%s", name)
+				}
+			}
+			p.Agent = agent
 		}
 		if file.Models != nil {
 			if p.Models == nil {
@@ -152,8 +169,8 @@ func Remove(st *store.Store, name string, isReferenced func(string) (bool, error
 }
 
 func validateDraft(p config.Profile) error {
-	if p.Agent != "claude-code" {
-		return fmt.Errorf("首期仅支持 claude-code")
+	if err := config.ValidateAgent(p.Agent); err != nil {
+		return err
 	}
 	return config.ValidateProfileModels(p.Models)
 }

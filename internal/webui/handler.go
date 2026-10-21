@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shichao-wang/cpa/internal/agent/claudecode"
+	"github.com/shichao-wang/cpa/internal/agent"
 	"github.com/shichao-wang/cpa/internal/codexoauth"
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/connection"
@@ -245,7 +245,7 @@ func (h *Handler) state(w http.ResponseWriter, r *http.Request) {
 		for slot, binding := range p.Models {
 			models[slot] = s.DisplayBinding(slot, binding)
 		}
-		profiles[name] = profileView{name, p.Agent, models, claudecode.IsManagedProfile(h.store, name)}
+		profiles[name] = profileView{name, p.Agent, models, agent.IsManagedProfile(h.store, name)}
 	}
 	revision, ready := h.active()
 	mode := "running"
@@ -456,12 +456,14 @@ func (h *Handler) updateProfile(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "请指定更新字段")
 		return
 	}
-	h.saved(w, r, profile.Update(h.store, r.PathValue("name"), in.file()))
+	h.saved(w, r, profile.Update(h.store, r.PathValue("name"), in.file(), func(id string) (bool, error) {
+		return agent.ReferencesProfileID(h.store, id)
+	}))
 }
 func (h *Handler) deleteProfile(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	h.saved(w, r, profile.Remove(h.store, name, func(string) (bool, error) {
-		return claudecode.IsManagedProfile(h.store, name), nil
+	h.saved(w, r, profile.Remove(h.store, name, func(id string) (bool, error) {
+		return agent.ReferencesProfileID(h.store, id)
 	}))
 }
 

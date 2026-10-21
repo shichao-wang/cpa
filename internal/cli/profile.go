@@ -11,10 +11,11 @@ import (
 )
 
 func newProfileCommand(openStore storeFactory, opts Options) *cobra.Command {
-	cmd := &cobra.Command{Use: "profile", Short: "管理 Claude Code profile"}
+	cmd := &cobra.Command{Use: "profile", Short: "管理下游 Agent profile"}
 	cmd.AddCommand(profileListCommand(openStore))
 	cmd.AddCommand(profileShowCommand(openStore))
 	cmd.AddCommand(profileCreateCommand(openStore, opts))
+	cmd.AddCommand(profileUpdateCommand(openStore, opts))
 	cmd.AddCommand(profileRemoveCommand(openStore, opts))
 	return cmd
 }
@@ -129,7 +130,7 @@ func profileCreateCommand(openStore storeFactory, opts Options) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&filePath, "file", "", "模型绑定 YAML 文件")
-	cmd.Flags().StringVar(&agent, "agent", "claude-code", "下游 Agent（首期仅 claude-code）")
+	cmd.Flags().StringVar(&agent, "agent", "claude-code", "下游 Agent（claude-code 或 claude-desktop）")
 	_ = cmd.MarkFlagRequired("file")
 	return cmd
 }
@@ -149,7 +150,7 @@ func profileUpdateCommand(openStore storeFactory, opts Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := profile.Update(st, args[0], file); err != nil {
+			if err := profile.Update(st, args[0], file, opts.ProfileReferenced); err != nil {
 				return err
 			}
 			if err := notifyChanged(cmd, opts); err != nil {
