@@ -639,6 +639,17 @@ td .hint {
 .mapping-preview .section-heading {
   margin-bottom: 16px;
 }
+.profile-cli-guide p {
+  margin-top: 12px;
+}
+.cli-command {
+  display: block;
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: var(--muted);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
 .mapping-preview-row {
   display: flex;
   align-items: center;

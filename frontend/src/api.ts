@@ -2,6 +2,11 @@ import { z } from "zod";
 
 export const slots = ["opus", "sonnet", "haiku", "fable"] as const;
 export type Slot = (typeof slots)[number];
+export const agents = {
+  "claude-code": "Claude Code",
+  "claude-desktop": "Claude Desktop",
+};
+export type Agent = keyof typeof agents;
 export const protocols = {
   "chat-completions": "Chat Completions",
   "anthropic-messages": "Anthropic Messages",
@@ -41,7 +46,7 @@ const bindingSchema = z.object({
 });
 const profileSchema = z.object({
   name: z.string(),
-  agent: z.string(),
+  agent: z.enum(["claude-code", "claude-desktop"]),
   managed: z.boolean(),
   models: z.object({
     opus: bindingSchema,
