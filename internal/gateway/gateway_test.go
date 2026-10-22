@@ -153,7 +153,7 @@ func TestGatewayRoutesByProfileAndUpstreamProtocol(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	runDone := make(chan error, 1)
-	go func() { runDone <- Run(ctx, st, "instance-test", "") }()
+	go func() { runDone <- Run(ctx, st, "instance-test") }()
 	t.Cleanup(func() {
 		cancel()
 		select {

@@ -79,7 +79,7 @@ type snapshot struct {
 }
 
 // Run 在当前进程运行单个 SDK 服务，状态修订变更通过受管热更新生效。
-func Run(ctx context.Context, st *store.Store, instanceID, bindAddress string) error {
+func Run(ctx context.Context, st *store.Store, instanceID string) error {
 	if st == nil {
 		return fmt.Errorf("状态存储不能为空")
 	}
@@ -142,13 +142,6 @@ func Run(ctx context.Context, st *store.Store, instanceID, bindAddress string) e
 		return err
 	}
 
-	if bindAddress != "" {
-		listen, err = normalizeListen(bindAddress)
-		if err != nil {
-			return err
-		}
-	}
-	setSnapshotListen(initial, listen)
 	err = runManagedService(ctx, st, listen, probeToken, &active, initial, &runtimeState, &runtimeMu, runtimeOptions{})
 	if err != nil && !errors.Is(err, context.Canceled) {
 		runtimeState.Error = err.Error()
@@ -243,6 +236,10 @@ func compile(state *config.State, st *store.Store) (*snapshot, error) {
 	cfg.SDKConfig.APIKeys = []string{sdkKey}
 	cfg.SDKConfig.ForceModelPrefix = true
 	cfg.Host = host
+	// SDK 直接拼接 host:port，IPv6 仅在派生配置中补齐括号。
+	if strings.Contains(host, ":") {
+		cfg.Host = "[" + host + "]"
+	}
 	cfg.Port = port
 	cfg.CommercialMode = true
 	cfg.LoggingToFile = false

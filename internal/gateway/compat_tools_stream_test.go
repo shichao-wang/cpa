@@ -38,7 +38,7 @@ func compatGateway(t *testing.T, handler http.HandlerFunc) (string, *http.Client
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- Run(ctx, st, "compat-tools-stream", "") }()
+	go func() { done <- Run(ctx, st, "compat-tools-stream") }()
 	t.Cleanup(func() {
 		cancel()
 		select {

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -277,7 +276,7 @@ func Check(ctx context.Context, c config.Connection, apiKey string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
-	resp, err := modelDirectoryResponse(ctx, c, apiKey, "")
+	resp, err := modelDirectoryResponse(ctx, c, apiKey)
 	if err != nil {
 		return err
 	}
@@ -290,7 +289,7 @@ func Check(ctx context.Context, c config.Connection, apiKey string) error {
 }
 
 // modelDirectoryResponse 只请求连接自己的模型目录，不跟随重定向或发送推理请求。
-func modelDirectoryResponse(ctx context.Context, c config.Connection, apiKey, after string) (*http.Response, error) {
+func modelDirectoryResponse(ctx context.Context, c config.Connection, apiKey string) (*http.Response, error) {
 	endpoint := strings.TrimRight(c.BaseURL, "/")
 	if c.Protocol == config.Anthropic {
 		if !strings.HasSuffix(endpoint, "/v1") {
@@ -301,9 +300,6 @@ func modelDirectoryResponse(ctx context.Context, c config.Connection, apiKey, af
 		endpoint += "/models"
 	}
 
-	if after != "" {
-		endpoint += "?after_id=" + url.QueryEscape(after)
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("目录请求失败")

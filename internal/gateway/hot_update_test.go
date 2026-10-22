@@ -125,9 +125,21 @@ func TestConnectionAddAndOAuthLoginPreserveLiveRequests(t *testing.T) {
 				}
 			}
 			credential := config.OAuthCredential{AccessToken: "access-new", RefreshToken: "refresh-new", AccountID: "account-new", PlanType: "pro", ExpiresAt: time.Now().Add(7 * 24 * time.Hour)}
-			if err := connection.CreateOAuth(ctx, st, "new", []config.Model{{ID: "gpt-5.5"}}, credential); err != nil {
+			if err := connection.Create(ctx, st, config.Connection{Name: "new", AuthType: config.AuthCodexOAuth, Protocol: config.Responses, BaseURL: config.CodexBaseURL, Models: []config.Model{{ID: "gpt-5.5"}}}, ""); err != nil {
 				t.Fatal(err)
 			}
+			assertOldRoute()
+			waitRevision(t, st)
+			assertOldRoute()
+			login, err := connection.BeginOAuth(st, "new")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := login.Commit(credential); err != nil {
+				login.Close()
+				t.Fatal(err)
+			}
+			login.Close()
 			assertOldRoute()
 			waitRevision(t, st)
 			assertOldRoute()
