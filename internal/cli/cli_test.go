@@ -75,9 +75,32 @@ func TestListAndShowNeverPrintSecretsOrReferences(t *testing.T) {
 		text := output.String() + stderr.String()
 		for _, secret := range []string{profileKey, "connection-api-secret", keyRef, connectionKeyRef} {
 			if strings.Contains(text, secret) {
-				t.Fatalf("%v 输出泄漏 key 或凭证引用 %q：%s", args, secret, text)
+				t.Fatalf("%v 输出泄漏 key 或凭证引用", args)
 			}
 		}
+	}
+	before, err := os.ReadFile(st.Path("state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"demo", "missing"} {
+		root := NewAppCommand()
+		var output, stderr bytes.Buffer
+		root.SetOut(&output)
+		root.SetErr(&stderr)
+		root.SetArgs([]string{"profile", "key", name})
+		err := root.Execute()
+		if name == "demo" {
+			if err != nil || output.String() != profileKey+"\n" || stderr.Len() != 0 {
+				t.Fatal("显式获取 key 应只在标准输出返回目标 profile 凭证")
+			}
+		} else if err == nil || output.Len() != 0 || strings.Contains(err.Error(), profileKey) {
+			t.Fatal("不存在的 profile 应报错且不输出凭证")
+		}
+	}
+	after, err := os.ReadFile(st.Path("state.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("读取 key 不应修改状态")
 	}
 }
 

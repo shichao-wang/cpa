@@ -197,6 +197,8 @@ cpa server stop
 
 profile 保存专属下游 key 和模型绑定，不关联 Agent 类型。模型展示名与说明从绑定派生，YAML 不接受 `label`、`description` 字段。
 
+使用 `cpa profile key daily` 显式获取该 profile 的下游 key，再自行配置客户端的网关地址、key 和公开模型 ID。该命令仅向标准输出返回目标 key，不修改状态。创建、列表和详情命令默认隐藏 key；请勿将 key 输出写入日志或分享。
+
 ## 更新与删除
 
 ```sh

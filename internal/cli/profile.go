@@ -17,10 +17,37 @@ func newProfileCommand(openStore storeFactory, opts Options) *cobra.Command {
 	}
 	cmd.AddCommand(profileListCommand(openStore))
 	cmd.AddCommand(profileShowCommand(openStore))
+	cmd.AddCommand(profileKeyCommand(openStore))
 	cmd.AddCommand(profileCreateCommand(openStore, opts))
 	cmd.AddCommand(profileUpdateCommand(openStore, opts))
 	cmd.AddCommand(profileRemoveCommand(openStore, opts))
 	return cmd
+}
+
+func profileKeyCommand(openStore storeFactory) *cobra.Command {
+	return &cobra.Command{
+		Use: "key <name>", Short: "显示 profile 专属 key（敏感信息，仅在显式执行本命令时输出）", Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := openStore()
+			if err != nil {
+				return err
+			}
+			s, err := st.Read()
+			if err != nil {
+				return err
+			}
+			p, ok := s.Profiles[args[0]]
+			if !ok {
+				return fmt.Errorf("profile 不存在：%s", args[0])
+			}
+			key := s.Secrets[p.KeyRef]
+			if key == "" {
+				return fmt.Errorf("profile 凭证不可用")
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), key)
+			return err
+		},
+	}
 }
 
 func profileListCommand(openStore storeFactory) *cobra.Command {

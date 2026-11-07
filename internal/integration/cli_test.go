@@ -107,6 +107,9 @@ func TestBinaryFlow(t *testing.T) {
 	if key == "" || strings.Contains(output, key) {
 		t.Fatal("profile key 必须保存且不能默认输出")
 	}
+	if output := run("", "profile", "key", "daily"); output != key+"\n" {
+		t.Fatal("显式获取 key 应只返回目标 profile 的认证凭证")
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
