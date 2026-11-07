@@ -174,7 +174,6 @@ def main():
             cpa('profile', 'create', 'compat', '--file', str(bindings))
             port = free_port()
             started = False
-            applied_ok = False
             settings = config_dir / 'settings.json'
             original = {'env': {'CPA_COMPAT_UNRELATED': 'preserved'}, 'language': 'English'}
             settings.write_text(json.dumps(original))
@@ -182,17 +181,16 @@ def main():
             try:
                 cpa('server', 'start', '--listen', f'127.0.0.1:{port}')
                 started = True
-                cpa('profile', 'apply', 'compat', '--settings', str(settings))
-                applied_ok = True
-                applied = json.loads(settings.read_text())
-                assert applied['env']['CPA_COMPAT_UNRELATED'] == 'preserved'
-                assert applied['env']['ANTHROPIC_BASE_URL'] == f'http://127.0.0.1:{port}'
-                summary['apply_readback'] = True
-                # bare 不读取 keychain/OAuth，只允许 API_KEY 或 apiKeyHelper；将临时 profile key 通过 env 传入。
+                # 仅从临时状态读取测试 key，不调用客户端配置管理功能。
+                state = json.loads((root / '.config' / 'cpa' / 'state.json').read_text())
+                profile = state['profiles']['compat']
+                profile_key = state['secrets'][profile['keyRef']]
                 with server(handler(recorder, port)) as observer_port:
-                    claude_env = dict(env, **applied['env'])
+                    claude_env = dict(env)
                     claude_env['ANTHROPIC_BASE_URL'] = f'http://127.0.0.1:{observer_port}'
-                    claude_env['ANTHROPIC_API_KEY'] = claude_env.pop('ANTHROPIC_AUTH_TOKEN')
+                    claude_env['ANTHROPIC_API_KEY'] = profile_key
+                    claude_env['ANTHROPIC_DEFAULT_SONNET_MODEL'] = 'claude-sonnet-4-6'
+                    claude_env['ANTHROPIC_DEFAULT_HAIKU_MODEL'] = 'claude-haiku-4-5-20251001'
                     isolated_settings = root / 'run-settings.json'
                     isolated_settings.write_text(args.settings_json)
                     command = [claude, '--bare', '--setting-sources', '', '--settings', str(isolated_settings),
@@ -212,13 +210,7 @@ def main():
                 raise
             finally:
                 cleanup_errors = []
-                if applied_ok:
-                    try:
-                        cpa('profile', 'restore', '--settings', str(settings))
-                        summary['restore_readback'] = json.loads(settings.read_text()) == original
-                    except Exception as error:
-                        summary['restore_readback'] = False
-                        cleanup_errors.append(str(error))
+                summary['settings_unchanged'] = json.loads(settings.read_text()) == original
                 if started:
                     try:
                         cpa('server', 'stop')
@@ -230,7 +222,7 @@ def main():
                 (output / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n')
             if cleanup_errors:
                 raise RuntimeError('临时环境清理失败，见 summary.json')
-            assert summary.get('restore_readback'), 'restore 回读不一致'
+            assert summary.get('settings_unchanged'), '临时 settings 被意外修改'
         entries = [json.loads(line) for line in trace.read_text().splitlines()]
         assert any(item['stage'] == 'claude-to-cpa' for item in entries)
         assert any(item['stage'] == 'cpa-to-responses' for item in entries)

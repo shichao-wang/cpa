@@ -15,7 +15,6 @@ import (
 
 type File struct {
 	Name   *string                   `yaml:"name"`
-	Agent  *string                   `yaml:"agent"`
 	Models map[string]config.Binding `yaml:"models"`
 }
 
@@ -53,11 +52,7 @@ func Create(st *store.Store, file File) (string, error) {
 	if err := config.ValidateName(name); err != nil {
 		return "", err
 	}
-	agent := "claude-code"
-	if file.Agent != nil {
-		agent = strings.TrimSpace(*file.Agent)
-	}
-	p := config.Profile{Name: name, Agent: agent, Models: file.Models}
+	p := config.Profile{Name: name, Models: file.Models}
 	if err := validateDraft(p); err != nil {
 		return "", err
 	}
@@ -93,8 +88,7 @@ func Create(st *store.Store, file File) (string, error) {
 }
 
 // Update 合并 YAML 中显式给出的字段；ID、key 及未指定的档位保持不变。
-// 仅切换 agent 时在状态锁下调用 isReferenced；无法确认未受引用则拒绝切换。
-func Update(st *store.Store, name string, file File, isReferenced func(string) (bool, error)) error {
+func Update(st *store.Store, name string, file File) error {
 	if err := config.ValidateName(name); err != nil {
 		return err
 	}
@@ -105,25 +99,6 @@ func Update(st *store.Store, name string, file File, isReferenced func(string) (
 		}
 		if file.Name != nil && strings.TrimSpace(*file.Name) != name {
 			return fmt.Errorf("profile 文件 name 必须与目标名称一致")
-		}
-		if file.Agent != nil {
-			agent := strings.TrimSpace(*file.Agent)
-			if err := config.ValidateAgent(agent); err != nil {
-				return err
-			}
-			if agent != p.Agent {
-				if isReferenced == nil || p.ID == "" {
-					return fmt.Errorf("无法确认 agent 配置引用，拒绝切换 profile agent")
-				}
-				referenced, err := isReferenced(p.ID)
-				if err != nil {
-					return fmt.Errorf("无法确认 agent 配置引用，拒绝切换 profile agent")
-				}
-				if referenced {
-					return fmt.Errorf("profile 仍被 agent 配置引用，拒绝切换 agent：%s", name)
-				}
-			}
-			p.Agent = agent
 		}
 		if file.Models != nil {
 			if p.Models == nil {
@@ -143,7 +118,7 @@ func Update(st *store.Store, name string, file File, isReferenced func(string) (
 }
 
 // Remove 删除 profile，并仅在本地 key 不再被引用时回收对应凭证。
-func Remove(st *store.Store, name string, isReferenced func(string) (bool, error)) error {
+func Remove(st *store.Store, name string) error {
 	if err := config.ValidateName(name); err != nil {
 		return err
 	}
@@ -152,16 +127,6 @@ func Remove(st *store.Store, name string, isReferenced func(string) (bool, error
 		if !ok {
 			return fmt.Errorf("profile 不存在：%s", name)
 		}
-		if isReferenced == nil || p.ID == "" {
-			return fmt.Errorf("无法确认 agent 配置引用，拒绝删除 profile")
-		}
-		referenced, err := isReferenced(p.ID)
-		if err != nil {
-			return fmt.Errorf("无法确认 agent 配置引用")
-		}
-		if referenced {
-			return fmt.Errorf("profile 仍被 agent 配置引用：%s", name)
-		}
 		delete(s.Profiles, name)
 		deleteIfUnreferenced(s, p.KeyRef)
 		return nil
@@ -169,9 +134,6 @@ func Remove(st *store.Store, name string, isReferenced func(string) (bool, error
 }
 
 func validateDraft(p config.Profile) error {
-	if err := config.ValidateAgent(p.Agent); err != nil {
-		return err
-	}
 	return config.ValidateProfileModels(p.Models)
 }
 

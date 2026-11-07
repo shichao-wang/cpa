@@ -21,7 +21,6 @@ import (
 	"time"
 
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/shichao-wang/cpa/internal/agent/claudecode"
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/store"
 	"github.com/sirupsen/logrus"
@@ -395,7 +394,7 @@ func TestCompatLongContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile := config.Profile{Name: "long-test", ID: "long-test", Agent: "claude-code", KeyRef: "downstream", Models: map[string]config.Binding{}}
+	profile := config.Profile{Name: "long-test", ID: "long-test", KeyRef: "downstream", Models: map[string]config.Binding{}}
 	for slot, public := range map[string]string{"sonnet": "claude-sonnet-4-6", "opus": "claude-opus-4-6", "haiku": "claude-haiku-4-5-20251001", "fable": "claude-fable-5-1"} {
 		profile.Models[slot] = config.Binding{PublicModel: public, Connection: connection.Name, TargetModel: "gpt-6.1-sol", Label: slot}
 	}
@@ -423,33 +422,10 @@ func TestCompatLongContext(t *testing.T) {
 	os.MkdirAll(home, 0700)
 	os.MkdirAll(work, 0700)
 	settings := filepath.Join(home, "settings.json")
-	originalSettings := []byte(`{"language":"English"}`)
-	os.WriteFile(settings, originalSettings, 0600)
-	if err = claudecode.Apply(st, profile, settings); err != nil {
+	// 测试仅写入临时 fixture，网关地址和 key 通过白名单环境传入。
+	if err := os.WriteFile(settings, []byte(`{"language":"English"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if claudecode.Restore(st, settings) != nil {
-			t.Error("临时settings恢复失败")
-		}
-		after, _ := os.ReadFile(settings)
-		if os.Getenv("CPA_LONG_INTERACTIVE") == "1" {
-			var restored map[string]any
-			if json.Unmarshal(after, &restored) != nil || restored["language"] != "English" || bytes.Contains(after, []byte(key)) {
-				t.Error("交互临时设置原字段或凭证恢复失败")
-			}
-		}
-		if !bytes.Equal(bytes.TrimSpace(after), originalSettings) {
-			var got, want any
-			json.Unmarshal(after, &got)
-			json.Unmarshal(originalSettings, &want)
-			a, _ := json.Marshal(got)
-			b, _ := json.Marshal(want)
-			if !bytes.Equal(a, b) && os.Getenv("CPA_LONG_INTERACTIVE") != "1" {
-				t.Error("临时设置回读不一致")
-			}
-		}
-	})
 	// Python仅继承白名单环境及临时profile key，真实OAuth凭证不进入子进程。
 	runner, _ := filepath.Abs("../../scripts/compat/claude_long.py")
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)

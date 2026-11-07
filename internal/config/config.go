@@ -61,7 +61,6 @@ type Binding struct {
 type Profile struct {
 	Name   string             `json:"name"`
 	ID     string             `json:"id"`
-	Agent  string             `json:"agent"`
 	KeyRef string             `json:"keyRef"`
 	Models map[string]Binding `json:"models"`
 }
@@ -170,21 +169,8 @@ func ValidateProfileModels(models map[string]Binding) error {
 	return nil
 }
 
-// ValidateAgent 校验支持的下游 Agent。
-func ValidateAgent(agent string) error {
-	switch agent {
-	case "claude-code", "claude-desktop":
-		return nil
-	default:
-		return fmt.Errorf("仅支持 claude-code 或 claude-desktop")
-	}
-}
-
 // ValidateProfileStructure 校验 profile 的结构和模型引用，不要求 OAuth 凭证已登录。
 func (s *State) ValidateProfileStructure(p Profile) error {
-	if err := ValidateAgent(p.Agent); err != nil {
-		return err
-	}
 	if err := ValidateProfileModels(p.Models); err != nil {
 		return err
 	}
@@ -262,7 +248,7 @@ func ValidateOAuthCredential(c OAuthCredential) error {
 
 func (s *State) Validate() error {
 	if s.SchemaVersion != SchemaVersion || s.Connections == nil || s.Profiles == nil || s.Secrets == nil || s.OAuthCredentials == nil {
-		return fmt.Errorf("不支持或无效的状态格式；旧状态不会被修改，请先使用原版本执行 profile restore 和 server stop，再将旧状态目录移至备份位置后重新配置")
+		return fmt.Errorf("不支持或无效的状态格式；旧状态不会被修改，请先使用原版本停止服务并恢复已接管的客户端配置，再将旧状态目录移至备份位置后重新配置")
 	}
 	connectionIDs := map[string]bool{}
 	oauthRefs := map[string]bool{}

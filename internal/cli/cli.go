@@ -14,11 +14,10 @@ import (
 	"golang.org/x/term"
 )
 
-// Options 为主程序集成运行时热重载和 agent 引用检查提供回调。
+// Options 为主程序集成运行时热重载和 OAuth 登录提供回调。
 type Options struct {
-	OnChange          func() error
-	ProfileReferenced func(profileID string) (bool, error)
-	Login             func(context.Context, bool) (config.OAuthCredential, error)
+	OnChange func() error
+	Login    func(context.Context, bool) (config.OAuthCredential, error)
 }
 
 type storeFactory func() (*store.Store, error)
@@ -75,7 +74,7 @@ func newVersionCommand() *cobra.Command {
 	}
 }
 
-// NewCommand 构建 cpa 命令树；服务端和 agent 命令可由主程序继续挂载。
+// NewCommand 构建 cpa 命令树；服务端命令可由主程序继续挂载。
 func NewCommand() *cobra.Command {
 	return NewCommandWithOptions(Options{})
 }

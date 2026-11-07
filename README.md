@@ -6,7 +6,7 @@
 
 ```text
 connection：独立上游连接（稳定 ID、协议、认证方式、API 根地址、专属凭证、模型清单）
-profile：下游 Agent 的专属 key、四档 connection/实际模型绑定与展示
+profile：下游客户端的专属 key、四档 connection/实际模型绑定与展示
 ```
 
 接入只需创建一个 connection，不需要先创建 provider。每个连接独立选择协议和凭证，名称不决定协议。每个 profile 的 Opus、Sonnet、Haiku、Fable 四个必填档位直接选择 connection 和实际模型 ID；多个档位可以使用同一连接。
@@ -36,36 +36,13 @@ curl -fsSL https://raw.githubusercontent.com/shichao-wang/cpa/main/scripts/insta
 
 ## 升级
 
-### 从三档 profile 升级
+### 从带客户端接入功能的版本升级
 
-本版本要求 Opus、Sonnet、Haiku、Fable 四个档位全部配置。缺少 Fable 的旧 schema 3 状态不支持原地升级，新版本会拒绝读取和覆盖，不能通过 `profile update` 补填。升级前请保留原可执行文件，按以下步骤切换：
+本版本已移除 Claude Code 和 Claude Desktop 的配置接入功能，不再提供 `profile apply`、`profile restore`、`--agent` 或 profile YAML 的 `agent` 字段。cpa 只管理连接、profile 和网关，不读取或修改客户端配置。
 
-1. 使用原版本及原状态目录执行 `profile restore`，恢复已接管的 Claude Code 配置；没有应用过 profile 时可跳过。若使用自定义 settings，传入原 `--settings` 路径。
-2. 使用原版本及原状态目录执行 `server stop`。将旧状态目录整体移至备份位置，保留其中内容。默认目录为 `$XDG_CONFIG_HOME/cpa`，未设置时为 `~/.config/cpa`。
-3. 安装新版本，在自动创建的默认状态目录中重新创建连接，并用包含四个档位的 YAML 创建 profile。OAuth 连接需重新登录，下游 key 也会重新生成。
-4. 在新状态目录中启动网关并应用 profile，随后新开 Claude Code 会话。
+如果旧版本曾应用客户端配置，请先保留原可执行文件，使用原版本恢复相应客户端配置，再停止旧网关。新版本无法代为恢复。旧状态含有 `agent` 字段或缺少 Fable 档位时，请备份旧状态目录，并在新的默认状态目录中重新创建连接与 profile；OAuth 连接需要重新登录。不要让旧、新版本共享状态目录。
 
-例如，在已用原版本完成恢复和停服后执行：
-
-```sh
-cpa connection add example
-cpa profile create daily --agent claude-code --file bindings-with-fable.yaml
-cpa server start
-cpa profile apply daily
-```
-
-需要回退时，先用新版本执行 restore、停止新网关，再将当前状态目录移至另一备份位置。将旧状态目录放回原位置后，使用保留的原版本启动服务、应用原 profile。
-
-### 从改名前的版本切换
-
-旧版本内置的 `upgrade` 只识别旧名称的安装包，不能用于本次改名升级。请按以下步骤手动切换：
-
-1. 使用原可执行文件执行 `profile restore`，恢复已接管的 Claude Code 配置；使用自定义状态目录或 settings 时，传入原来的路径。没有应用过 profile 时可跳过恢复。
-2. 使用原可执行文件执行 `server stop`，确认旧网关停止。保留原可执行文件和状态目录，便于需要时回退。
-3. 按上面的安装步骤安装 `cpa`，执行 `cpa version` 确认新命令可用。新版本使用独立的默认状态目录，不会自动读取或迁移旧目录，请勿让两个版本共享状态目录。
-4. 用 `cpa connection add` 和 `cpa profile create` 重新配置连接与 profile；OAuth 连接需重新登录。随后执行 `cpa server start` 和 `cpa profile apply <名称>`，并新开 Claude Code 会话。
-
-需要回退时，先用 `cpa profile restore` 恢复配置并执行 `cpa server stop`，再用原可执行文件和原状态目录启动服务、应用原 profile。
+默认状态目录为 `$XDG_CONFIG_HOME/cpa`，未设置时为 `~/.config/cpa`。需要回退时，先停止新网关，再恢复原状态目录并使用原可执行文件。
 
 ### 后续版本升级
 
@@ -167,9 +144,8 @@ cpa connection add codex \
   --models codex-models.yaml
 cpa connection login codex --no-browser
 # bindings.yaml 的 opus/sonnet/haiku/fable 均设置 connection: codex、target_model: gpt-5.5
-cpa profile create codex --agent claude-code --file bindings.yaml
+cpa profile create codex --file bindings.yaml
 cpa server start
-cpa profile apply codex
 cpa server stop
 cpa connection logout codex --yes
 ```
@@ -190,13 +166,13 @@ cpa connection logout codex --yes
 
 add/create 默认不联网。check 仅尝试模型目录，不发送推理；目录缺失、404/405 表示无法通过这种方式验证，不能据此判断推理不可用。检查结果不会自动替换本地清单。
 
-## Profile 与 Claude Code
+## Profile 与协议兼容性
 
 ### Responses 兼容性说明
 
 Responses 连接经当前锁定 SDK 的 Codex 转换路径执行。`GET /v1/models` 的对应条目通过 `cpa_capabilities` 返回每个模型的能力说明。这是派生能力信息，不写入状态，也不根据连接名称或公开 Claude 别名推断上游能力。
 
-- **输出预算不执行。** 此路径不把 `max_tokens` 变成上游输出上限。推理响应会带 `X-CPA-Output-Limit: not-enforced`；要求执行输出上限的调用方可发送 `X-CPA-Require-Output-Limit: true`，网关会在调用上游前返回 400。普通 Claude Code 调用仍保留，但不能依赖该参数控制消耗。标准 OpenAI Responses API 的预算说明不能直接当作此转换路径的能力承诺。
+- **输出预算不执行。** 此路径不把 `max_tokens` 变成上游输出上限。推理响应会带 `X-CPA-Output-Limit: not-enforced`；要求执行输出上限的调用方可发送 `X-CPA-Require-Output-Limit: true`，网关会在调用上游前返回 400。普通 Messages 调用仍可使用，但不能依赖该参数控制消耗。标准 OpenAI Responses API 的预算说明不能直接当作此转换路径的能力承诺。
 - **推理是兼容映射。** effort 档位来自公开 SDK 的模型目录；未知推理能力的模型会拒绝显式启用 thinking 或 effort，普通对话仍可用。已知模型的 adaptive、预算和 thinking 关闭按 SDK 转换；没有 `none` 档位时，关闭会降到最低支持档。仅传 effort 而没有 thinking 时可能被 SDK 忽略。
 - **上下文容量未经实测。** 客户端显示的 200K / 1M 不是上游容量声明，`[1m]` 不会为连接扩容。
 - **自动关闭不支持的服务端工具。** Messages → Responses / Chat 路径会移除 `web_fetch` / `code_execution` 声明；`web_search` 仅在 Responses 路径且当前连接的模型能力明确支持时保留，未知能力也会关闭。普通客户端工具（包括 Bash、WebFetch、MCP）保留。强制选择被移除工具时自动改为 auto，所有工具被移除时改为 none。响应头 `X-CPA-Disabled-Server-Tools` 列出关闭的工具类型；原生 Anthropic 连接不做此过滤。搜索的调用次数上限仍不映射。
@@ -205,51 +181,23 @@ Responses 连接经当前锁定 SDK 的 Codex 转换路径执行。`GET /v1/mode
 
 此 Responses 入口会拒绝预算字符串、null、布尔、小数、溢出和重复参数。`max_tokens` 若提供，须为 1～2147483647 的 JSON 整数；`budget_tokens` 仅可用于 `thinking.type=enabled`，须为 1024～2147483647 的 JSON 整数且小于提供的 `max_tokens`。不提供 budget 时沿用 SDK 默认映射。adaptive / disabled 请移除预算字段。该检查只定义 Responses 兼容请求，不改变原生 Anthropic 连接的 interleaved thinking 语义；预算合规也不代表此路径执行 token 上限。
 
-### 应用与恢复
+### 创建与查看 profile
 
-绑定文件示例见 `examples/`。公开 model ID 需明确填写你希望 Claude Code 使用的官方 ID，不能填实际的非 Claude 上游 ID。四个档位 ID 必须唯一。
-
-Fable 是必填档位，profile YAML 必须包含 `models.fable`，字段与其他档位相同，示例见 `examples/profile.yaml`。创建、更新、加载及应用 profile 时，缺少任一档位都会报错；旧三档状态须按升级步骤备份旧状态目录后重新配置，不能在旧目录直接补填。应用 profile 后会写入 `ANTHROPIC_DEFAULT_FABLE_MODEL`，展示名和说明统一写入 `modelPicker.options`，配置方式见 [Claude Code 模型配置](https://code.claude.com/docs/en/model-config#environment-variables)。在 Claude Code 中使用 `/model fable` 选择该映射，restore 会恢复应用前的配置。
+绑定文件示例见 `examples/profile.yaml`。公开 model ID 必须使用 Claude 模型 ID，不能填实际的非 Claude 上游 ID。Opus、Sonnet、Haiku、Fable 四个档位都必须配置，公开 ID 必须唯一。多个档位可以绑定同一连接和上游模型。
 
 ```sh
-cpa profile create daily --agent claude-code --file bindings.yaml
+cpa profile create daily --file bindings.yaml
+cpa profile list
+cpa profile show daily
+cpa profile update daily --file updated-bindings.yaml
 cpa server start
 cpa server status
-cpa profile apply daily
-# 新开 Claude Code 会话使用已应用的配置。
-cpa profile restore
 cpa server stop
 ```
 
-模型选择器展示需要支持 `modelPicker` 的 Claude Code 版本（v2.1.242 或更新版本）。
+profile 保存专属下游 key 和模型绑定，不关联 Agent 类型。模型展示名与说明从绑定派生，YAML 不接受 `label`、`description` 字段。
 
-apply 默认合并 `~/.claude/settings.json`，也可通过 `--settings` 指定文件。env 设置网关地址、profile 认证、四档 `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL` 公开模型 ID，以及指向 haiku 档位的 `CLAUDE_CODE_SUBAGENT_MODEL`。apply 不修改订阅登录凭证。
-
-模型名称与描述统一写入 `modelPicker.options`，并设置 `modelPicker.replaceBuiltInOptions: true` 来替换内置列表。模型选择器左侧自动显示上游模型名称，GPT 模型 ID 会整理为 `GPT 6.1 Sol`、`GPT 6 Luna` 这样的名称。右侧固定显示对应的 `Opus`、`Sonnet`、`Haiku` 或 `Fable` 档位。名称与描述不可配置，profile YAML 不接受 `label`、`description` 字段。apply 不再写入四档 MODEL 的 `_NAME`、`_DESCRIPTION` 环境变量，也不再启用 `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`。
-
-已有旧版 apply 记录时，再次 apply 或切换 profile 会将上述九个旧受管变量恢复为首次接管前的值，原先不存在的变量会删除，然后解除对这些变量的管理。没有管理记录的同名变量保持原样。清理完成后，后续 apply 和 restore 会保留用户对这些变量的新修改。直接对旧版记录执行 restore 仍会恢复全部受管字段；旧受管字段在清理前已被手动修改时，apply 和 restore 都会拒绝覆盖。
-
-restore **仅对有有效 cpa 接管记录的配置执行**。它恢复首次接管前的受管字段，保留无关修改；受管字段发生冲突时拒绝整体恢复。没有记录、只有备份、路径不匹配或重复 restore 均不能恢复。当前 shell 环境变量及项目级设置可能覆盖用户配置，需自行检查这些优先级。
-
-### Claude Desktop（macOS）
-
-Claude Desktop 使用独立的 `claude-desktop` profile 和下游 key，可以与 Claude Code 同时接入同一网关。已验证 Desktop 2.19675.0 的 Chat 和本地 Code，内嵌 Code 版本为 2.1.286。Cowork 首期关闭。模型选择器的上下文和能力显示来自客户端，不代表上游已验证这些能力。兼容性证据见 [报告](docs/claude-desktop-compatibility.md)。
-
-```sh
-cpa profile create desktop --agent claude-desktop --file bindings.yaml
-cpa server start
-# 完整退出 Claude Desktop 后执行。
-cpa profile apply desktop
-# 重新启动 Claude Desktop，选择 Chat 或本地 Code。
-# 恢复前也必须完整退出 App。
-cpa profile restore --agent claude-desktop
-```
-
-Desktop 默认管理 `~/Library/Application Support/Claude/` 与 `Claude-3p/` 的模式文件，以及第三方配置库中的 cpa 独立项、活动指针和混合配置指针。`--config-dir` 指向同时包含这两个目录的 Application Support 父目录，不能传入 configLibrary 自身。Claude Code 的 `--settings` 与 Desktop 的 `--config-dir` 不可混用，显式空值也按已指定处理。默认 `profile restore` 仍恢复 Claude Code。
-
-apply 不启动或结束 App，不修改真实 `~/.claude`，也不管理会话历史。组织策略、运行中的 App、损坏配置、符号链接或受管字段冲突会阻止操作。重复 apply 和切换 Desktop profile 保留首次接管基线；写入中断后，在排除冲突并退出 App 后对同一目录重试 apply 或 restore。不要删除 cpa 的 Desktop 管理记录来绕过冲突。管理记录读取失败时，删除 profile 和切换 Agent 会被拒绝；当前受管及中断切换的前后双方均受保护。
-
-schema 3 的现有 Claude Code 状态继续有效。旧 binary 可能拒绝包含 Desktop profile 的状态；回退前先用支持 Desktop 的版本分别 restore Desktop 和 Claude Code，停止网关，再使用与旧 binary 匹配的独立状态目录或原有备份。不要让旧 binary 覆盖不兼容状态，也不要把未恢复的配置留给旧版本管理。
+使用 `cpa profile key daily` 显式获取该 profile 的下游 key，再自行配置客户端的网关地址、key 和公开模型 ID。该命令仅向标准输出返回目标 key，不修改状态。创建、列表和详情命令默认隐藏 key；请勿将 key 输出写入日志或分享。
 
 ## 更新与删除
 
@@ -261,18 +209,18 @@ cpa connection remove example
 cpa profile delete daily
 ```
 
-更新未指定 key 时保留连接的原凭证；地址、模型与 key 同时修改时按同一事务保存。轮换只影响目标连接。删除连接或移除模型前检查 profile 引用，存在引用时拒绝。被活动 apply 记录引用的 profile 需先 restore 或切换到其他 profile；解除 profile 对连接的引用后才能删除连接。非交互删除需提供 `--yes`。
+更新未指定 key 时保留连接的原凭证；地址、模型与 key 同时修改时按同一事务保存。轮换只影响目标连接。删除连接或移除模型前检查 profile 引用，存在引用时拒绝。解除 profile 对连接的引用后才能删除连接。非交互删除需提供 `--yes`。
 
 ## 远端配置
 
-通过 SSH 登录服务器后，执行同样的 CLI 命令管理远端连接、profile 和网关。命令使用远端用户的状态目录，`profile apply` 修改执行命令所在机器的客户端配置。
+通过 SSH 登录服务器后，执行同样的 CLI 命令管理远端连接、profile 和网关。命令使用远端用户的状态目录。
 
 ## 本地状态与安全
 
 - 状态目录使用 `$XDG_CONFIG_HOME/cpa`，未设置时使用 `~/.config/cpa`。命令行无需指定状态目录。
 - 状态目录 0700、敏感文件 0600；配置、secret 引用及 secret 数据以同一原子事务保存。上游 key、Codex OAuth 凭证和下游 profile key 分开管理，SDK 配置是私有派生数据。
 - 当前状态格式为 schema 3，仅接受显式认证方式、稳定连接 ID 与独立 OAuth 表的完整新格式；不存在 `state migrate` 或自动默认化。旧 schema 1/2 及 provider 结构会拒绝读取/覆盖，使用新状态目录重新配置，OAuth 连接重新登录。
-- 本地状态、Claude Code 应用后的 settings 和 Claude Desktop 的受管配置及管理记录都可能含明文 key；文件权限保护不是加密保险箱。不要提交或分享这些文件。
+- 本地状态可能含明文 key，文件权限保护不是加密保险箱。不要提交或分享这些文件。
 - 默认仅监听 loopback；后台和前台启动都会预检查监听地址，端口冲突时明确报告占用地址，不启动网关，也不停止原占用服务。预检查分两步：先探测同端口的 `127.0.0.1` 与 `::1` 是否已有服务监听，再验证地址可绑定。**只做绑定检查并不足够**——macOS 允许通配监听（如 `*:8317`）与具体 loopback 地址同时绑成功，绑定成功不能证明端口空闲。预检查会立即释放临时监听器，正式监听和实例就绪校验仍负责处理之后的端口竞争。
 - 下游只开放模型列表、Messages 及支持的 count_tokens，其他执行协议不向 profile key 开放。
 - 模型目录隐藏不是唯一的访问控制：每次推理也严格校验 key 和公开模型绑定。

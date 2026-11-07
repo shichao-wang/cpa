@@ -169,10 +169,6 @@ func TestRootUpgradeDoesNotUseStateOrRuntimeCallbacks(t *testing.T) {
 			callbackCalled = true
 			return nil
 		},
-		ProfileReferenced: func(string) (bool, error) {
-			callbackCalled = true
-			return false, nil
-		},
 	})
 	for _, command := range root.Commands() {
 		if command.Name() == "upgrade" {

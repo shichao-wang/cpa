@@ -61,7 +61,7 @@ func oauthTestState(t *testing.T) (*store.Store, *config.State) {
 			state.OAuthCredentials[c.CredentialRef] = config.OAuthCredential{AccessToken: "access-" + name, RefreshToken: "refresh-" + name, AccountID: "account-" + name, PlanType: "pro", ExpiresAt: time.Now().Add(7 * 24 * time.Hour), LastRefresh: time.Now(), Generation: 1}
 		}
 		state.Connections[name] = c
-		profile := config.Profile{Name: name, ID: "profile-" + name, Agent: "claude-code", KeyRef: "client-" + name, Models: map[string]config.Binding{}}
+		profile := config.Profile{Name: name, ID: "profile-" + name, KeyRef: "client-" + name, Models: map[string]config.Binding{}}
 		state.Secrets[profile.KeyRef] = "client-secret-" + name
 		for _, slot := range config.Slots {
 			profile.Models[slot] = config.Binding{PublicModel: "claude-" + slot + "-test", Connection: name, TargetModel: "gpt-5.5", Label: name + " " + slot, Description: "mock route"}
