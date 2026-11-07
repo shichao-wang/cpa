@@ -320,7 +320,7 @@ func testState(listen, chatA, chatB, anthropic, responses string) *config.State 
 	}
 	state.Profiles = map[string]config.Profile{
 		"alpha": {
-			Name: "alpha", ID: "profile-alpha", Agent: "claude-code", KeyRef: "alpha-key",
+			Name: "alpha", ID: "profile-alpha", KeyRef: "alpha-key",
 			Models: map[string]config.Binding{
 				"opus":   {PublicModel: "claude-opus-test", Connection: "chat-a", TargetModel: "shared-target", Label: "Alpha Opus", Description: "Alpha chat route"},
 				"sonnet": {PublicModel: "claude-sonnet-test", Connection: "anthropic", TargetModel: "anthropic-target", Label: "Alpha Sonnet", Description: "Alpha Anthropic route"},
@@ -329,7 +329,7 @@ func testState(listen, chatA, chatB, anthropic, responses string) *config.State 
 			},
 		},
 		"beta": {
-			Name: "beta", ID: "profile-beta", Agent: "claude-code", KeyRef: "beta-key",
+			Name: "beta", ID: "profile-beta", KeyRef: "beta-key",
 			Models: map[string]config.Binding{
 				"opus":   {PublicModel: "claude-opus-test", Connection: "chat-b", TargetModel: "shared-target", Label: "Beta Opus", Description: "Beta chat route"},
 				"sonnet": {PublicModel: "claude-sonnet-test", Connection: "anthropic", TargetModel: "anthropic-target", Label: "Beta Sonnet", Description: "Beta Anthropic route"},
@@ -353,7 +353,7 @@ func TestConnectionsWithSameEndpointAndKeyKeepDistinctIdentity(t *testing.T) {
 	state.Connections["same-a"] = config.Connection{ID: "same-a-id", Name: "same-a", AuthType: config.AuthAPIKey, Protocol: config.Chat, BaseURL: "https://example.com", CredentialRef: "upstream", Models: models}
 	state.Connections["same-b"] = config.Connection{ID: "same-b-id", Name: "same-b", AuthType: config.AuthAPIKey, Protocol: config.Chat, BaseURL: "https://example.com", CredentialRef: "upstream", Models: models}
 	state.Profiles["alpha"] = config.Profile{
-		Name: "alpha", ID: "profile-alpha", Agent: "claude-code", KeyRef: "profile",
+		Name: "alpha", ID: "profile-alpha", KeyRef: "profile",
 		Models: map[string]config.Binding{
 			"opus":   {PublicModel: "claude-opus-test", Connection: "same-a", TargetModel: "shared-model"},
 			"sonnet": {PublicModel: "claude-sonnet-test", Connection: "same-b", TargetModel: "shared-model"},

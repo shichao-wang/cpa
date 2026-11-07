@@ -85,7 +85,7 @@ func TestThreeSlotSchema3RequiresNewStateDirectory(t *testing.T) {
 	data := []byte(`{
 		"schemaVersion":3,"revision":7,"listen":"127.0.0.1:8317",
 		"connections":{"mock":{"id":"connection-id","name":"mock","authType":"api-key","protocol":"anthropic-messages","baseURL":"https://mock.example","credentialRef":"upstream","models":[{"id":"actual"}]}},
-		"profiles":{"daily":{"name":"daily","id":"profile-id","agent":"claude-code","keyRef":"downstream","models":{
+		"profiles":{"daily":{"name":"daily","id":"profile-id","keyRef":"downstream","models":{
 			"opus":{"public_model":"claude-opus","connection":"mock","target_model":"actual"},
 			"sonnet":{"public_model":"claude-sonnet","connection":"mock","target_model":"actual"},
 			"haiku":{"public_model":"claude-haiku","connection":"mock","target_model":"actual"}

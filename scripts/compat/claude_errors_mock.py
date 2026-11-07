@@ -138,7 +138,7 @@ fixture['client_stream_flags'] = [entry['body'].get('stream') for entry in clien
 fixture['upstream_stream_flags'] = [entry['body'].get('stream') for entry in upstream]
 fixture['client_statuses'] = [entry['status'] for entry in entries if entry['stage'] == 'cpa-to-claude-result']
 summary = json.loads((output / 'summary.json').read_text())
-fixture['cleanup_verified'] = summary['restore_readback'] and summary['service_stopped'] and not summary['cleanup_errors']
+fixture['cleanup_verified'] = summary['settings_unchanged'] and summary['service_stopped'] and not summary['cleanup_errors']
 assert fixture['temporary_state_removed']
 assert fixture['cleanup_verified']
 assert fixture['client_requests'] <= 3

@@ -112,7 +112,7 @@ func TestPatchIsAtomicAndGuardsReferencedModels(t *testing.T) {
 	}
 	if err := st.Update(func(s *config.State) error {
 		s.Secrets["profile-key"] = "profile-secret"
-		profile := config.Profile{Name: "demo", ID: "profile-id", Agent: "claude-code", KeyRef: "profile-key", Models: map[string]config.Binding{}}
+		profile := config.Profile{Name: "demo", ID: "profile-id", KeyRef: "profile-key", Models: map[string]config.Binding{}}
 		for _, slot := range config.Slots {
 			profile.Models[slot] = config.Binding{PublicModel: "claude-" + slot, Connection: "c", TargetModel: "model-a"}
 		}

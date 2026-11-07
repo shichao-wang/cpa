@@ -1,4 +1,4 @@
-# public_model 必须填写 Claude Code 暴露给调用方的官方 Claude 模型 ID，
+# public_model 必须填写 网关暴露给调用方的 Claude 模型 ID，
 # 不要把上游 connection 的模型 ID 填到这里。以下均为需替换的占位符。
 models:
   opus:

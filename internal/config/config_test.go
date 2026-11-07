@@ -45,7 +45,7 @@ func TestOAuthAuthIsExplicitAndAllowsUnloggedProfileStructure(t *testing.T) {
 	if err := s.Validate(); err != nil {
 		t.Fatalf("未登录 OAuth 连接应是合法状态：%v", err)
 	}
-	p := Profile{Agent: "claude-code", Models: map[string]Binding{}}
+	p := Profile{Models: map[string]Binding{}}
 	for _, slot := range Slots {
 		p.Models[slot] = Binding{PublicModel: "claude-" + slot + "-test", Connection: "oauth", TargetModel: "m"}
 	}
@@ -70,7 +70,7 @@ func TestProfileValidation(t *testing.T) {
 	s := NewState()
 	s.Secrets["k"] = "valid-key"
 	s.Connections["c"] = Connection{ID: "connection-id", Name: "c", AuthType: AuthAPIKey, Protocol: Anthropic, BaseURL: "https://api.example.test", CredentialRef: "k", Models: []Model{{ID: "upstream"}}}
-	p := Profile{Agent: "claude-code", Models: map[string]Binding{}}
+	p := Profile{Models: map[string]Binding{}}
 	for _, slot := range Slots {
 		p.Models[slot] = Binding{PublicModel: "claude-" + slot + "-test", Connection: "c", TargetModel: "upstream"}
 	}
@@ -97,7 +97,7 @@ func TestModelAndBindingTextRejectControlCharacters(t *testing.T) {
 	s := NewState()
 	s.Secrets["k"] = "valid-key"
 	s.Connections["c"] = Connection{ID: "id", Name: "c", AuthType: AuthAPIKey, Protocol: Chat, BaseURL: "https://api.example.test", CredentialRef: "k", Models: []Model{{ID: "upstream"}}}
-	p := Profile{Agent: "claude-code", Models: map[string]Binding{}}
+	p := Profile{Models: map[string]Binding{}}
 	for _, slot := range Slots {
 		p.Models[slot] = Binding{PublicModel: "claude-" + slot, Connection: "c", TargetModel: "upstream"}
 	}
@@ -115,7 +115,7 @@ func TestUnreferencedAPIConnectionMayLackKeyButProfileFailsClosed(t *testing.T) 
 	if err := s.Validate(); err != nil {
 		t.Fatalf("未被引用且缺少 API key 的连接可保留：%v", err)
 	}
-	p := Profile{Name: "demo", ID: "profile-id", Agent: "claude-code", KeyRef: "profile-key", Models: map[string]Binding{}}
+	p := Profile{Name: "demo", ID: "profile-id", KeyRef: "profile-key", Models: map[string]Binding{}}
 	s.Secrets[p.KeyRef] = "valid-profile-key"
 	for _, slot := range Slots {
 		p.Models[slot] = Binding{PublicModel: "claude-" + slot, Connection: "idle", TargetModel: "m"}
@@ -181,7 +181,7 @@ func TestRequiredFableValidation(t *testing.T) {
 			if tc.slot != "" {
 				models[tc.slot] = tc.binding
 			}
-			err := s.ValidateProfile(Profile{Agent: "claude-code", Models: models})
+			err := s.ValidateProfile(Profile{Models: models})
 			if (err == nil) != tc.valid {
 				t.Fatalf("校验结果错误：%v", err)
 			}

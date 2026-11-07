@@ -11,7 +11,10 @@ import (
 )
 
 func newProfileCommand(openStore storeFactory, opts Options) *cobra.Command {
-	cmd := &cobra.Command{Use: "profile", Short: "管理下游 Agent profile"}
+	cmd := &cobra.Command{
+		Use: "profile", Short: "管理下游 profile", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+	}
 	cmd.AddCommand(profileListCommand(openStore))
 	cmd.AddCommand(profileShowCommand(openStore))
 	cmd.AddCommand(profileCreateCommand(openStore, opts))
@@ -41,7 +44,7 @@ func profileListCommand(openStore storeFactory) *cobra.Command {
 			sort.Strings(names)
 			for _, name := range names {
 				p := s.Profiles[name]
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", name, p.Agent, p.ID); err != nil {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", name, p.ID); err != nil {
 					return err
 				}
 			}
@@ -68,7 +71,7 @@ func profileShowCommand(openStore storeFactory) *cobra.Command {
 			if !ok {
 				return fmt.Errorf("profile 不存在：%s", args[0])
 			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "名称：%s\nID：%s\nAgent：%s\n模型映射：\n", p.Name, p.ID, p.Agent); err != nil {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "名称：%s\nID：%s\n模型映射：\n", p.Name, p.ID); err != nil {
 				return err
 			}
 			for _, slot := range config.Slots {
@@ -100,7 +103,7 @@ func profileShowCommand(openStore storeFactory) *cobra.Command {
 }
 
 func profileCreateCommand(openStore storeFactory, opts Options) *cobra.Command {
-	var filePath, agent string
+	var filePath string
 	cmd := &cobra.Command{
 		Use: "create <name>", Short: "创建下游 profile 并私密保存专属 key", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -112,9 +115,6 @@ func profileCreateCommand(openStore storeFactory, opts Options) *cobra.Command {
 				return fmt.Errorf("文件中的 name 与命令名称不一致")
 			}
 			file.Name = &args[0]
-			if cmd.Flags().Changed("agent") || file.Agent == nil {
-				file.Agent = &agent
-			}
 			st, err := openStore()
 			if err != nil {
 				return err
@@ -125,12 +125,11 @@ func profileCreateCommand(openStore storeFactory, opts Options) *cobra.Command {
 			if err = notifyChanged(cmd, opts); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "已创建 profile %s；API key 已私密保存，可通过 profile apply 应用\n", args[0])
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "已创建 profile %s；API key 已私密保存\n", args[0])
 			return err
 		},
 	}
 	cmd.Flags().StringVar(&filePath, "file", "", "模型绑定 YAML 文件")
-	cmd.Flags().StringVar(&agent, "agent", "claude-code", "下游 Agent（claude-code 或 claude-desktop）")
 	_ = cmd.MarkFlagRequired("file")
 	return cmd
 }
@@ -150,7 +149,7 @@ func profileUpdateCommand(openStore storeFactory, opts Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := profile.Update(st, args[0], file, opts.ProfileReferenced); err != nil {
+			if err := profile.Update(st, args[0], file); err != nil {
 				return err
 			}
 			if err := notifyChanged(cmd, opts); err != nil {
@@ -169,20 +168,17 @@ func profileRemoveCommand(openStore storeFactory, opts Options) *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
-		Short: "删除未被 agent 配置引用的 profile",
+		Short: "删除 profile 及其专属 key",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := confirmRemoval(cmd, yes, "profile "+args[0]); err != nil {
 				return err
 			}
-			if opts.ProfileReferenced == nil {
-				return fmt.Errorf("当前未连接 agent 管理器，无法安全确认 profile 引用关系")
-			}
 			st, err := openStore()
 			if err != nil {
 				return err
 			}
-			if err := profile.Remove(st, args[0], opts.ProfileReferenced); err != nil {
+			if err := profile.Remove(st, args[0]); err != nil {
 				return err
 			}
 			if err := notifyChanged(cmd, opts); err != nil {

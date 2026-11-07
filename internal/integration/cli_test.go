@@ -49,8 +49,8 @@ func TestBinaryFlow(t *testing.T) {
 		}
 		return out
 	}
-	for _, args := range [][]string{{"server", "admin-token"}, {"connection", "oauth-login-worker", filepath.Join(tmp, "credential.json")}} {
-		if out, err := invoke("", args...); err == nil || !strings.Contains(out, "unknown command") {
+	for _, args := range [][]string{{"profile", "apply", "daily"}, {"profile", "restore"}, {"profile", "create", "daily", "--agent", "claude-code"}, {"server", "admin-token"}, {"connection", "oauth-login-worker", filepath.Join(tmp, "credential.json")}} {
+		if out, err := invoke("", args...); err == nil || (!strings.Contains(out, "unknown command") && !strings.Contains(out, "unknown flag")) {
 			t.Fatalf("已移除的管理命令必须拒绝：%v %v %s", args, err, out)
 		}
 	}
@@ -94,7 +94,7 @@ func TestBinaryFlow(t *testing.T) {
 	if err := os.WriteFile(bindings, []byte(yaml.String()), 0600); err != nil {
 		t.Fatal(err)
 	}
-	output := run("", "profile", "create", "daily", "--agent", "claude-code", "--file", bindings)
+	output := run("", "profile", "create", "daily", "--file", bindings)
 	st, err := store.New(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +189,7 @@ func TestBinaryFlow(t *testing.T) {
 	if code < 400 || calls.Load() != prior {
 		t.Fatal("未知公开模型不能调用上游")
 	}
-	// 验证轮换连接 key 无需重建 profile 或重新 apply。
+	// 验证轮换连接 key 无需重建 profile。
 	upstreamKey.Store("rotated-key")
 	run("rotated-key\n", "connection", "update", "anth", "--api-key-stdin")
 	code, body = request("POST", "/v1/messages", `{"model":"claude-sonnet-test","max_tokens":20,"messages":[{"role":"user","content":"Hi"}]}`)
@@ -205,30 +205,6 @@ func TestBinaryFlow(t *testing.T) {
 	}
 	if out, err := invoke("", "connection", "remove", "anth", "--yes"); err == nil {
 		t.Fatalf("仍被 profile 引用的连接不能删除：%s", out)
-	}
-	settings := filepath.Join(tmp, "settings.json")
-	original := []byte(`{"unrelated":{"keep":true}}`)
-	if err := os.WriteFile(settings, original, 0644); err != nil {
-		t.Fatal(err)
-	}
-	run("", "profile", "apply", "daily", "--settings", settings)
-	if out, err := invoke("", "profile", "delete", "daily", "--yes"); err == nil {
-		t.Fatalf("不能删除受管 profile：%s", out)
-	}
-	run("", "profile", "restore", "--settings", settings)
-	restored, err := os.ReadFile(settings)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var restoredObject map[string]any
-	if err = json.Unmarshal(restored, &restoredObject); err != nil {
-		t.Fatal(err)
-	}
-	if len(restoredObject) != 1 || restoredObject["unrelated"] == nil {
-		t.Fatalf("恢复不保留原配置：%s", restored)
-	}
-	if _, err := invoke("", "profile", "restore", "--settings", settings); err == nil {
-		t.Fatal("重复恢复必须拒绝")
 	}
 	run("", "server", "stop")
 	status = run("", "server", "status")

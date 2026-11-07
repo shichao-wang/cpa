@@ -1,18 +1,5 @@
 # Claude Code 隔离兼容性测试
 
-Claude Desktop 的客户端配置契约与真实 mock 验收状态见 [Claude Desktop 兼容性报告](../../docs/claude-desktop-compatibility.md)。
-
-## Desktop 验证驱动
-
-```sh
-python3 scripts/compat/desktop_mock.py --cpa /绝对路径/cpa --output /private/tmp/cpa-desktop-evidence
-CPA_DESKTOP_TEST_BINARY=/绝对路径/cpa PYTHONDONTWRITEBYTECODE=1 python3 scripts/compat/test_desktop_mock.py -v
-```
-
-`desktop_mock.py` 只启动临时 cpa、Responses mock 和观测代理，生成临时 Desktop 配置及 fixture，不启动 App、不修改日常 Desktop 配置。终端和 `session.json` 提供测试路径、提示词与停止文件。真实 UI 验收需在隔离测试用户中运行；临时接管日常配置必须先取得用户授权，并在 App 退出后备份、写入和恢复。不能直接把临时配置复制到用户目录后留下。
-
-驱动只记录请求形状、模型、认证匹配布尔值和合成标记，不记录 key 或正文。HTTP 自测不证明 Desktop UI 通过，摘要始终包含 `desktop_ui_verified: false`。真实 UI 的预期输出、工具动作、版本和配置恢复需单独记录。`session.json` 的 `scenario_file` 接受 `normal`、`error`（HTTP 400）和 `slow`（逐段慢流）模式；原子写入该 JSON 可在空闲时切换，用于 UI 错误恢复及停止验收。预期错误和中断会保留在摘要中，需按场景结合 UI 记录判定。创建 `session.json` 中的 `stop_file` 或等待时限会停止临时服务并清理状态；停止失败则保留目录和重试命令，不能先删除仍在使用的状态。
-
 `claude_mock.py` 使用安装在本机的真实 Claude Code 和指定 CPA binary，所有请求都发往临时 loopback mock，不读取已有连接、凭证或 Claude 登录。
 
 ```sh
@@ -24,13 +11,13 @@ python3 scripts/compat/claude_mock.py --output /private/tmp/cpa-compat-disabled 
 
 可使用 `--cpa /绝对路径/cpa`、`--model claude-sonnet-4-6`、`--target-model gpt-6.1-sol`、`--effort high` 或 `--settings-json` 组合构造实验。每次使用独立输出目录。运行环境需允许 Python、CPA、Claude Code 创建本机 loopback 监听及其子进程；受限沙箱可能需要本机执行权限。
 
-脚本创建临时 HOME、CLAUDE_CONFIG_DIR、settings、工作区及 CPA 状态。通过 CLI 创建 Responses API_KEY mock 连接和 profile，四个槽位默认绑定 SDK 已识别的 gpt-6.1-sol，应用后回读 settings。Claude 使用 `--bare --setting-sources '' --strict-mcp-config --tools '' --no-session-persistence`，禁用非必要网络流量；bare 模式不读取 keychain/OAuth。为适配 bare 的鉴权契约，脚本将 apply 生成的临时 profile token 转为子进程的 ANTHROPIC_API_KEY，并将 BASE_URL 指向观测代理。该差异写在脚本中，不改变 apply 产物。没有真实 OAuth 登录、账号能力或上游额度验证。
+脚本创建临时 HOME、CLAUDE_CONFIG_DIR、settings、工作区及 CPA 状态。通过 CLI 创建 Responses API_KEY mock 连接和 profile，四个槽位默认绑定 SDK 已识别的 gpt-6.1-sol。Claude 使用 `--bare --setting-sources '' --strict-mcp-config --tools '' --no-session-persistence`，禁用非必要网络流量；bare 模式不读取 keychain/OAuth。脚本从临时 CPA 状态读取 profile key，通过 ANTHROPIC_API_KEY 传入子进程，并将 BASE_URL 指向观测代理。临时 settings 只包含测试 fixture，脚本不调用客户端配置应用或恢复功能。没有真实 OAuth 登录、账号能力或上游额度验证。
 
-链路：真实 Claude → loopback 观测代理 → 真实 CPA → Responses mock。mock 始终回复 `CPA_COMPAT_OK`，因此这条基线证明客户端/协议/路由可以完成一轮对话，不证明模型真实推理或工具调用能力。脚本结束时 restore 并回读原设置、停止临时 CPA、删除临时状态及临时凭证。
+链路：真实 Claude → loopback 观测代理 → 真实 CPA → Responses mock。mock 始终回复 `CPA_COMPAT_OK`，因此这条基线证明客户端/协议/路由可以完成一轮对话，不证明模型真实推理或工具调用能力。脚本结束时确认临时 settings 未被改写，停止临时 CPA，并删除临时状态及临时凭证。
 
 输出目录只保留：
 
-- `summary.json`：Claude 版本、CPA 构建版本与二进制摘要、隔离参数、apply/restore 回读、清理结果。
+- `summary.json`：Claude 版本、CPA 构建版本与二进制摘要、隔离参数、临时 settings 未变检查、清理结果。
 - `requests.jsonl`：同一 run_id 下两侧请求正文、白名单 header、请求时刻，以及返回状态与耗时。没有 Authorization 或 API key；基线为串行单轮，可按记录顺序关联。请求正文含测试 prompt 和客户端系统提示，不应将此记录器指向真实会话。
 - `claude-result.json`：真实客户端的 JSON 结果与模拟 usage。模拟 usage 及费用字段不能用来推断真实计费。
 

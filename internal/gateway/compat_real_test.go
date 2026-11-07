@@ -29,7 +29,6 @@ import (
 	"time"
 
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/shichao-wang/cpa/internal/agent/claudecode"
 	"github.com/shichao-wang/cpa/internal/config"
 	"github.com/shichao-wang/cpa/internal/store"
 	"github.com/sirupsen/logrus"
@@ -321,7 +320,7 @@ func TestCompatRealCodexClaude(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile := config.Profile{Name: "compat-real", ID: "compat-real-profile", Agent: "claude-code", KeyRef: "compat-real-key", Models: map[string]config.Binding{}}
+	profile := config.Profile{Name: "compat-real", ID: "compat-real-profile", KeyRef: "compat-real-key", Models: map[string]config.Binding{}}
 	for slot, public := range map[string]string{"opus": "claude-opus-4-6", "sonnet": "claude-sonnet-4-6", "haiku": "claude-haiku-4-5-20251001", "fable": "claude-fable-5-1"} {
 		profile.Models[slot] = config.Binding{PublicModel: public, Connection: connection.Name, TargetModel: "gpt-6.1-sol", Label: slot}
 	}
@@ -402,14 +401,6 @@ func TestCompatRealCodexClaude(t *testing.T) {
 	if err = os.WriteFile(settings, []byte(`{"language":"English"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err = claudecode.Apply(st, profile, settings); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := claudecode.Restore(st, settings); err != nil {
-			t.Error("临时真实测试settings恢复失败")
-		}
-	})
 	versionCommand := exec.Command(claude, "--version")
 	versionCommand.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "CLAUDE_CONFIG_DIR=" + home}
 	version, err := versionCommand.Output()
